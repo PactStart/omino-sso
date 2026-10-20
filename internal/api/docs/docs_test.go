@@ -77,6 +77,40 @@ func TestIndexHTMLStaysOffline(t *testing.T) {
 	}
 }
 
+// TestGlobalFailurePathsDocumented 覆盖 FR-009：不属于单个端点的通用失败路径
+// （未匹配路由的 404、全局限流的 429）必须记录在全局说明里，且给出真实响应体样例。
+func TestGlobalFailurePathsDocumented(t *testing.T) {
+	desc := infoDescription(t, Spec("failure-paths-case"))
+	for _, want := range []string{
+		"404",
+		"NOT_FOUND",
+		"429",
+		"RATE_LIMITED",
+		`"data":null`,
+	} {
+		if !strings.Contains(desc, want) {
+			t.Fatalf("info.description 未记录通用失败路径，缺少 %q\n---\n%s", want, desc)
+		}
+	}
+	// 泛化描述（"资源不存在"）之外必须给出可复制的 JSON 样例。
+	if !strings.Contains(desc, `{"code":"NOT_FOUND"`) || !strings.Contains(desc, `{"code":"RATE_LIMITED"`) {
+		t.Fatalf("info.description 缺少 404/429 的响应体样例:\n%s", desc)
+	}
+}
+
+func infoDescription(t *testing.T, raw []byte) string {
+	t.Helper()
+	var doc struct {
+		Info struct {
+			Description string `json:"description"`
+		} `json:"info"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("解析文档失败: %v", err)
+	}
+	return doc.Info.Description
+}
+
 // TestEmbeddedSpecStructure 覆盖 T016 的文档结构断言（AC-1 的路由一致性在 router_test.go）。
 func TestEmbeddedSpecStructure(t *testing.T) {
 	var doc struct {

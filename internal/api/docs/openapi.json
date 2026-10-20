@@ -708,7 +708,7 @@
   },
   "info": {
     "contact": {},
-    "description": "企业统一身份提供方的管理接口。会话通过 HttpOnly cookie `sid` 携带；响应统一为 {code,message,data,traceId}。\n协议端点（/oauth2/*、/.well-known/*）不在本文档范围内，见 /.well-known/openid-configuration",
+    "description": "企业统一身份提供方的管理接口。会话通过 HttpOnly cookie `sid` 携带；响应统一为 {code,message,data,traceId}。\n协议端点（/oauth2/*、/.well-known/*）不在本文档范围内，见 /.well-known/openid-configuration\n通用失败路径（不属任何单个端点，故统一记录在此）：未匹配的路由或方法返回 404 {\"code\":\"NOT_FOUND\",\"message\":\"资源不存在\",\"data\":null,\"traceId\":\"\u003cULID\u003e\"}；超出限流返回 429 {\"code\":\"RATE_LIMITED\",\"message\":\"请求过于频繁\",\"data\":null,\"traceId\":\"\u003cULID\u003e\"}——429 仅在 /auth/login 与 /auth/mfa/verify 上做端点级声明，其余端点虽受全局限流，但为避免逐条重复不再列出。\n/docs/* 属文档面，返回原始 HTML/JSON，不套统一响应；APP_ENV=prod 时该前缀不注册，响应与任意不存在路径完全一致。",
     "title": "omino-sso 管理 API",
     "version": "1.0"
   },
