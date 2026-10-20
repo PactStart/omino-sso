@@ -1,0 +1,12 @@
+{
+  "computed_at": "2026-10-20T15:20:00+08:00",
+  "contracts": [
+    {
+      "file": "internal/api/docs/openapi.json",
+      "current_version": "1.0",
+      "implied_bump": "none",
+      "next_version": "1.0",
+      "confirmed": true
+    }
+  ]
+}

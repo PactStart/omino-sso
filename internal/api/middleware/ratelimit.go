@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -14,6 +15,12 @@ import (
 // Redis 不可用时放行（限流是保护手段，不应成为单点故障）。
 func RateLimit(rdb *redis.Client, scope string, limit int, window time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// 文档页不参与限流：swagger-ui 首屏要拉 10+ 个静态资源，且限流依赖 Redis，
+		// 运维故障时恰是最需要看文档的时刻（规范 §4.0 第三条）。
+		if strings.HasPrefix(c.Request.URL.Path, "/docs/") {
+			c.Next()
+			return
+		}
 		if limit <= 0 {
 			c.Next()
 			return

@@ -1,0 +1,2408 @@
+{
+  "components": {
+    "schemas": {
+      "admin.CreateClientRequest": {
+        "properties": {
+          "clientName": {
+            "example": "统一门户",
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "description": {
+            "example": "员工自助门户",
+            "maxLength": 255,
+            "type": "string"
+          },
+          "grantTypes": {
+            "example": [
+              "authorization_code",
+              "refresh_token"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "isPublic": {
+            "example": false,
+            "type": "boolean"
+          },
+          "logoUrl": {
+            "example": "https://cdn.example.com/logo/portal.png",
+            "maxLength": 512,
+            "type": "string"
+          },
+          "redirectUris": {
+            "example": [
+              "https://portal.example.com/callback"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "scopes": {
+            "example": [
+              "openid",
+              "profile",
+              "email"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "clientName",
+          "redirectUris"
+        ],
+        "type": "object"
+      },
+      "admin.CreateUserRequest": {
+        "properties": {
+          "deptId": {
+            "example": "01J9ZJ7A1B2C3D4E5F6G7H8J9K",
+            "type": "string"
+          },
+          "displayName": {
+            "example": "李四",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "email": {
+            "example": "lisi@example.com",
+            "maxLength": 128,
+            "type": "string"
+          },
+          "mfaRequired": {
+            "example": false,
+            "type": "boolean"
+          },
+          "password": {
+            "example": "Init!pass2026",
+            "maxLength": 128,
+            "minLength": 8,
+            "type": "string"
+          },
+          "phone": {
+            "example": "13900000000",
+            "maxLength": 20,
+            "type": "string"
+          },
+          "roleIds": {
+            "example": [
+              "user"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sendNotify": {
+            "example": false,
+            "type": "boolean"
+          },
+          "tenantId": {
+            "example": "default",
+            "type": "string"
+          },
+          "username": {
+            "example": "lisi",
+            "maxLength": 64,
+            "minLength": 3,
+            "type": "string"
+          }
+        },
+        "required": [
+          "deptId",
+          "displayName",
+          "password",
+          "username"
+        ],
+        "type": "object"
+      },
+      "admin.OrgNode": {
+        "properties": {
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/admin.OrgNode"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "parentId": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "userCount": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "admin.RotateSecretRequest": {
+        "properties": {
+          "gracePeriodSeconds": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "admin.UpdateUserRequest": {
+        "properties": {
+          "deptId": {
+            "example": "01J9ZJ7A1B2C3D4E5F6G7H8J9K",
+            "type": "string"
+          },
+          "displayName": {
+            "example": "李四",
+            "type": "string"
+          },
+          "email": {
+            "example": "lisi@example.com",
+            "type": "string"
+          },
+          "mfaRequired": {
+            "example": false,
+            "type": "boolean"
+          },
+          "phone": {
+            "example": "13900000000",
+            "type": "string"
+          },
+          "roleIds": {
+            "example": [
+              "user"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "status": {
+            "example": "active",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "auth.LoginRequest": {
+        "properties": {
+          "captchaCode": {
+            "example": "8f3k",
+            "type": "string"
+          },
+          "captchaId": {
+            "example": "01J9ZK2Q3W5X7Y9A1B3C5D7E9F",
+            "type": "string"
+          },
+          "clientId": {
+            "example": "portal",
+            "type": "string"
+          },
+          "password": {
+            "example": "S3cure!pass",
+            "maxLength": 128,
+            "minLength": 8,
+            "type": "string"
+          },
+          "rememberMe": {
+            "example": false,
+            "type": "boolean"
+          },
+          "username": {
+            "example": "zhangsan",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "password",
+          "username"
+        ],
+        "type": "object"
+      },
+      "auth.MFAVerifyRequest": {
+        "properties": {
+          "code": {
+            "example": "123456",
+            "type": "string"
+          },
+          "mfaTicket": {
+            "example": "mft_5c1e9a7b3d2f",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "mfaTicket"
+        ],
+        "type": "object"
+      },
+      "dto.AppItem": {
+        "properties": {
+          "clientId": {
+            "example": "portal",
+            "type": "string"
+          },
+          "description": {
+            "example": "员工自助门户",
+            "type": "string"
+          },
+          "homeUrl": {
+            "example": "https://portal.example.com",
+            "type": "string"
+          },
+          "lastAccessAt": {
+            "type": "string"
+          },
+          "logoUrl": {
+            "example": "https://cdn.example.com/logo/portal.png",
+            "type": "string"
+          },
+          "name": {
+            "example": "统一门户",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "dto.AuditItem": {
+        "properties": {
+          "clientId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "example": "2026-10-20T10:12:33Z",
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "eventType": {
+            "example": "login_success",
+            "type": "string"
+          },
+          "id": {
+            "example": "01J9ZK5B9C1D3E5F7G9H1J3K5M",
+            "type": "string"
+          },
+          "ip": {
+            "example": "203.0.113.10",
+            "type": "string"
+          },
+          "result": {
+            "example": "success",
+            "type": "string"
+          },
+          "userAgent": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "dto.Client": {
+        "properties": {
+          "clientId": {
+            "example": "portal",
+            "type": "string"
+          },
+          "clientName": {
+            "example": "统一门户",
+            "type": "string"
+          },
+          "createdAt": {
+            "example": "2026-01-08T03:20:11Z",
+            "type": "string"
+          },
+          "description": {
+            "example": "员工自助门户",
+            "type": "string"
+          },
+          "grantTypes": {
+            "example": [
+              "authorization_code",
+              "refresh_token"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "isPublic": {
+            "example": false,
+            "type": "boolean"
+          },
+          "logoUrl": {
+            "example": "https://cdn.example.com/logo/portal.png",
+            "type": "string"
+          },
+          "postLogoutUris": {
+            "example": [
+              "https://portal.example.com/signed-out"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "redirectUris": {
+            "example": [
+              "https://portal.example.com/callback"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "scopes": {
+            "example": [
+              "openid",
+              "profile",
+              "email"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "dto.CreatedClient": {
+        "properties": {
+          "clientId": {
+            "example": "portal",
+            "type": "string"
+          },
+          "clientSecret": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "dto.LoginMfaChallenge": {
+        "properties": {
+          "expiresIn": {
+            "example": 300,
+            "type": "integer"
+          },
+          "mfaRequired": {
+            "example": true,
+            "type": "boolean"
+          },
+          "mfaTicket": {
+            "example": "mft_5c1e9a7b3d2f",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "dto.LoginResult": {
+        "properties": {
+          "expiresIn": {
+            "example": 0,
+            "type": "integer"
+          },
+          "mfaRequired": {
+            "example": false,
+            "type": "boolean"
+          },
+          "mfaTicket": {
+            "type": "string"
+          },
+          "redirectTo": {
+            "example": "/account",
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/dto.UserBrief"
+          }
+        },
+        "type": "object"
+      },
+      "dto.MfaResult": {
+        "properties": {
+          "redirectTo": {
+            "example": "/account",
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/dto.UserBrief"
+          }
+        },
+        "type": "object"
+      },
+      "dto.RotatedSecret": {
+        "properties": {
+          "clientId": {
+            "example": "portal",
+            "type": "string"
+          },
+          "clientSecret": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "dto.SessionItem": {
+        "properties": {
+          "createdAt": {
+            "example": "2026-10-20T09:00:00Z",
+            "type": "string"
+          },
+          "current": {
+            "example": true,
+            "type": "boolean"
+          },
+          "ip": {
+            "example": "203.0.113.10",
+            "type": "string"
+          },
+          "lastSeenAt": {
+            "example": "2026-10-20T10:00:00Z",
+            "type": "string"
+          },
+          "sid": {
+            "example": "sess_01J9ZK3A7B5C7D9E1F3G5H7J9K",
+            "type": "string"
+          },
+          "userAgent": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "dto.UserAdmin": {
+        "properties": {
+          "createdAt": {
+            "example": "2026-01-08T03:20:11Z",
+            "type": "string"
+          },
+          "deptId": {
+            "example": "01J9ZJ7A1B2C3D4E5F6G7H8J9K",
+            "type": "string"
+          },
+          "displayName": {
+            "example": "张三",
+            "type": "string"
+          },
+          "email": {
+            "example": "zhangsan@example.com",
+            "type": "string"
+          },
+          "id": {
+            "example": "01J9ZJ8Q2M4N6P8R0T2V4X6Z8A",
+            "type": "string"
+          },
+          "mfaEnabled": {
+            "example": false,
+            "type": "boolean"
+          },
+          "mfaRequired": {
+            "example": false,
+            "type": "boolean"
+          },
+          "phone": {
+            "example": "13800000000",
+            "type": "string"
+          },
+          "roles": {
+            "example": [
+              "user"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "status": {
+            "example": "active",
+            "type": "string"
+          },
+          "tenantId": {
+            "example": "default",
+            "type": "string"
+          },
+          "updatedAt": {
+            "example": "2026-10-20T10:12:33Z",
+            "type": "string"
+          },
+          "username": {
+            "example": "zhangsan",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "dto.UserBrief": {
+        "properties": {
+          "displayName": {
+            "example": "张三",
+            "type": "string"
+          },
+          "id": {
+            "example": "01J9ZJ8Q2M4N6P8R0T2V4X6Z8A",
+            "type": "string"
+          },
+          "username": {
+            "example": "zhangsan",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "dto.UserDetail": {
+        "properties": {
+          "avatarUrl": {
+            "example": "https://cdn.example.com/avatar/zhangsan.png",
+            "type": "string"
+          },
+          "createdAt": {
+            "example": "2026-01-08T03:20:11Z",
+            "type": "string"
+          },
+          "deptId": {
+            "example": "01J9ZJ7A1B2C3D4E5F6G7H8J9K",
+            "type": "string"
+          },
+          "deptPath": {
+            "example": [
+              "研发中心",
+              "平台组"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "displayName": {
+            "example": "张三",
+            "type": "string"
+          },
+          "email": {
+            "example": "zhangsan@example.com",
+            "type": "string"
+          },
+          "id": {
+            "example": "01J9ZJ8Q2M4N6P8R0T2V4X6Z8A",
+            "type": "string"
+          },
+          "lastLoginAt": {
+            "example": "2026-10-20T10:12:33Z",
+            "type": "string"
+          },
+          "mfaEnabled": {
+            "example": false,
+            "type": "boolean"
+          },
+          "mfaRequired": {
+            "example": false,
+            "type": "boolean"
+          },
+          "phone": {
+            "example": "13800000000",
+            "type": "string"
+          },
+          "roles": {
+            "example": [
+              "user"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tenantId": {
+            "example": "default",
+            "type": "string"
+          },
+          "username": {
+            "example": "zhangsan",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "me.PasswordRequest": {
+        "properties": {
+          "newPassword": {
+            "example": "N3w!pass2026",
+            "maxLength": 128,
+            "minLength": 8,
+            "type": "string"
+          },
+          "oldPassword": {
+            "example": "S3cure!pass",
+            "maxLength": 128,
+            "minLength": 8,
+            "type": "string"
+          }
+        },
+        "required": [
+          "newPassword",
+          "oldPassword"
+        ],
+        "type": "object"
+      },
+      "response.Body": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "data": {},
+          "message": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "response.Page": {
+        "properties": {
+          "list": {},
+          "page": {
+            "type": "integer"
+          },
+          "pageSize": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "cookieAuth": {
+        "description": "登录成功后由服务端下发的会话 cookie",
+        "in": "cookie",
+        "name": "sid",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "contact": {},
+    "description": "企业统一身份提供方的管理接口。会话通过 HttpOnly cookie `sid` 携带；响应统一为 {code,message,data,traceId}。\n协议端点（/oauth2/*、/.well-known/*）不在本文档范围内，见 /.well-known/openid-configuration\n通用失败路径（不属任何单个端点，故统一记录在此）：未匹配的路由或方法返回 404 {\"code\":\"NOT_FOUND\",\"message\":\"资源不存在\",\"data\":null,\"traceId\":\"\u003cULID\u003e\"}；超出限流返回 429 {\"code\":\"RATE_LIMITED\",\"message\":\"请求过于频繁\",\"data\":null,\"traceId\":\"\u003cULID\u003e\"}——429 仅在 /auth/login 与 /auth/mfa/verify 上做端点级声明，其余端点虽受全局限流，但为避免逐条重复不再列出。\n/docs/* 属文档面，返回原始 HTML/JSON，不套统一响应；APP_ENV=prod 时该前缀不注册，响应与任意不存在路径完全一致。",
+    "title": "omino-sso 管理 API",
+    "version": "1.0"
+  },
+  "openapi": "3.0.3",
+  "paths": {
+    "/api/v1/admin/audit-logs": {
+      "get": {
+        "description": "按用户、应用、事件类型、结果与时间范围筛选认证审计事件，按时间倒序分页返回；detail 为 JSON 字符串快照，无附加信息时为 null。",
+        "parameters": [
+          {
+            "description": "页码，默认 1",
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "每页条数，默认 20，上限 100",
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "用户 ID",
+            "in": "query",
+            "name": "userId",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "应用标识",
+            "in": "query",
+            "name": "clientId",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "事件类型，如 login_success / login_failure / logout",
+            "in": "query",
+            "name": "eventType",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "结果",
+            "in": "query",
+            "name": "result",
+            "schema": {
+              "enum": [
+                "success",
+                "failure"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "起始时间，RFC3339 或 Unix 毫秒",
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "结束时间，RFC3339 或 Unix 毫秒",
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "allOf": [
+                            {
+                              "$ref": "#/components/schemas/response.Page"
+                            },
+                            {
+                              "properties": {
+                                "list": {
+                                  "items": {
+                                    "$ref": "#/components/schemas/dto.AuditItem"
+                                  },
+                                  "type": "array"
+                                },
+                                "page": {
+                                  "type": "integer"
+                                },
+                                "pageSize": {
+                                  "type": "integer"
+                                },
+                                "total": {
+                                  "format": "int64",
+                                  "type": "integer"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "分页查询审计日志",
+        "tags": [
+          "审计"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
+    "/api/v1/admin/clients": {
+      "get": {
+        "description": "按关键字分页返回已注册的 OAuth 客户端，含 redirectUris / grantTypes / scopes / postLogoutUris；不返回任何密钥。",
+        "parameters": [
+          {
+            "description": "页码，默认 1",
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "每页条数，默认 20，上限 100",
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "应用标识或名称关键字",
+            "in": "query",
+            "name": "keyword",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "allOf": [
+                            {
+                              "$ref": "#/components/schemas/response.Page"
+                            },
+                            {
+                              "properties": {
+                                "list": {
+                                  "items": {
+                                    "$ref": "#/components/schemas/dto.Client"
+                                  },
+                                  "type": "array"
+                                },
+                                "page": {
+                                  "type": "integer"
+                                },
+                                "pageSize": {
+                                  "type": "integer"
+                                },
+                                "total": {
+                                  "format": "int64",
+                                  "type": "integer"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "分页查询应用",
+        "tags": [
+          "应用管理"
+        ],
+        "x-auth-level": "admin"
+      },
+      "post": {
+        "description": "注册 OAuth 客户端并返回生成的 clientId。**clientSecret 仅此一次返回**（不落日志、不可再查，丢失只能轮换）；公开客户端（isPublic=true）的 clientSecret 恒为 null。写入 client_created 审计事件。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/admin.CreateClientRequest"
+              }
+            }
+          },
+          "description": "注册应用请求体",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.CreatedClient"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "注册成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "CLIENT_ALREADY_EXISTS"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "注册应用",
+        "tags": [
+          "应用管理"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
+    "/api/v1/admin/clients/{id}/secret": {
+      "post": {
+        "description": "生成新的 clientSecret 并立即替换旧密钥（旧密钥随即失效，无宽限期；请求体的 gracePeriodSeconds 当前被忽略）。新密钥仅本次返回，expiresAt 恒为 null；写入 client_secret_rotated 审计事件。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/admin.RotateSecretRequest"
+              }
+            }
+          },
+          "description": "轮换参数（gracePeriodSeconds 暂未生效）",
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.RotatedSecret"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "轮换成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "轮换应用密钥",
+        "tags": [
+          "应用管理"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
+    "/api/v1/admin/orgs/tree": {
+      "get": {
+        "description": "返回完整组织树（根节点为 parentId=null），每个节点的 userCount 为该部门及其子部门的用户数汇总。",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "items": {
+                            "$ref": "#/components/schemas/admin.OrgNode"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "查询组织架构树",
+        "tags": [
+          "组织架构"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
+    "/api/v1/admin/users": {
+      "get": {
+        "description": "按关键字、部门与状态筛选用户，返回分页结果；keyword 同时匹配 username 与 displayName。",
+        "parameters": [
+          {
+            "description": "页码，默认 1",
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "每页条数，默认 20，上限 100",
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "用户名或显示名关键字",
+            "in": "query",
+            "name": "keyword",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "部门 ID",
+            "in": "query",
+            "name": "deptId",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "状态",
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "enum": [
+                "active",
+                "disabled",
+                "locked"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "allOf": [
+                            {
+                              "$ref": "#/components/schemas/response.Page"
+                            },
+                            {
+                              "properties": {
+                                "list": {
+                                  "items": {
+                                    "$ref": "#/components/schemas/dto.UserAdmin"
+                                  },
+                                  "type": "array"
+                                },
+                                "page": {
+                                  "type": "integer"
+                                },
+                                "pageSize": {
+                                  "type": "integer"
+                                },
+                                "total": {
+                                  "format": "int64",
+                                  "type": "integer"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "分页查询用户",
+        "tags": [
+          "用户管理"
+        ],
+        "x-auth-level": "admin"
+      },
+      "post": {
+        "description": "写入用户并绑定组织与角色，同时写入 user_created 审计事件。username 与 email 全局唯一；密码按强度规则校验，弱密码返回 WEAK_PASSWORD；deptId 必须存在。sendNotify 本阶段恒不生效（不发通知）。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/admin.CreateUserRequest"
+              }
+            }
+          },
+          "description": "创建用户请求体",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.UserAdmin"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "创建成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED / WEAK_PASSWORD"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "USERNAME_ALREADY_EXISTS / EMAIL_ALREADY_EXISTS"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "创建用户",
+        "tags": [
+          "用户管理"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
+    "/api/v1/admin/users/{id}": {
+      "patch": {
+        "description": "局部更新用户资料、组织、状态、角色与 MFA 策略；未传的字段保持不变（指针语义），写入 user_updated 审计事件。",
+        "parameters": [
+          {
+            "description": "用户 ID（ULID）",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/admin.UpdateUserRequest"
+              }
+            }
+          },
+          "description": "更新用户请求体",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.UserAdmin"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "更新用户",
+        "tags": [
+          "用户管理"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "description": "校验账号密码。账号启用 MFA 时不下发会话，改返回 mfaTicket（300 秒内有效，需再调用 /auth/mfa/verify）；连续失败 5 次锁定 15 分钟。成功时通过 Set-Cookie 下发 HttpOnly 的 sid，响应体不含任何令牌。\n响应 data 有两种形状：需 MFA 时为 dto.LoginMfaChallenge（mfaRequired/mfaTicket/expiresIn），登录完成时为 dto.LoginResult（含 redirectTo 与 user）；文档只保留后者的 schema。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/auth.LoginRequest"
+              }
+            }
+          },
+          "description": "登录请求体",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.LoginResult"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "登录完成"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED / AUTH_CAPTCHA_INVALID"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "AUTH_INVALID_CREDENTIALS"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "AUTH_ACCOUNT_DISABLED"
+          },
+          "423": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "AUTH_ACCOUNT_LOCKED"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "RATE_LIMITED"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "summary": "账号密码登录",
+        "tags": [
+          "认证"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "description": "吊销服务端会话并清除 sid cookie，立即生效（幂等：会话已失效时仍返回成功），并写入 logout 审计事件。",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "已登出"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "登出",
+        "tags": [
+          "认证"
+        ]
+      }
+    },
+    "/api/v1/auth/mfa/verify": {
+      "post": {
+        "description": "消费 mfaTicket 并校验 6 位 TOTP 动态码。校验通过后创建会话并下发 sid cookie；ticket 一次性，重复使用返回 AUTH_MFA_TICKET_EXPIRED，校验失败写入 mfa_failure 审计事件。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/auth.MFAVerifyRequest"
+              }
+            }
+          },
+          "description": "MFA 校验请求体",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.MfaResult"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "登录完成"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED / AUTH_MFA_INVALID / AUTH_MFA_TICKET_EXPIRED"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "RATE_LIMITED"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "summary": "校验 TOTP 动态码",
+        "tags": [
+          "认证"
+        ]
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "description": "返回会话所属用户的完整资料，含部门路径、角色与 MFA 状态。",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.UserDetail"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "查询当前用户资料",
+        "tags": [
+          "我的"
+        ]
+      }
+    },
+    "/api/v1/me/apps": {
+      "get": {
+        "description": "返回该用户有权访问的应用清单；lastAccessAt 为该用户最近一次通过该应用登录的时间，从未访问为 null。",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "items": {
+                            "$ref": "#/components/schemas/dto.AppItem"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "查询我可访问的应用",
+        "tags": [
+          "我的"
+        ]
+      }
+    },
+    "/api/v1/me/password": {
+      "post": {
+        "description": "校验原密码后更新为新密码，成功后吊销该用户的全部会话并清除 sid cookie（需重新登录），同时写入 password_changed 审计事件。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/me.PasswordRequest"
+              }
+            }
+          },
+          "description": "改密请求体",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "已修改，需重新登录"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED / WEAK_PASSWORD"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED / AUTH_INVALID_CREDENTIALS"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "修改密码",
+        "tags": [
+          "我的"
+        ]
+      }
+    },
+    "/api/v1/me/sessions": {
+      "get": {
+        "description": "返回该用户全部有效会话；current 标识当前请求所用的会话，供\"退出其他设备\"场景使用。",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "items": {
+                            "$ref": "#/components/schemas/dto.SessionItem"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "查询登录设备列表",
+        "tags": [
+          "我的"
+        ]
+      }
+    },
+    "/api/v1/me/sessions/{sid}": {
+      "delete": {
+        "description": "吊销本人名下指定 sid 的服务端会话，立即失效；该 sid 不属于当前用户时按 NOT_FOUND 处理，不泄露是否存在。",
+        "parameters": [
+          {
+            "description": "会话标识",
+            "in": "path",
+            "name": "sid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "已撤销"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "撤销指定会话",
+        "tags": [
+          "我的"
+        ]
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "tags": [
+    {
+      "description": "登录、登出与 MFA 二次校验",
+      "name": "认证"
+    },
+    {
+      "description": "当前用户的资料、密码、可访问应用与登录设备",
+      "name": "我的"
+    },
+    {
+      "description": "管理端用户的查询、创建与更新",
+      "name": "用户管理"
+    },
+    {
+      "description": "组织树与各部门人数",
+      "name": "组织架构"
+    },
+    {
+      "description": "OAuth 客户端注册与密钥轮换",
+      "name": "应用管理"
+    },
+    {
+      "description": "认证审计日志检索",
+      "name": "审计"
+    }
+  ]
+}

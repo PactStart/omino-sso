@@ -1,14 +1,14 @@
 module github.com/omino/omino-sso
 
-go 1.24.1
+go 1.26.0
 
 require (
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-jose/go-jose/v4 v4.0.4
-	github.com/go-sql-driver/mysql v1.7.0
 	github.com/oklog/ulid/v2 v2.1.0
 	github.com/pquerna/otp v1.4.0
 	github.com/redis/go-redis/v9 v9.7.0
+	github.com/swaggo/files v1.0.1
 	github.com/zitadel/oidc/v3 v3.28.0
 	go.uber.org/fx v1.23.0
 	golang.org/x/crypto v0.31.0
@@ -33,6 +33,7 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.20.0 // indirect
+	github.com/go-sql-driver/mysql v1.7.0 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/gorilla/securecookie v1.1.2 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect

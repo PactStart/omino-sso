@@ -21,7 +21,7 @@
 
 | 层 | 组件 |
 |---|---|
-| 后端 | Go 1.24、gin v1.10.0（管理 API）、uber/fx v1.23.0、gorm v1.25.12、zitadel/oidc/v3 v3.28.0、go-jose/v4、argon2id、redis/go-redis/v9 |
+| 后端 | Go 1.26.0、gin v1.10.0（管理 API）、uber/fx v1.23.0、gorm v1.25.12、zitadel/oidc/v3 v3.28.0、go-jose/v4、argon2id、redis/go-redis/v9 |
 | 门户 | Vue 3.5.13 + Vite 6.3.5 + TS 5.7.2 + Pinia + vue-router + Tailwind CSS 4.1.0 |
 | 后台 | 同上组件基线 + Element Plus 2.9.1 |
 | 存储 | MySQL 8.4、Redis 7.4 |
@@ -39,7 +39,7 @@
 
 ## 环境要求
 
-- Go 1.24+
+- Go 1.26.0+
 - Node.js 20+ / npm 10+
 - Docker 27+ 与 Docker Compose v2（或自备 MySQL 8.4 + Redis 7.4）
 - `openssl`（生成开发签名密钥）、`mysql` 客户端（手动迁移时需要）
@@ -132,6 +132,22 @@ npm start                     # vite preview，:5173（同样代理 /api）
 
 `package.json` 脚本：`dev`（开发）、`build`（构建）、`start`（预览构建产物）、`typecheck`（仅类型检查）。
 
+### 接口文档（OpenAPI 3.0.3）
+
+文档由 handler 注解生成，产物 `internal/api/docs/openapi.json` 入库并随二进制内嵌：
+
+```bash
+make docs                     # swag(2.0) -> openapi3(转换) -> internal/api/docs/openapi.json
+make docs-check               # 校验已提交产物与注解是否一致，不一致则非零退出
+make docs-serve               # 生成后启动服务，回显文档地址
+```
+
+`make build` 会先执行 `docs-check`，因此文档腐化会直接让构建失败；改注解后必须重新 `make docs` 并与注解改动放在同一个提交里。
+
+流水线里可直接粘贴：`make docs-check`。
+
+文档入口：<http://127.0.0.1:8081/docs/>（仅 `APP_ENV != prod` 时提供，prod 下与不存在的路径表现完全一致）。
+
 ## 开发流程规范（Spec Kit）
 
 新功能一律走规格驱动流程（SDD）：**先写清「做什么/为什么」，再定技术方案，最后才写代码**。
@@ -162,6 +178,29 @@ npm start                     # vite preview，:5173（同样代理 /api）
 git switch main && git pull
 git switch -c 001-mfa-self-binding   # 与后续 spec 目录编号一致
 ```
+
+### 入口分流：先判断想法是否已成形
+
+`/speckit.specify` 的输入必须已是「做什么 / 为什么 / 不做什么」的清晰描述。想法还停留在「感觉该做个 X」时，先走评估链，别把探索成本带进 spec：
+
+| 想法状态 | 入口 | 产物 |
+|---|---|---|
+| 只是一个粗糙念头（一句话、一个链接、一个工单、某段代码） | `/speckit.assess.intake` → `.research` → `.define` → `.shape` → `.decide` | `.specify/assessments/<slug>/{intake,research,problem,concept,decision}.md` |
+| 已能写清用户是谁、痛点是什么、怎么算成功 | 直接 `/speckit.specify` | `specs/NNN-xxx/spec.md` |
+
+五个命令各管一件事，顺序不可随意调换（`shape` 读 `problem.md`，`decide` 读 `concept.md`）：
+
+| 命令 | 做什么 | 不做什么 |
+|---|---|---|
+| `/speckit.assess.intake` | 把原始想法（文本 / URL / 工单 / 代码位置）归一成 `intake.md` | 不做判断、不写需求 |
+| `/speckit.assess.research` | 收集用户、市场、先例与数据证据，支持或挑战该想法 | 不给方案、不排期 |
+| `/speckit.assess.define` | 界定问题：谁受影响、痛在哪、目标与非目标、成功指标 → `problem.md` | 不给解法 |
+| `/speckit.assess.shape` | 打磨方案候选：范围、投入、取舍 → `concept.md` | 不做实现设计（不出现库名 / 表名 / 接口） |
+| `/speckit.assess.decide` | 出裁决 `go` / `needs-clarification` / `kill` → `decision.md` | 不写 spec，`go` 时只交接摘要给 `/speckit.specify` |
+
+判定规则（来自扩展自身，不可绕过）：证据强度为 `weak` / `unknown` 时不得判 `go`；跳过 `shape` 直接 `decide`，`go` 会被降级为 `needs-clarification`。
+
+> **砍掉想法是这条链的正常产出，不是失败。** 评估的全部意义就是让不该做的事停在写代码之前；`decision.md` 里写清「为什么不做」比勉强开一个 feature 更有价值。
 
 ### 七步节奏
 
@@ -211,6 +250,7 @@ specs/001-mfa-self-binding/
 git add specs/001-mfa-self-binding/spec.md && git commit -m "spec: MFA 自助绑定需求"
 git add specs/001-mfa-self-binding/         && git commit -m "plan: MFA 自助绑定技术方案"
 # implement 之后按模块提交，提交前跑 make test / make build-web
+# 改了 handler 注解：先 make docs，再把 openapi.json 与注解改动放进同一个提交（make build 会执行 docs-check 拦截漂移）
 ```
 
 ### 三条铁律

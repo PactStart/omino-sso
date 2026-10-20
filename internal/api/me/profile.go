@@ -27,6 +27,17 @@ func NewHandler(users *service.UserService, sessions *service.SessionService, cl
 }
 
 // Profile GET /api/v1/me
+//
+// @Summary      查询当前用户资料
+// @Description  返回会话所属用户的完整资料，含部门路径、角色与 MFA 状态。
+// @Tags         我的
+// @Produce      json
+// @Security     cookieAuth
+// @Success      200  {object}  response.Body{data=dto.UserDetail}  "success"
+// @Failure      401  {object}  response.Body  "UNAUTHENTICATED"
+// @Failure      500  {object}  response.Body  "INTERNAL_ERROR"
+// @Failure      503  {object}  response.Body  "DEPENDENCY_UNAVAILABLE"
+// @Router       /me [get]
 func (h *Handler) Profile(c *gin.Context) {
 	u, ok := middleware.CurrentUser(c)
 	if !ok {
@@ -41,6 +52,17 @@ func (h *Handler) Profile(c *gin.Context) {
 }
 
 // Apps GET /api/v1/me/apps
+//
+// @Summary      查询我可访问的应用
+// @Description  返回该用户有权访问的应用清单；lastAccessAt 为该用户最近一次通过该应用登录的时间，从未访问为 null。
+// @Tags         我的
+// @Produce      json
+// @Security     cookieAuth
+// @Success      200  {object}  response.Body{data=[]dto.AppItem}  "success"
+// @Failure      401  {object}  response.Body  "UNAUTHENTICATED"
+// @Failure      500  {object}  response.Body  "INTERNAL_ERROR"
+// @Failure      503  {object}  response.Body  "DEPENDENCY_UNAVAILABLE"
+// @Router       /me/apps [get]
 func (h *Handler) Apps(c *gin.Context) {
 	u, ok := middleware.CurrentUser(c)
 	if !ok {
@@ -53,15 +75,15 @@ func (h *Handler) Apps(c *gin.Context) {
 		response.Fail(c, response.ErrInternal)
 		return
 	}
-	list := make([]gin.H, 0, len(items))
+	list := make([]dto.AppItem, 0, len(items))
 	for _, it := range items {
-		list = append(list, gin.H{
-			"clientId":     it.ClientID,
-			"name":         it.Name,
-			"description":  it.Description,
-			"logoUrl":      it.LogoURL,
-			"homeUrl":      it.HomeURL,
-			"lastAccessAt": dto.TimePtr(it.LastAccessAt),
+		list = append(list, dto.AppItem{
+			ClientID:     it.ClientID,
+			Name:         it.Name,
+			Description:  it.Description,
+			LogoURL:      it.LogoURL,
+			HomeURL:      it.HomeURL,
+			LastAccessAt: dto.TimePtr(it.LastAccessAt),
 		})
 	}
 	response.Success(c, list)
@@ -69,11 +91,25 @@ func (h *Handler) Apps(c *gin.Context) {
 
 // PasswordRequest POST /api/v1/me/password
 type PasswordRequest struct {
-	OldPassword string `json:"oldPassword" binding:"required,min=8,max=128"`
-	NewPassword string `json:"newPassword" binding:"required,min=8,max=128"`
+	OldPassword string `json:"oldPassword" binding:"required,min=8,max=128" example:"S3cure!pass"`
+	NewPassword string `json:"newPassword" binding:"required,min=8,max=128" example:"N3w!pass2026"`
 }
 
 // ChangePassword 修改密码，成功后吊销全部会话。
+//
+// @Summary      修改密码
+// @Description  校验原密码后更新为新密码，成功后吊销该用户的全部会话并清除 sid cookie（需重新登录），同时写入 password_changed 审计事件。
+// @Tags         我的
+// @Accept       json
+// @Produce      json
+// @Security     cookieAuth
+// @Param        body  body  PasswordRequest  true  "改密请求体"
+// @Success      200   {object}  response.Body  "已修改，需重新登录"
+// @Failure      400   {object}  response.Body  "VALIDATION_FAILED / WEAK_PASSWORD"
+// @Failure      401   {object}  response.Body  "UNAUTHENTICATED / AUTH_INVALID_CREDENTIALS"
+// @Failure      500   {object}  response.Body  "INTERNAL_ERROR"
+// @Failure      503   {object}  response.Body  "DEPENDENCY_UNAVAILABLE"
+// @Router       /me/password [post]
 func (h *Handler) ChangePassword(c *gin.Context) {
 	u, ok := middleware.CurrentUser(c)
 	if !ok {
@@ -111,6 +147,17 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 }
 
 // Sessions GET /api/v1/me/sessions
+//
+// @Summary      查询登录设备列表
+// @Description  返回该用户全部有效会话；current 标识当前请求所用的会话，供"退出其他设备"场景使用。
+// @Tags         我的
+// @Produce      json
+// @Security     cookieAuth
+// @Success      200  {object}  response.Body{data=[]dto.SessionItem}  "success"
+// @Failure      401  {object}  response.Body  "UNAUTHENTICATED"
+// @Failure      500  {object}  response.Body  "INTERNAL_ERROR"
+// @Failure      503  {object}  response.Body  "DEPENDENCY_UNAVAILABLE"
+// @Router       /me/sessions [get]
 func (h *Handler) Sessions(c *gin.Context) {
 	u, ok := middleware.CurrentUser(c)
 	if !ok {
@@ -124,22 +171,35 @@ func (h *Handler) Sessions(c *gin.Context) {
 		response.Fail(c, response.ErrInternal)
 		return
 	}
-	out := make([]gin.H, 0, len(list))
+	out := make([]dto.SessionItem, 0, len(list))
 	for i := range list {
 		s := list[i]
-		out = append(out, gin.H{
-			"sid":        s.SID,
-			"ip":         s.IP,
-			"userAgent":  s.UserAgent,
-			"createdAt":  dto.Time(s.CreatedAt),
-			"lastSeenAt": dto.Time(s.LastSeenAt),
-			"current":    cur != nil && cur.SID == s.SID,
+		out = append(out, dto.SessionItem{
+			SID:        s.SID,
+			IP:         s.IP,
+			UserAgent:  s.UserAgent,
+			CreatedAt:  dto.Time(s.CreatedAt),
+			LastSeenAt: dto.Time(s.LastSeenAt),
+			Current:    cur != nil && cur.SID == s.SID,
 		})
 	}
 	response.Success(c, out)
 }
 
 // RevokeSession DELETE /api/v1/me/sessions/:sid
+//
+// @Summary      撤销指定会话
+// @Description  吊销本人名下指定 sid 的服务端会话，立即失效；该 sid 不属于当前用户时按 NOT_FOUND 处理，不泄露是否存在。
+// @Tags         我的
+// @Produce      json
+// @Security     cookieAuth
+// @Param        sid   path  string  true  "会话标识"
+// @Success      200   {object}  response.Body  "已撤销"
+// @Failure      401   {object}  response.Body  "UNAUTHENTICATED"
+// @Failure      404   {object}  response.Body  "NOT_FOUND"
+// @Failure      500   {object}  response.Body  "INTERNAL_ERROR"
+// @Failure      503   {object}  response.Body  "DEPENDENCY_UNAVAILABLE"
+// @Router       /me/sessions/{sid} [delete]
 func (h *Handler) RevokeSession(c *gin.Context) {
 	u, ok := middleware.CurrentUser(c)
 	if !ok {

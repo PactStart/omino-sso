@@ -31,6 +31,25 @@ func NewHandler(st *store.Store, users *service.UserService, clients *service.Cl
 }
 
 // ListUsers GET /api/v1/admin/users
+//
+// @Summary      分页查询用户
+// @Description  按关键字、部门与状态筛选用户，返回分页结果；keyword 同时匹配 username 与 displayName。
+// @Tags         用户管理
+// @Produce      json
+// @Security     cookieAuth
+// @Param        page      query  int     false  "页码，默认 1"
+// @Param        pageSize  query  int     false  "每页条数，默认 20，上限 100"
+// @Param        keyword   query  string  false  "用户名或显示名关键字"
+// @Param        deptId    query  string  false  "部门 ID"
+// @Param        status    query  string  false  "状态"  Enums(active, disabled, locked)
+// @Success      200       {object}  response.Body{data=response.Page{list=[]dto.UserAdmin,total=int64,page=int,pageSize=int}}  "success"
+// @Failure      400       {object}  response.Body  "VALIDATION_FAILED"
+// @Failure      401       {object}  response.Body  "UNAUTHENTICATED"
+// @Failure      403       {object}  response.Body  "FORBIDDEN"
+// @Failure      500       {object}  response.Body  "INTERNAL_ERROR"
+// @Failure      503       {object}  response.Body  "DEPENDENCY_UNAVAILABLE"
+// @x-auth-level  "admin"
+// @Router       /admin/users [get]
 func (h *Handler) ListUsers(c *gin.Context) {
 	page, pageSize, err := pagination(c)
 	if err != nil {
@@ -73,19 +92,36 @@ func (h *Handler) ListUsers(c *gin.Context) {
 
 // CreateUserRequest 规范 §4.4 请求体。
 type CreateUserRequest struct {
-	Username    string   `json:"username" binding:"required,min=3,max=64"`
-	DisplayName string   `json:"displayName" binding:"required,min=1,max=64"`
-	Email       string   `json:"email" binding:"omitempty,email,max=128"`
-	Phone       string   `json:"phone" binding:"omitempty,max=20"`
-	Password    string   `json:"password" binding:"required,min=8,max=128"`
-	DeptID      string   `json:"deptId" binding:"required,len=26"`
-	TenantID    string   `json:"tenantId"`
-	RoleIDs     []string `json:"roleIds"`
-	MFARequired bool     `json:"mfaRequired"`
-	SendNotify  bool     `json:"sendNotify"`
+	Username    string   `json:"username" binding:"required,min=3,max=64" example:"lisi"`
+	DisplayName string   `json:"displayName" binding:"required,min=1,max=64" example:"李四"`
+	Email       string   `json:"email" binding:"omitempty,email,max=128" example:"lisi@example.com"`
+	Phone       string   `json:"phone" binding:"omitempty,max=20" example:"13900000000"`
+	Password    string   `json:"password" binding:"required,min=8,max=128" example:"Init!pass2026"`
+	DeptID      string   `json:"deptId" binding:"required,len=26" example:"01J9ZJ7A1B2C3D4E5F6G7H8J9K"`
+	TenantID    string   `json:"tenantId" example:"default"`
+	RoleIDs     []string `json:"roleIds" example:"user"`
+	MFARequired bool     `json:"mfaRequired" example:"false"`
+	SendNotify  bool     `json:"sendNotify" example:"false"`
 }
 
 // CreateUser POST /api/v1/admin/users
+//
+// @Summary      创建用户
+// @Description  写入用户并绑定组织与角色，同时写入 user_created 审计事件。username 与 email 全局唯一；密码按强度规则校验，弱密码返回 WEAK_PASSWORD；deptId 必须存在。sendNotify 本阶段恒不生效（不发通知）。
+// @Tags         用户管理
+// @Accept       json
+// @Produce      json
+// @Security     cookieAuth
+// @Param        body  body  CreateUserRequest  true  "创建用户请求体"
+// @Success      201   {object}  response.Body{data=dto.UserAdmin}  "创建成功"
+// @Failure      400   {object}  response.Body  "VALIDATION_FAILED / WEAK_PASSWORD"
+// @Failure      401   {object}  response.Body  "UNAUTHENTICATED"
+// @Failure      403   {object}  response.Body  "FORBIDDEN"
+// @Failure      409   {object}  response.Body  "USERNAME_ALREADY_EXISTS / EMAIL_ALREADY_EXISTS"
+// @Failure      500   {object}  response.Body  "INTERNAL_ERROR"
+// @Failure      503   {object}  response.Body  "DEPENDENCY_UNAVAILABLE"
+// @x-auth-level  "admin"
+// @Router       /admin/users [post]
 func (h *Handler) CreateUser(c *gin.Context) {
 	var req CreateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -128,16 +164,34 @@ func (h *Handler) CreateUser(c *gin.Context) {
 
 // UpdateUserRequest PATCH /api/v1/admin/users/:id
 type UpdateUserRequest struct {
-	DisplayName *string   `json:"displayName"`
-	Email       *string   `json:"email"`
-	Phone       *string   `json:"phone"`
-	DeptID      *string   `json:"deptId"`
-	Status      *string   `json:"status"`
-	MFARequired *bool     `json:"mfaRequired"`
-	RoleIDs     *[]string `json:"roleIds"`
+	DisplayName *string   `json:"displayName" example:"李四"`
+	Email       *string   `json:"email" example:"lisi@example.com"`
+	Phone       *string   `json:"phone" example:"13900000000"`
+	DeptID      *string   `json:"deptId" example:"01J9ZJ7A1B2C3D4E5F6G7H8J9K"`
+	Status      *string   `json:"status" example:"active"`
+	MFARequired *bool     `json:"mfaRequired" example:"false"`
+	RoleIDs     *[]string `json:"roleIds" example:"user"`
 }
 
 // UpdateUser 更新用户。
+//
+// @Summary      更新用户
+// @Description  局部更新用户资料、组织、状态、角色与 MFA 策略；未传的字段保持不变（指针语义），写入 user_updated 审计事件。
+// @Tags         用户管理
+// @Accept       json
+// @Produce      json
+// @Security     cookieAuth
+// @Param        id    path  string  true  "用户 ID（ULID）"
+// @Param        body  body  UpdateUserRequest  true  "更新用户请求体"
+// @Success      200   {object}  response.Body{data=dto.UserAdmin}  "success"
+// @Failure      400   {object}  response.Body  "VALIDATION_FAILED"
+// @Failure      401   {object}  response.Body  "UNAUTHENTICATED"
+// @Failure      403   {object}  response.Body  "FORBIDDEN"
+// @Failure      404   {object}  response.Body  "NOT_FOUND"
+// @Failure      500   {object}  response.Body  "INTERNAL_ERROR"
+// @Failure      503   {object}  response.Body  "DEPENDENCY_UNAVAILABLE"
+// @x-auth-level  "admin"
+// @Router       /admin/users/{id} [patch]
 func (h *Handler) UpdateUser(c *gin.Context) {
 	var req UpdateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -195,6 +249,19 @@ type OrgNode struct {
 }
 
 // OrgTree GET /api/v1/admin/orgs/tree
+//
+// @Summary      查询组织架构树
+// @Description  返回完整组织树（根节点为 parentId=null），每个节点的 userCount 为该部门及其子部门的用户数汇总。
+// @Tags         组织架构
+// @Produce      json
+// @Security     cookieAuth
+// @Success      200  {object}  response.Body{data=[]OrgNode}  "success"
+// @Failure      401  {object}  response.Body  "UNAUTHENTICATED"
+// @Failure      403  {object}  response.Body  "FORBIDDEN"
+// @Failure      500  {object}  response.Body  "INTERNAL_ERROR"
+// @Failure      503  {object}  response.Body  "DEPENDENCY_UNAVAILABLE"
+// @x-auth-level  "admin"
+// @Router       /admin/orgs/tree [get]
 func (h *Handler) OrgTree(c *gin.Context) {
 	orgs, err := h.st.ListOrganizations(c.Request.Context(), "")
 	if err != nil {

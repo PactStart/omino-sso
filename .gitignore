@@ -3,6 +3,9 @@
 configs/*.pem
 bin/
 
+# 文档生成中间产物（swag 的 Swagger 2.0 输出）
+.tmp/
+
 # 前端
 web/*/node_modules/
 web/*/dist/
