@@ -58,13 +58,24 @@ docs-serve: docs
 test:
 	$(GO) test ./...
 
+# lint 是宪法要求的交付检查（「开发工作流与质量门禁」第 1 条），必须能真正失败：
+# 不允许 `|| true` 吞掉问题，也不允许工具缺失时静默通过。
+GOLANGCI ?= golangci-lint
 lint:
-	golangci-lint run ./... || true
+	@command -v $(GOLANGCI) >/dev/null 2>&1 || { \
+		echo "golangci-lint 未安装，无法执行 lint 门禁。安装："; \
+		echo "  go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
+		exit 1; \
+	}
+	$(GOLANGCI) run ./...
 
 # 两个前端产物 -> web/dist/portal、web/dist/admin
+# NPM_INSTALL 可覆盖：流水线保持 `npm ci`（锁文件一致性），本机 npm 的批量删除保护
+# 可能让 `npm ci` 以 SAFE_DELETE_BULK_CONFIRM_REQUIRED 中止，此时用 `make build-web NPM_INSTALL=npm install`。
+NPM_INSTALL ?= npm ci
 build-web:
-	cd web/portal && npm ci && npm run build
-	cd web/admin && npm ci && npm run build
+	cd web/portal && $(NPM_INSTALL) && npm run build
+	cd web/admin && $(NPM_INSTALL) && npm run build
 	@mkdir -p web/dist
 	@rm -rf web/dist/portal web/dist/admin
 	@cp -r web/portal/dist web/dist/portal
