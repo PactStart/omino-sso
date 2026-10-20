@@ -1,0 +1,7 @@
+# Deliberate omissions from the CI template, audited by /speckit.gates.doctor.
+# Format: one `ci:<step>` per line; steps are gates | canary | pr.
+#
+# canary: the canary suite fails while the agent boundary (.claude/hooks/gates/*) is not
+# projected — this project's harness is CodeBuddy, so those canaries can only skip.
+# The gates step itself still proves the pipeline blocks (verify.sh exit 2 on failure).
+ci:canary
