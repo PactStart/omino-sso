@@ -22,10 +22,11 @@
 
 | 层 | 组件 |
 |---|---|
-| 后端 | Go 1.26.0、gin v1.10.0（管理 API）、uber/fx v1.23.0、gorm v1.25.12、zitadel/oidc/v3 v3.28.0、go-jose/v4、argon2id、redis/go-redis/v9 |
-| 门户 | Vue 3.5.13 + Vite 6.3.5 + TS 5.7.2 + Pinia + vue-router + Tailwind CSS 4.1.0 |
-| 后台 | 同上组件基线 + Element Plus 2.9.1 |
-| 存储 | MySQL 8.4、Redis 7.4 |
+| 语言 / 框架 | Go 1.26.0、gin 1.10.0（管理 API）、uber/fx 1.23.0、gorm 1.25.12 |
+| 身份协议 | zitadel/oidc/v3 3.28.0、go-jose/v4、argon2id、pquerna/otp |
+| 存储 | MySQL 8.4、Redis 7.4（go-redis/v9） |
+| 门户前端 | Vue 3.5.13、Vite 6.3.5、TS 5.7.2、Pinia、vue-router、Tailwind 4.1.0 |
+| 后台前端 | 同门户基线 + Element Plus 2.9.1 |
 
 ## 3. 端口与路径
 
@@ -157,9 +158,9 @@ make docs-serve               # 生成后启动服务，回显文档地址
 
 | 档位 | 判定 | 流程 |
 |---|---|---|
-| **L0 直改** | 不碰契约、无第二个消费方、单文件、< 1 天 | 直接改 → `make build && make test && make lint` → 提交 |
-| **L1 轻量** | 1–3 天，边界能一句话说清 | `spec.md` 一页 + 手写 5–8 条 `tasks.md` → implement → converge |
-| **L2 全套** | 触及对外契约 / 多方协作 / > 3 天 | 七步：specify → clarify → plan → tasks → analyze → implement → converge |
+| **L0 直改** | 不碰契约、无第二消费方、单文件、< 1 天 | 直接改 → 门禁三条命令 → 提交 |
+| **L1 轻量** | 1–3 天，边界一句话能说清 | 一页 spec + 手写 tasks → implement → converge |
+| **L2 全套** | 触及对外契约 / 多方协作 / > 3 天 | 规范 §4 的完整七步 |
 
 完整说明（判档反例、七步细节、入口分流、轻量化原则、质量门禁、文档分工）见
 **[`开发流程规范.md`](./开发流程规范.md)**。
