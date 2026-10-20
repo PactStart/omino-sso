@@ -167,7 +167,7 @@ hooks:
   - extension: api-evolve
     command: speckit.api-evolve.baseline
     enabled: true
-    optional: true
+    optional: false
     priority: 10
     prompt: Execute speckit.api-evolve.baseline?
     description: Capture contract baseline before plan-driven changes

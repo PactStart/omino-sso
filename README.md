@@ -179,6 +179,29 @@ git switch main && git pull
 git switch -c 001-mfa-self-binding   # 与后续 spec 目录编号一致
 ```
 
+### 入口分流：先判断想法是否已成形
+
+`/speckit.specify` 的输入必须已是「做什么 / 为什么 / 不做什么」的清晰描述。想法还停留在「感觉该做个 X」时，先走评估链，别把探索成本带进 spec：
+
+| 想法状态 | 入口 | 产物 |
+|---|---|---|
+| 只是一个粗糙念头（一句话、一个链接、一个工单、某段代码） | `/speckit.assess.intake` → `.research` → `.define` → `.shape` → `.decide` | `.specify/assessments/<slug>/{intake,research,problem,concept,decision}.md` |
+| 已能写清用户是谁、痛点是什么、怎么算成功 | 直接 `/speckit.specify` | `specs/NNN-xxx/spec.md` |
+
+五个命令各管一件事，顺序不可随意调换（`shape` 读 `problem.md`，`decide` 读 `concept.md`）：
+
+| 命令 | 做什么 | 不做什么 |
+|---|---|---|
+| `/speckit.assess.intake` | 把原始想法（文本 / URL / 工单 / 代码位置）归一成 `intake.md` | 不做判断、不写需求 |
+| `/speckit.assess.research` | 收集用户、市场、先例与数据证据，支持或挑战该想法 | 不给方案、不排期 |
+| `/speckit.assess.define` | 界定问题：谁受影响、痛在哪、目标与非目标、成功指标 → `problem.md` | 不给解法 |
+| `/speckit.assess.shape` | 打磨方案候选：范围、投入、取舍 → `concept.md` | 不做实现设计（不出现库名 / 表名 / 接口） |
+| `/speckit.assess.decide` | 出裁决 `go` / `needs-clarification` / `kill` → `decision.md` | 不写 spec，`go` 时只交接摘要给 `/speckit.specify` |
+
+判定规则（来自扩展自身，不可绕过）：证据强度为 `weak` / `unknown` 时不得判 `go`；跳过 `shape` 直接 `decide`，`go` 会被降级为 `needs-clarification`。
+
+> **砍掉想法是这条链的正常产出，不是失败。** 评估的全部意义就是让不该做的事停在写代码之前；`decision.md` 里写清「为什么不做」比勉强开一个 feature 更有价值。
+
 ### 七步节奏
 
 一条命令一步，**每步产物 review 通过后再敲下一条**，禁止连发。
