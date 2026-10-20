@@ -167,4 +167,5 @@ internal/api/docs/openapi.json   (OpenAPI 3.0.3，入库)
 | 已登记错误码 | 17 | `errors.go` |
 | 产物体积估计 | 30–80 KB | 16 端点 × (参数 + 示例 + 错误) |
 | 生成耗时目标 | ≤ 30s | SC-005 |
-| **二进制体积增量** | 预计 +3~5 MB（待实测） | `swaggo/files` 内嵌 swagger-ui 资源；由 `quickstart.md` 场景 3 实测后回写本行（critique E6） |
+| 产物体积实测 | 66,550 B（65 KB） | `internal/api/docs/openapi.json`（16 端点 + 22 个 schema） |
+| **二进制体积增量** | **实测 +8.57 MB**（30,268,880 → 39,255,088 B，macOS/amd64，`-X` 版本注入） | `swaggo/files v1.0.1` 内嵌整套 swagger-ui 资源；增量超出预估的 +3~5 MB，主因是该版本同时内嵌了 4 份 bundle 与 4 份 `.map`（仅 `swagger-ui-bundle.js.map` 就 6.0 MB、`swagger-ui-es-bundle.js.map` 6.0 MB、`-core.js.map` 4.9 MB）。**可优化但不在本特性内**：升级 `swaggo/files` 或改为只嵌入 `swagger-ui.css`/`swagger-ui-bundle.js`/`standalone-preset` 三件套可省约 4 MB，属独立议题（E6） |

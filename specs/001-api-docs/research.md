@@ -120,7 +120,7 @@ Technical Context 中不存在 `NEEDS CLARIFICATION` 标记（本特性的技术
 
 | 项 | 状态 | 处理 |
 |---|---|---|
-| `openapi2conv` 对 `x-` 扩展与 `example` 的保真度 | 需实施时验证 | 若字段级 `example` 在转换中丢失，改用 `@Success ... Example` 行内示例（swag 行内 example 语法转换后仍保留在 response 对象上）；验证点写入 T010 的验收项 |
+| `openapi2conv` 对 `x-` 扩展与 `example` 的保真度 | **已验证（2026-10-20）——均保留** | 字段级 `example` tag 完整存活：`dto.UserBrief.id = 01J9ZJ8Q2M4N6P8R0T2V4X6Z8A`、`dto.AppItem.name = 统一门户`、`admin.CreateUserRequest.username = lisi`、`auth.LoginRequest.password = S3cure!pass`（占位串）；`@x-auth-level` 存活为 `x-auth-level: admin`；`securityDefinitions` → `components.securitySchemes.cookieAuth` 正常。**无需**改用行内 `Example`。**另有一处转换缺口（已修）**：`servers` 被固定为 `/` 后 `basePath:/api/v1` 会丢失，导致文档 path 少前缀、Try it out 全 404；`tools/openapi3.foldBasePath` 现已把 basePath 折进 path 并有回归测试 |
 | `response.Body.Data` 为 `any` 类型 | 已知限制 | 注解使用 swag 的组合语法 `{object} response.Body{data=dto.User}` 逐接口指定内层类型；若某接口的 `data` 为数组，使用 `{array} response.Body{data=[]dto.App}` 形式 |
 | 文档页 Try it out 的同源限制 | 已记录（`requirements.md` Notes） | 本次不引入 CORS；文档页与业务接口同源，`make docs-serve` 的说明中明示 |
 | **swagger-ui 是否携带 `sid` cookie** | **已确认携带**（2026-10-20 人工验证，critique X1 / T001 关闭） | 验证方式：`APP_ENV=dev make dev` 后浏览器完成 `POST /api/v1/auth/login`，确认响应下发 `Set-Cookie: sid=...`，且后续同源请求的请求头携带 `Cookie: sid=...`。结论：US1 的「Try it out 闭环」成立，SC-002 无需下调，不需要引入 `requestInterceptor`。**残余验证点**：结论基于浏览器同源默认行为；待 T007/T008 交付真实 `/docs/` 页面后，需用文档页本身再复核一次（`quickstart.md` 场景 4），届时若出现 401 再回看本行 |

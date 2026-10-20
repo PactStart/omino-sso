@@ -24,6 +24,22 @@ make keys && make migrate-up
 
 ---
 
+## 执行记录（2026-10-20）
+
+| 场景 | 结果 | 实测要点 / 与环境相关的偏差 |
+|---|---|---|
+| 0 | ✅ 携带 | 见下方说明（沿用 T001 结论） |
+| 1 | ✅ | `make docs` 0.84s（目标 ≤30s）；`openapi=3.0.3`、16 个 operation；`GOPROXY=off make docs` 退出码 0 |
+| 2 | ✅ | 两次生成 sha256 一致；`docs-check` 退出码 0；把一处 `@Summary` 改掉后退出码非零并输出 `POST /api/v1/auth/mfa/verify: summary changed` |
+| 3 | ⚠️ 部分 | `make build` ✅、`go test ./...` ✅、`make lint` ✅（本机原先未装 `golangci-lint`，已 `go install` v1.64.8，主模块与 `tools/` 均 0 issue）；**`make build-web` 未能整条跑通**——本环境的 npm 11.19 有批量删除保护，`npm ci` 报 `SAFE_DELETE_BULK_CONFIRM_REQUIRED` 并中止（`--force` 亦无效）。改以 `npm run build` 直接构建两个前端：admin、portal 均成功（portal 的 `node_modules` 因此前中断的 `npm ci` 缺包，已用 `npm install` 修复） |
+| 4 | ✅ | curl 断言通过；**真实 Chrome（headless + CDP）**打开 `/docs/`：渲染出标题 `omino-sso 管理 API <version> OAS3`、16 个 `opblock`、6 个分组；页面内 `fetch(credentials:'include')` 依次完成 `login(200, mfaRequired=false)` → `GET /api/v1/me(200, admin)` → `GET /api/v1/admin/orgs/tree(200)` → `POST /api/v1/admin/users(201)` → `GET /api/v1/admin/users?keyword=…(200, total=1)`，随后把验收用户 `PATCH` 为 `disabled` 清理；网络采集 15 个请求，**外部域 0 个**（全为 `127.0.0.1:8081`）。`docker stop omino-sso-redis` 后 `docs=200`、`spec=200`、业务登录仍返回 400（限流 fail-open） |
+| 5 | ⏭️ 跳过 | 按用户决定不执行 prod 冒烟；prod 隔离已由 `internal/api/router_test.go` 的 CT-4/CT-5 单测覆盖 |
+| 6 | ✅ | `README.md` 含 `make docs` / `make docs-check` / `make docs-serve`、可粘贴到 CI 的 `make docs-check` 与文档入口地址 |
+
+> 遗留提醒：场景 4 会在库里留下一个 `docsck######`、状态 `disabled` 的验收用户（接口无删除能力），如需清理可直接 `DELETE FROM users WHERE username LIKE 'docsck%'`。
+
+---
+
 ## 场景 0：前置 spike —— Try it out 是否真的携带会话 Cookie（写代码之前做）
 
 > **已执行（2026-10-20）**：结论为**携带**（登录下发 `Set-Cookie: sid=...`，同源后续请求带上 `Cookie: sid=...`），US1 的 Try it out 闭环成立，SC-002 无需下调。详见 `research.md` 风险登记。
@@ -78,8 +94,8 @@ GOPROXY=off make docs; echo "exit=$?"
 ## 场景 2：幂等性与漂移校验（SC-003 / INV-2）
 
 ```bash
-make docs && md5sum internal/api/docs/openapi.json    # 记录哈希 H1
-make docs && md5sum internal/api/docs/openapi.json    # 记录哈希 H2
+make docs && shasum -a 256 internal/api/docs/openapi.json    # 记录哈希 H1（macOS 无 md5sum）
+make docs && shasum -a 256 internal/api/docs/openapi.json    # 记录哈希 H2
 make docs-check; echo "exit=$?"
 ```
 
