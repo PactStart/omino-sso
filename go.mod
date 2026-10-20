@@ -8,6 +8,7 @@ require (
 	github.com/oklog/ulid/v2 v2.1.0
 	github.com/pquerna/otp v1.4.0
 	github.com/redis/go-redis/v9 v9.7.0
+	github.com/swaggo/files v1.0.1
 	github.com/zitadel/oidc/v3 v3.28.0
 	go.uber.org/fx v1.23.0
 	golang.org/x/crypto v0.31.0

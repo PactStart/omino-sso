@@ -8,6 +8,7 @@ import (
 
 	"github.com/omino/omino-sso/internal/api/admin"
 	"github.com/omino/omino-sso/internal/api/auth"
+	"github.com/omino/omino-sso/internal/api/docs"
 	"github.com/omino/omino-sso/internal/api/me"
 	"github.com/omino/omino-sso/internal/api/middleware"
 	"github.com/omino/omino-sso/internal/api/response"
@@ -40,6 +41,13 @@ func NewRouter(
 	authH := auth.NewHandler(cfg, users, sessions, audit, logger)
 	meH := me.NewHandler(users, sessions, clients, audit, logger)
 	adminH := admin.NewHandler(st, users, clients, audit, logger)
+
+	// 接口文档（规范 §4.0）：仅非 prod 注册，且不套统一响应、不挂限流。
+	// prod 下该分支不执行，请求落入 NoRoute，响应与任意不存在路径完全一致。
+	// 环境判定只此一处（FR-017）。
+	if cfg.AppEnv != "prod" {
+		r.GET(docs.RoutePrefix+"/*any", docs.Handler(cfg.AppEnv))
+	}
 
 	v1 := r.Group("/api/v1")
 

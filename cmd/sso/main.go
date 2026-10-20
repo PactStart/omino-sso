@@ -1,3 +1,12 @@
+// @title           omino-sso 管理 API
+// @version         1.0
+// @description     企业统一身份提供方的管理接口。会话通过 HttpOnly cookie `sid` 携带；响应统一为 {code,message,data,traceId}。
+// @description     协议端点（/oauth2/*、/.well-known/*）不在本文档范围内，见 /.well-known/openid-configuration
+// @BasePath        /api/v1
+// @securityDefinitions.apikey cookieAuth
+// @in              cookie
+// @name            sid
+// @description     登录成功后由服务端下发的会话 cookie
 package main
 
 import (

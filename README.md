@@ -132,6 +132,22 @@ npm start                     # vite preview，:5173（同样代理 /api）
 
 `package.json` 脚本：`dev`（开发）、`build`（构建）、`start`（预览构建产物）、`typecheck`（仅类型检查）。
 
+### 接口文档（OpenAPI 3.0.3）
+
+文档由 handler 注解生成，产物 `internal/api/docs/openapi.json` 入库并随二进制内嵌：
+
+```bash
+make docs                     # swag(2.0) -> openapi3(转换) -> internal/api/docs/openapi.json
+make docs-check               # 校验已提交产物与注解是否一致，不一致则非零退出
+make docs-serve               # 生成后启动服务，回显文档地址
+```
+
+`make build` 会先执行 `docs-check`，因此文档腐化会直接让构建失败；改注解后必须重新 `make docs` 并与注解改动放在同一个提交里。
+
+流水线里可直接粘贴：`make docs-check`。
+
+文档入口：<http://127.0.0.1:8081/docs/>（仅 `APP_ENV != prod` 时提供，prod 下与不存在的路径表现完全一致）。
+
 ## 开发流程规范（Spec Kit）
 
 新功能一律走规格驱动流程（SDD）：**先写清「做什么/为什么」，再定技术方案，最后才写代码**。
@@ -211,6 +227,7 @@ specs/001-mfa-self-binding/
 git add specs/001-mfa-self-binding/spec.md && git commit -m "spec: MFA 自助绑定需求"
 git add specs/001-mfa-self-binding/         && git commit -m "plan: MFA 自助绑定技术方案"
 # implement 之后按模块提交，提交前跑 make test / make build-web
+# 改了 handler 注解：先 make docs，再把 openapi.json 与注解改动放进同一个提交（make build 会执行 docs-check 拦截漂移）
 ```
 
 ### 三条铁律

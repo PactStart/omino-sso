@@ -25,44 +25,44 @@ func TimePtr(ms *int64) *string {
 
 // UserBrief 用户摘要。
 type UserBrief struct {
-	ID          string `json:"id"`
-	Username    string `json:"username"`
-	DisplayName string `json:"displayName"`
+	ID          string `json:"id" example:"01J9ZJ8Q2M4N6P8R0T2V4X6Z8A"`
+	Username    string `json:"username" example:"zhangsan"`
+	DisplayName string `json:"displayName" example:"张三"`
 }
 
 // UserDetail 用户详情（规范 §4.5）。
 type UserDetail struct {
-	ID          string   `json:"id"`
-	Username    string   `json:"username"`
-	DisplayName string   `json:"displayName"`
-	Email       *string  `json:"email"`
-	Phone       *string  `json:"phone"`
-	AvatarURL   *string  `json:"avatarUrl"`
-	DeptID      string   `json:"deptId"`
-	DeptPath    []string `json:"deptPath"`
-	TenantID    string   `json:"tenantId"`
-	Roles       []string `json:"roles"`
-	MFAEnabled  bool     `json:"mfaEnabled"`
-	MFARequired bool     `json:"mfaRequired"`
-	LastLoginAt *string  `json:"lastLoginAt"`
-	CreatedAt   string   `json:"createdAt"`
+	ID          string   `json:"id" example:"01J9ZJ8Q2M4N6P8R0T2V4X6Z8A"`
+	Username    string   `json:"username" example:"zhangsan"`
+	DisplayName string   `json:"displayName" example:"张三"`
+	Email       *string  `json:"email" example:"zhangsan@example.com"`
+	Phone       *string  `json:"phone" example:"13800000000"`
+	AvatarURL   *string  `json:"avatarUrl" example:"https://cdn.example.com/avatar/zhangsan.png"`
+	DeptID      string   `json:"deptId" example:"01J9ZJ7A1B2C3D4E5F6G7H8J9K"`
+	DeptPath    []string `json:"deptPath" example:"研发中心,平台组"`
+	TenantID    string   `json:"tenantId" example:"default"`
+	Roles       []string `json:"roles" example:"user"`
+	MFAEnabled  bool     `json:"mfaEnabled" example:"false"`
+	MFARequired bool     `json:"mfaRequired" example:"false"`
+	LastLoginAt *string  `json:"lastLoginAt" example:"2026-10-20T10:12:33Z"`
+	CreatedAt   string   `json:"createdAt" example:"2026-01-08T03:20:11Z"`
 }
 
 // UserAdmin 管理端用户视图（规范 §4.4 响应字段）。
 type UserAdmin struct {
-	ID          string   `json:"id"`
-	Username    string   `json:"username"`
-	DisplayName string   `json:"displayName"`
-	Email       *string  `json:"email"`
-	Phone       *string  `json:"phone"`
-	DeptID      string   `json:"deptId"`
-	TenantID    string   `json:"tenantId"`
-	Status      string   `json:"status"`
-	MFAEnabled  bool     `json:"mfaEnabled"`
-	MFARequired bool     `json:"mfaRequired"`
-	Roles       []string `json:"roles"`
-	CreatedAt   string   `json:"createdAt"`
-	UpdatedAt   string   `json:"updatedAt"`
+	ID          string   `json:"id" example:"01J9ZJ8Q2M4N6P8R0T2V4X6Z8A"`
+	Username    string   `json:"username" example:"zhangsan"`
+	DisplayName string   `json:"displayName" example:"张三"`
+	Email       *string  `json:"email" example:"zhangsan@example.com"`
+	Phone       *string  `json:"phone" example:"13800000000"`
+	DeptID      string   `json:"deptId" example:"01J9ZJ7A1B2C3D4E5F6G7H8J9K"`
+	TenantID    string   `json:"tenantId" example:"default"`
+	Status      string   `json:"status" example:"active"`
+	MFAEnabled  bool     `json:"mfaEnabled" example:"false"`
+	MFARequired bool     `json:"mfaRequired" example:"false"`
+	Roles       []string `json:"roles" example:"user"`
+	CreatedAt   string   `json:"createdAt" example:"2026-01-08T03:20:11Z"`
+	UpdatedAt   string   `json:"updatedAt" example:"2026-10-20T10:12:33Z"`
 }
 
 // StatusText 状态码转文本。
@@ -136,16 +136,16 @@ func Detail(u *model.User, deptPath []string) UserDetail {
 
 // Client 应用视图。
 type Client struct {
-	ClientID       string   `json:"clientId"`
-	ClientName     string   `json:"clientName"`
-	Description    string   `json:"description"`
-	LogoURL        string   `json:"logoUrl"`
-	IsPublic       bool     `json:"isPublic"`
-	RedirectURIs   []string `json:"redirectUris"`
-	GrantTypes     []string `json:"grantTypes"`
-	Scopes         []string `json:"scopes"`
-	PostLogoutURIs []string `json:"postLogoutUris"`
-	CreatedAt      string   `json:"createdAt"`
+	ClientID       string   `json:"clientId" example:"portal"`
+	ClientName     string   `json:"clientName" example:"统一门户"`
+	Description    string   `json:"description" example:"员工自助门户"`
+	LogoURL        string   `json:"logoUrl" example:"https://cdn.example.com/logo/portal.png"`
+	IsPublic       bool     `json:"isPublic" example:"false"`
+	RedirectURIs   []string `json:"redirectUris" example:"https://portal.example.com/callback"`
+	GrantTypes     []string `json:"grantTypes" example:"authorization_code,refresh_token"`
+	Scopes         []string `json:"scopes" example:"openid,profile,email"`
+	PostLogoutURIs []string `json:"postLogoutUris" example:"https://portal.example.com/signed-out"`
+	CreatedAt      string   `json:"createdAt" example:"2026-01-08T03:20:11Z"`
 }
 
 // FromClient 构造应用视图。

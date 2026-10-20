@@ -42,6 +42,7 @@
 | Redis | `github.com/redis/go-redis/v9` | `v9.7.0` | session / 限流 / 缓存 |
 | ID | `github.com/oklog/ulid/v2` | `v2.1.0` | 主键 |
 | 校验 | `github.com/go-playground/validator/v10` | `v10.23.0` | 请求校验 |
+| 文档 UI 资源 | `github.com/swaggo/files` | `v1.0.1` | 内嵌 swagger-ui 静态资源（`/docs/*`），不依赖 CDN（§2.4） |
 | 测试 | `github.com/stretchr/testify` | `v1.10.0` | |
 | 日志 | `log/slog` | 标准库 | JSON handler |
 
@@ -69,16 +70,16 @@
 
 ### 2.4 接口文档生成链（构建期依赖）
 
-**不进入请求路径**，仅在 `make docs` / `make docs-check` 时使用；四个依赖均为 MIT 许可。
+**不进入请求路径**，仅在 `make docs` / `make docs-check` 时使用；两个依赖均为 MIT 许可。
 
-**独立模块约束**：这些依赖放在 `tools/go.mod`（独立 module），**不得**加入根 `go.mod`。原因：实测把它们引入根模块会强制升级 `golang.org/x/crypto` `v0.31.0 → v0.36.0`、`x/net`、`x/sys`、`x/text`，直接违反 §2.1 的版本锁定。构建期工具与运行时依赖必须物理隔离，主模块 `go.mod` 因本特性**零改动**。
+**独立模块约束**：这两个依赖放在 `tools/go.mod`（独立 module），**不得**加入根 `go.mod`。原因：实测把它们引入根模块会强制升级 `golang.org/x/crypto` `v0.31.0 → v0.36.0`、`x/net`、`x/sys`、`x/text`，直接违反 §2.1 的版本锁定。构建期工具与运行时依赖必须物理隔离，主模块 `go.mod` 因本特性**零改动**。
 
 | 组件 | 模块 | 锁定版本 | 许可证 | 用途 |
 |---|---|---|---|---|
 | 注解解析 | `github.com/swaggo/swag` | `v1.16.6` | MIT | 从 handler 注释生成 Swagger 2.0（**该库不产出 OpenAPI 3**，见下） |
 | 规范转换 | `github.com/getkin/kin-openapi` | `v0.135.0` | MIT | `openapi2conv.ToV3` 做 2.0→3.0 转换、`openapi3` 做漂移比对 |
-| 文档 UI（接入） | `github.com/swaggo/gin-swagger` | `v1.6.1` | MIT | 在 Gin 上挂载文档页 |
-| 文档 UI（资源） | `github.com/swaggo/files` | `v1.0.1` | MIT | swagger-ui 静态资源，内嵌进二进制，不依赖 CDN |
+
+**文档 UI 的归属（与生成链不同）**：swagger-ui 的静态资源由 `github.com/swaggo/files` `v1.0.1` 提供，它随二进制发布、在 `/docs/*` 上被浏览器直接请求，属**请求路径**依赖，因此登记在 §2.1 并加入根 `go.mod`（它只要求 `x/net` `v0.7.0`，不触发升级）。**不使用** `gin-swagger`：文档页 HTML 由 `internal/api/docs` 自写（约 20 行），以确保只引用同源内嵌资源、且 OpenAPI 地址固定为 `./openapi.json`。
 
 **锁定理由（不得随意改动）**
 
