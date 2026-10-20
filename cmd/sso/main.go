@@ -3,6 +3,18 @@
 // @description     企业统一身份提供方的管理接口。会话通过 HttpOnly cookie `sid` 携带；响应统一为 {code,message,data,traceId}。
 // @description     协议端点（/oauth2/*、/.well-known/*）不在本文档范围内，见 /.well-known/openid-configuration
 // @BasePath        /api/v1
+// @tag.name        认证
+// @tag.description 登录、登出与 MFA 二次校验
+// @tag.name        我的
+// @tag.description 当前用户的资料、密码、可访问应用与登录设备
+// @tag.name        用户管理
+// @tag.description 管理端用户的查询、创建与更新
+// @tag.name        组织架构
+// @tag.description 组织树与各部门人数
+// @tag.name        应用管理
+// @tag.description OAuth 客户端注册与密钥轮换
+// @tag.name        审计
+// @tag.description 认证审计日志检索
 // @securityDefinitions.apikey cookieAuth
 // @in              cookie
 // @name            sid

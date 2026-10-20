@@ -2378,5 +2378,31 @@
     {
       "url": "/"
     }
+  ],
+  "tags": [
+    {
+      "description": "登录、登出与 MFA 二次校验",
+      "name": "认证"
+    },
+    {
+      "description": "当前用户的资料、密码、可访问应用与登录设备",
+      "name": "我的"
+    },
+    {
+      "description": "管理端用户的查询、创建与更新",
+      "name": "用户管理"
+    },
+    {
+      "description": "组织树与各部门人数",
+      "name": "组织架构"
+    },
+    {
+      "description": "OAuth 客户端注册与密钥轮换",
+      "name": "应用管理"
+    },
+    {
+      "description": "认证审计日志检索",
+      "name": "审计"
+    }
   ]
 }

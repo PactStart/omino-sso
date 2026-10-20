@@ -1,8 +1,8 @@
 // Package docs 提供管理 API 的接口文档页与 OpenAPI 3.0.3 描述。
 //
-// 文档产物 internal/api/docs/openapi.json 由 `make docs` 生成并入库，编译期通过
-// go:embed 内嵌进二进制；运行时只做两件事：把信息版本替换为构建版本、把运行环境
-// 写入 info.description。swagger-ui 的静态资源来自 github.com/swaggo/files，
+// 文档产物 internal/api/docs/openapi.json 由 `make docs` 生成并入库，编译期用 go:embed
+// 内嵌进二进制；运行时只做两件事：把信息版本替换为构建版本、把运行环境写入
+// info.description。swagger-ui 的静态资源来自 github.com/swaggo/files，
 // 同样内嵌，因此文档页在完全离线的环境下可用（规范 §4.0）。
 package docs
 
