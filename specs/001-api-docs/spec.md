@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-20
 
-**Status**: Complete（2026-10-20 交付：32/32 任务完成、`/speckit.converge` 收口、prod 隔离实机验证）
+**Status**: Complete（2026-10-20 交付：35/35 任务完成，含 converge 追加的 3 条；prod 隔离实机验证通过）
 
 **Input**: User description: "所有API接口需要补足swagger文档注释，服务端需要接入Swagger，Make脚本需要支持swagger文档，非prod环境需要能通过http访问接口文档"
 
