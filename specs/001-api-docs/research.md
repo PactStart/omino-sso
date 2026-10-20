@@ -98,7 +98,8 @@ Technical Context 中不存在 `NEEDS CLARIFICATION` 标记（本特性的技术
 
 - **Decision**: 4 个新依赖在实施时以 `go get` 解析到的最新稳定补丁版为准，落定后把**精确版本、许可证、维护状态**三列写回 `AGENTS.md` §2 锁定表并注明理由（"接口文档生成链，构建期依赖，不进入请求路径"）；同时在 §3 加入 `internal/api/docs/`、`tools/openapi3/`，在 §4.0 注明 `/docs/*` 不套统一响应。
 - **Rationale**: 宪法"技术与接口约束"第 1 条要求"确需新增依赖必须先更新 §2 并写明理由"。把版本回写作为同一提交的一部分，避免规范与 `go.mod` 脱节。许可证（`swag`/`gin-swagger`/`swaggo-files` 为 MIT，`kin-openapi` 为 MIT）需逐项核实后登记，避免把 AGPL 类依赖带进企业内网产品（critique E11）。维护状态同样留档：`swaggo/swag` 的 OpenAPI 3 提案自 2019 年挂起至今，属"稳定但停滞"，这决定了我们不把 OAS3 期待寄托在它身上，而是自建转换步。
-- **工具形态（critique E9）**：`swag` CLI 通过 `tools.go`（`//go:build tools` + blank import）纳入 `go.mod` 的 require，`make docs` 使用 `go run github.com/swaggo/swag/cmd/swag`（**不带 `@version`**）。带 `@version` 的 `go run` 在冷缓存机器上必须访问模块代理，与 FR-014"离线可生成"冲突；纳入 `go.mod` 后，`go mod download` 一次即永久可用，且版本被 `go.sum` 锁定。
+- **工具形态（critique E9）**：`swag` CLI 作为**独立模块 `tools/go.mod`** 的依赖，`make docs` 在 `tools/` 内执行 `go run github.com/swaggo/swag/cmd/swag`（**不带 `@version`**）。带 `@version` 的 `go run` 在冷缓存机器上必须访问模块代理，与 FR-014"离线可生成"冲突；纳入模块后，下载一次即永久可用，且版本被 `tools/go.sum` 锁定。
+- **为何必须独立成 module（实测结论）**：把 swag / kin-openapi 直接加进根 `go.mod` 后，`go mod download` 即自动改写了主模块——`golang.org/x/crypto` 由 `v0.31.0` 升到 `v0.36.0`，`x/net`、`x/sys`、`x/text` 同步上调，违反 AGENTS.md §2.1 的版本锁定。构建期工具与运行时依赖必须物理隔离，主模块 `go.mod` / `go.sum` 因本特性**零改动**（该次意外升级已 `git checkout` 还原）。
 - **Alternatives considered**: 先合代码再补文档 → 宪法明令"先改规范再改代码"的时序，不合规。把 swag 装成全局二进制并写进前置条件 → 每个开发者与 CI 都要手工安装并各自管版本，与"版本锁定"冲突。
 
 ## D10. 匿名响应具名化（实施前置，源码核验后新增）
@@ -123,7 +124,8 @@ Technical Context 中不存在 `NEEDS CLARIFICATION` 标记（本特性的技术
 | `response.Body.Data` 为 `any` 类型 | 已知限制 | 注解使用 swag 的组合语法 `{object} response.Body{data=dto.User}` 逐接口指定内层类型；若某接口的 `data` 为数组，使用 `{array} response.Body{data=[]dto.App}` 形式 |
 | 文档页 Try it out 的同源限制 | 已记录（`requirements.md` Notes） | 本次不引入 CORS；文档页与业务接口同源，`make docs-serve` 的说明中明示 |
 | **swagger-ui 是否携带 `sid` cookie** | **已确认携带**（2026-10-20 人工验证，critique X1 / T001 关闭） | 验证方式：`APP_ENV=dev make dev` 后浏览器完成 `POST /api/v1/auth/login`，确认响应下发 `Set-Cookie: sid=...`，且后续同源请求的请求头携带 `Cookie: sid=...`。结论：US1 的「Try it out 闭环」成立，SC-002 无需下调，不需要引入 `requestInterceptor`。**残余验证点**：结论基于浏览器同源默认行为；待 T007/T008 交付真实 `/docs/` 页面后，需用文档页本身再复核一次（`quickstart.md` 场景 4），届时若出现 401 再回看本行 |
-| 离线可生成 | 已解决（critique E9） | swag CLI 经 `tools.go` 纳入 `go.mod`，`make docs` 不带 `@version`；`quickstart.md` 场景 1 增加"断网复跑"验证 |
+| 离线可生成 | 已解决（critique E9） | swag CLI 纳入独立模块 `tools/go.mod`，`make docs` 不带 `@version`；`quickstart.md` 场景 1 增加"断网复跑"验证 |
+| **构建期依赖污染主模块** | **已解决（T002 实测）** | 把 swag/kin-openapi 加进根 `go.mod` 会强制升级 `x/crypto v0.31.0→v0.36.0` 等，违反 §2.1 锁定。改为独立 `tools/go.mod` 隔离，主模块零改动；T003 增加"根 `go.mod`/`go.sum` 必须为空 diff"的验收断言 |
 | 非 prod 实例的网络暴露面 | 已确认（critique E4） | 负责人确认 dev/test 无公网可达部署，故零鉴权访问可接受；该前提写入 `spec.md` Clarifications 与 Assumptions，条件变化时须先收紧策略 |
 | **`kin-openapi` 版本天花板** | **已定（T002 查证）** | `v0.136.0` 起要求 `go >= 1.25`（`v0.139.0`/`v0.140.0`/`v0.145.0`/`v0.150.0`/`v0.151.0` 均为 `go 1.25`，`v0.136.0` 为 `go 1.26`），与本项目 `go 1.24.1` 不兼容。**锁定 `v0.135.0`**（`go 1.22.5`），其 `openapi2conv.ToV3(*openapi2.T) (*openapi3.T, error)` 签名已核验存在。升级该依赖 = 先升级 Go 版本，属独立议题 |
 | **本地 Go 工具链** | **环境注意** | 本机 `PATH` 上的 `go` 为 `go1.20.14`（gvm 默认），而 `go.mod` 要求 `go 1.24.1`，直接执行 `go build` / `make build` 会报 `invalid go version '1.24.1'`。可用 `/Users/apple/.gvm/gos/go1.24.1/bin/go`，或 `gvm use go1.24.1` 后再执行。实施与验收（含 `make docs` 内部的 `go run`）务必确认工具链为 1.24.1 |

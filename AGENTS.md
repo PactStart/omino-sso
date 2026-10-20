@@ -69,7 +69,9 @@
 
 ### 2.4 接口文档生成链（构建期依赖）
 
-**不进入请求路径**，仅在 `make docs` / `make docs-check` 时使用；四个依赖均为 MIT 许可。版本为 `go.mod` 实际锁定值，升级需按本文件顶部约定单独提交并说明回归范围。
+**不进入请求路径**，仅在 `make docs` / `make docs-check` 时使用；四个依赖均为 MIT 许可。
+
+**独立模块约束**：这些依赖放在 `tools/go.mod`（独立 module），**不得**加入根 `go.mod`。原因：实测把它们引入根模块会强制升级 `golang.org/x/crypto` `v0.31.0 → v0.36.0`、`x/net`、`x/sys`、`x/text`，直接违反 §2.1 的版本锁定。构建期工具与运行时依赖必须物理隔离，主模块 `go.mod` 因本特性**零改动**。
 
 | 组件 | 模块 | 锁定版本 | 许可证 | 用途 |
 |---|---|---|---|---|
@@ -82,7 +84,7 @@
 
 - `kin-openapi` 停在 `v0.135.0`：`v0.136.0` 起的版本要求 `go >= 1.25`，与本项目 `go 1.24.1` 不兼容。升级此处必然连带升级 Go 版本，属独立议题。
 - `swaggo/swag` 仅产出 Swagger 2.0（其 OpenAPI 3 支持自 2019 年起一直是未合入的提案），因此**转换步骤不可省略**，禁止为了"少一个依赖"而直接交付 2.0。
-- swag CLI 通过 `tools/tools.go`（`//go:build tools`）纳入 `go.mod`，命令行调用一律写 `go run github.com/swaggo/swag/cmd/swag`，**禁止写 `@version`**（会绕过 `go.sum` 锁定并要求联网）。
+- swag CLI 作为 `tools/go.mod` 的 require 引入，命令行一律在 `tools/` 目录内执行 `go run github.com/swaggo/swag/cmd/swag`，**禁止写 `@version`**（会绕过 `tools/go.sum` 锁定并要求联网）。
 
 ---
 
@@ -97,8 +99,8 @@ omino-sso/
 ├── docker-compose.yml                 # mysql + redis + sso + portal + admin
 ├── .env.example                       # 环境变量模板（§9）
 ├── .tmp/                              # 文档生成中间产物（gitignore，不入库）
-├── tools/                             # 构建期工具，禁止被业务包 import
-│   ├── tools.go                       # //go:build tools，固定 swag CLI 版本
+├── tools/                             # 构建期工具，独立 module（禁止被业务包 import）
+│   ├── go.mod                         # 独立依赖图，隔离到这份，根 go.mod 不受影响
 │   └── openapi3/
 │       ├── main.go                    # Swagger 2.0 → OpenAPI 3.0.3 转换 + -check 漂移比对
 │       └── main_test.go

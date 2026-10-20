@@ -17,7 +17,7 @@
 **Primary Dependencies**:
 - 现有：`github.com/gin-gonic/gin v1.10.0`（文档路由挂载点）、`go.uber.org/fx v1.23.0`（装配）、`internal/api/response`（统一响应结构 `Body` / `Page`）
 - 新增（需先写入 AGENTS.md §2，见 Constitution Check）：
-  - `github.com/swaggo/swag` `v1.16.6`（CLI + 注解解析库）。**通过 `tools.go`（`//go:build tools`）纳入 `go.mod`**，使 `make docs` 可写 `go run github.com/swaggo/swag/cmd/swag`（不带 `@version`），版本由 `go.sum` 锁定、`go mod download` 一次后永久离线可用（修正 critique E9）
+  - `github.com/swaggo/swag` `v1.16.6`（CLI + 注解解析库）。**放在独立模块 `tools/go.mod`**，`make docs` 在 `tools/` 内执行 `go run github.com/swaggo/swag/cmd/swag`（不带 `@version`），版本由 `tools/go.sum` 锁定、下载一次后永久离线可用（修正 critique E9）。**不得并入根 `go.mod`**：实测会强制升级 `golang.org/x/crypto` 到 `v0.36.0` 等，违反 §2.1 版本锁定
   - `github.com/getkin/kin-openapi` **`v0.135.0`**（`openapi2conv` 做 2.0→3.0 转换，`openapi3` 做漂移语义比对）。**版本上限受 Go 约束**：`v0.136.0+` 要求 `go >= 1.25`，本项目为 `go 1.24.1`
   - `github.com/swaggo/gin-swagger` `v1.6.1` + `github.com/swaggo/files` `v1.0.1`（文档 UI，资源内嵌进二进制，无 CDN 依赖）
   - 四个依赖均为 MIT；已登记于 `AGENTS.md` §2.4（T002 完成）
@@ -116,6 +116,7 @@ internal/
         └── audit.go                 # [改] gin.H → dto.AuditItem；ListAuditLogs 注解
 
 tools/
+├── go.mod                           # [新] 独立 module：构建期依赖与运行时依赖物理隔离
 └── openapi3/
     ├── main.go                      # [新] 2.0→3.0 转换 + -check 漂移比对（不参与运行时）
     └── main_test.go                 # [新] 转换与漂移检测单测
