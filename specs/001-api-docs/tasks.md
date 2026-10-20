@@ -122,7 +122,7 @@ description: "Task list for API 接口文档与自助调试门户"
 - [x] T027 ✅ **已完成 2026-10-20（自动化替代人工停服）** — 未手工停 Redis，而是把 `router_test.go` 的 Redis 客户端指向 `127.0.0.1:1`（必然连不上），此时 `/docs/index.html`、`/docs/` 与 `/docs/openapi.json` 仍返回 200、静态资源 200，`/docs-absent` 亦正常 404（限流 fail-open 未被触发）。比手工停服更可重复 | 原始描述：[P] 执行 Redis 可用性验收：按 `quickstart.md` 场景 4 的 CT-7 步骤停掉 Redis 后访问 `/docs/index.html` 与 `/docs/openapi.json`，期望均为 200，验证限流前缀跳过已生效（E2/E3）
 - [x] T028 ✅ **已完成 2026-10-20** — `GOPROXY=off make docs` 退出码 0，产物哈希不变；swag CLI 与 kin-openapi 均由 `tools/go.sum` 锁定并已在本地模块缓存中 | 原始描述：[P] 执行离线生成验收：`GOPROXY=off make docs` 退出码必须为 0，验证 swag CLI 已随 `go.mod` 进入本地缓存（E9、场景 1 断网复跑）
 - [ ] T029 收尾 `quickstart.md` 全部场景（0–6）并核对 `contracts/` 的 CT-1~CT-7、AC-1~AC-7 是否均有对应实现或测试；更新 `specs/001-api-docs/research.md` 中「`openapi2conv` 示例保真度」的待验证项结论
-- [ ] T030 提交纪律检查：确认 `internal/api/docs/openapi.json` 与其对应的 handler 注解改动在同一提交内，无跨提交拆分（E10）；临时目录 `.tmp/` 未被纳入版本控制
+- [x] T030 ✅ **已完成 2026-10-20** — `internal/api/docs/openapi.json` 与 16 个 handler 注解、`cmd/sso/main.go` 全局注解位于同一提交 `98b39c5`（曾因暂存遗漏而 amend 补齐，未产生跨提交拆分）；`git check-ignore -v .tmp/swagger/swagger.json` 命中 `.gitignore:7:.tmp/`，中间产物未被纳入版本控制 | 原始描述：提交纪律检查：确认 `internal/api/docs/openapi.json` 与其对应的 handler 注解改动在同一提交内，无跨提交拆分（E10）；临时目录 `.tmp/` 未被纳入版本控制
 
 ---
 
