@@ -12,15 +12,17 @@
 
 ## Technical Context
 
-**Language/Version**: Go `1.24.1`（`go.mod` 现有 `go 1.24.1`，与 AGENTS.md §2 的 `1.24` 一致）
+**Language/Version**: Go `1.26.0`（`go.mod` 与 `tools/go.mod` 均为 `go 1.26.0`）。**2026-10-20 更新**：本特性实施期间主模块由 `1.24.1` 升级到 `1.26.0`（AGENTS.md §2.1 已同步），因此下文中一切"受 Go 1.24 限制"的判断均已失效
 
 **Primary Dependencies**:
 - 现有：`github.com/gin-gonic/gin v1.10.0`（文档路由挂载点）、`go.uber.org/fx v1.23.0`（装配）、`internal/api/response`（统一响应结构 `Body` / `Page`）
-- 新增（需先写入 AGENTS.md §2，见 Constitution Check）：
-  - `github.com/swaggo/swag` `v1.16.6`（CLI + 注解解析库）。**放在独立模块 `tools/go.mod`**，`make docs` 在 `tools/` 内执行 `go run github.com/swaggo/swag/cmd/swag`（不带 `@version`），版本由 `tools/go.sum` 锁定、下载一次后永久离线可用（修正 critique E9）。**不得并入根 `go.mod`**：实测会强制升级 `golang.org/x/crypto` 到 `v0.36.0` 等，违反 §2.1 版本锁定
-  - `github.com/getkin/kin-openapi` **`v0.135.0`**（`openapi2conv` 做 2.0→3.0 转换，`openapi3` 做漂移语义比对）。**版本上限受 Go 约束**：`v0.136.0+` 要求 `go >= 1.25`，本项目为 `go 1.24.1`
-  - `github.com/swaggo/gin-swagger` `v1.6.1` + `github.com/swaggo/files` `v1.0.1`（文档 UI，资源内嵌进二进制，无 CDN 依赖）
-  - 四个依赖均为 MIT；已登记于 `AGENTS.md` §2.4（T002 完成）
+- 新增（已在 AGENTS.md §2 登记，见 Constitution Check）。最终引入 **3 个**依赖，按"构建期 / 运行期"物理隔离：
+  - **构建期，在独立模块 `tools/go.mod`**（不进入请求路径，主模块依赖图零污染）：
+    - `github.com/swaggo/swag` `v1.16.6`（CLI + 注解解析库）。`make docs` 在 `tools/` 内执行 `go run github.com/swaggo/swag/cmd/swag`（不带 `@version`），版本由 `tools/go.sum` 锁定、下载一次后离线可用（修正 critique E9）。**不得并入根 `go.mod`**：实测会强制升级 `golang.org/x/crypto` 到 `v0.36.0` 等，违反 §2.1 版本锁定
+    - `github.com/getkin/kin-openapi` **`v0.135.0`**（`openapi2conv` 做 2.0→3.0 转换，`openapi3` 做漂移语义比对）。**版本维持 `v0.135.0` 不再因 Go 受限**（当初锁它的原因是 `v0.136.0+` 要求 `go >= 1.25`，Go 1.26 已解除该天花板）；升级需单独提交并回归 `make docs` / `make docs-check`，属独立议题
+  - **运行期，在根 `go.mod`**：`github.com/swaggo/files` `v1.0.1`（内嵌 swagger-ui 静态资源，随二进制发布并在 `/docs/*` 被浏览器直接请求，因此属请求路径依赖，登记在 AGENTS.md §2.1）。它只要求 `x/net v0.7.0`，不触发任何版本升级
+  - **弃用**：`github.com/swaggo/gin-swagger` `v1.6.1`。计划阶段曾拟用它挂载文档页；实施时改为 `internal/api/docs` 自写约 20 行 index.html（固定 `url: "./openapi.json"`、只引用同源内嵌资源），少一个依赖且不依赖其 URL 重写逻辑
+  - 三个依赖均为 MIT；许可证与锁定理由见 `AGENTS.md` §2.1 / §2.4
 
 **Storage**: 无。本特性不新增表、不写库、不做迁移（宪法原则 V 无触发点）；生成的 `openapi.json` 作为源文件随仓库提交。
 
@@ -52,18 +54,18 @@
 | III. 分层与数据一致性 | **PASS** | 新增 `internal/api/docs` 仅做"读内嵌字节 + 改写 info 块 + 返回"，不访问 `store` / `service`；无新增 SQL、无状态变更 |
 | IV. 凭证不出服务端 | **PASS（有约束落地）** | 文档不含任何 token 明文；`client_secret` 仅在创建应用响应中出现，示例中用占位串（FR-022）；prod 不暴露文档页（FR-016）降低攻击面 |
 | V. 结构变更只走手写 SQL 迁移 | **PASS（空操作）** | 无表结构变更，`migrations/` 无新增文件 |
-| 技术与接口约束：依赖必须先在 §2 登记 | **CONDITIONAL PASS** | 新增 4 个依赖属"规范外依赖"，须先更新 `AGENTS.md` §2（含版本与理由）与 §3（新增 `internal/api/docs/` 目录）。已列为交付第一步（T001），与代码同批提交，视为满足"先更新规范"的时序 |
+| 技术与接口约束：依赖必须先在 §2 登记 | **PASS（已落地）** | 实际新增 **3 个**规范外依赖（`swag`、`kin-openapi` 在 `tools/go.mod`；`swaggo/files` 在根 `go.mod`），`gin-swagger` 弃用。`AGENTS.md` §2.1 / §2.4 已登记版本与理由，§3 已补 `internal/api/docs/` 与 `tools/`；规范同步与代码在同批提交内完成 |
 | 技术与接口约束：`/api/v1/**` 统一响应 | **PASS** | 文档示例一律展示 `{code,message,data,traceId}` 四字段完整形态；`/docs/*` 属非业务路由，返回 HTML/JSON 原始内容，不套统一响应（与 `/oauth2/*` 豁免同理，需在 T001 中于 AGENTS.md §4.0 显式注明豁免） |
 | 开发工作流门禁（`make build` / `test` / `build-web` / `lint`） | **PASS（需验证）** | 新增目标不得改变既有目标语义；`make build` 仍需产出 `bin/sso`。**`build` 依赖 `docs-check`**（≤1 min、纯本地、无网络），防止"源码改了但二进制内嵌旧文档"被发布；因 swag 已固定进 `go.mod`，构建期不需要预装 CLI 也不联网（修正 critique E1/E9） |
 | 不生成 README / 演示脚本 / 种子数据 | **PASS** | FR-023 只要求**编辑既有** `README.md` 的"开发流程规范"段，不新建文件；不写种子数据 |
 
-**Gate 结论**：无未说明的违规。唯一需显式裁量的是"4 个新依赖 + 1 个新目录"，通过 T001 的规范同步落地；若评审要求更保守，可退回"仅生成 2.0 并改 FR-021"，但该路与本特性价值冲突（接入方代码生成器不认 2.0），故不采纳。详见 Complexity Tracking。
+**Gate 结论**：无未说明的违规。需显式裁量的是"3 个新依赖 + 1 个新目录"（`gin-swagger` 实施期弃用，见上表），已通过 T001/T002 的规范同步落地；若评审要求更保守，可退回"仅生成 2.0 并改 FR-021"，但该路与本特性价值冲突（接入方代码生成器不认 2.0），故不采纳。详见 Complexity Tracking。
 
 ### Post-Design Re-check（Phase 1 后复审）
 
 设计产物（[research.md](./research.md)、[data-model.md](./data-model.md)、[contracts/](./contracts/)、[quickstart.md](./quickstart.md)）落地后逐条复核，结论**不变，无新增违规**，三点补充：
 
-1. **原则 III 加固**：`internal/api/docs` 的依赖面最终确定为 `embed` + `encoding/json` + `gin` 三者（`contracts/doc-endpoints.md` §4 只要求改写 `info` 并返回字节），**确认不 import `store` / `service`**；`tools/openapi3` 为独立 `main` 包，不被任何业务包 import，不进入依赖图。
+1. **原则 III 加固**：`internal/api/docs` 的依赖面最终确定为 `embed` + `encoding/json` + `gin` + `github.com/swaggo/files`（用来提供内嵌 swagger-ui 静态资源；`contracts/doc-endpoints.md` §4 只要求改写 `info` 并返回字节），**确认不 import `store` / `service`**；`tools/openapi3` 为独立 `main` 包，不被任何业务包 import，不进入依赖图。
 2. **原则 II 边界确认**：`/docs/*` 挂在 `:8081` 的 Gin 上且位于 `v1` 组外，`:8080` 的 `net/http` mux（`internal/oidc/server.go`）零改动；`contracts/doc-endpoints.md` §3 明确文档路由不套统一响应，与 `:8080` 的 RFC 原生报文豁免属同类处理。
 3. **原则 I 无回声**：`data-model.md` §7 的生命周期图确认 `openapi.json` 不含 `:8080` 的 7 个协议端点，不存在"文档反向固化协议字段"的风险。
 
@@ -145,7 +147,7 @@ Critique 复审后固化的四条执行纪律与一项已接受风险（来源�
 |---|---|
 | **提交粒度**（E10） | `internal/api/docs/openapi.json` 的变更必须与其对应的 handler 注解变更**在同一提交内**，禁止分开提交；回滚 = 单次 `git revert`，不得只回代码不回产物 |
 | **限流与可用性**（E2/E3） | `router.go:38` 的 `RateLimit(api)` 目前对 `/docs/*` 同样生效，swagger-ui 首屏 10+ 请求可能触发 429；实施时在限流中间件按 `/docs/` 前缀跳过，使文档页不依赖 Redis 可用性（运维故障时正是最需要查文档的时刻） |
-| **二进制体积**（E6） | `swaggo/files` 内嵌的 swagger-ui 资源预计带来 3–5 MB 增长；`quickstart.md` 场景 3 记录改造前后 `ls -lh bin/sso` 对比，实测值回写 `data-model.md` §8 |
+| **二进制体积**（E6） | `swaggo/files` 内嵌的 swagger-ui 资源**实测 +8.57 MB**（30,268,880 → 39,255,088 B），超出预算的 3–5 MB；构成与优化空间见 `data-model.md` §8（该版本把 4 份 bundle 与 4 份 `.map` 全部内嵌，仅三个 `.map` 就占约 17 MB 明文）。优化属独立议题 |
 | **构建期强制**（E1） | `make build` 依赖 `docs-check`，杜绝"代码已改、内嵌文档陈旧"的产物被发布 |
 | **已接受风险**（E5） | `openapi.json` 与 UI 资源会被 `//go:embed` 编入 **prod 二进制**（虽不注册路由、不可访问）。收益是构建简单、无需外部静态目录；残余风险为"拿到二进制即可提取接口面"，与"源码可见"同级，接受 |
 
@@ -153,7 +155,7 @@ Critique 复审后固化的四条执行纪律与一项已接受风险（来源�
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |---|---|---|
-| 引入 4 个规范外依赖（swag / kin-openapi / gin-swagger / swaggo-files） | 注解驱动生成 + 3.0 输出 + 离线 UI 三者缺一不可 | ① 直接用 `swag` 单一依赖：只产出 OpenAPI 2.0，违反 FR-021；② 引入 `swaggo/swag/v2`（alpha）：可达 3.x 但版本不稳定，与本项目"版本锁定"原则冲突，且 alpha 的注释语法与 v1 不兼容；③ 手写 `openapi.json`：违反 FR-010 且必然腐化 |
+| 引入 3 个规范外依赖（构建期 `swag` / `kin-openapi`，运行期 `swaggo-files`） | 注解驱动生成 + 3.0 输出 + 离线 UI 三者缺一不可 | ① 直接用 `swag` 单一依赖：只产出 OpenAPI 2.0，违反 FR-021；② 引入 `swaggo/swag/v2`（alpha）：可达 3.x 但版本不稳定，与本项目"版本锁定"原则冲突，且 alpha 的注释语法与 v1 不兼容；③ 手写 `openapi.json`：违反 FR-010 且必然腐化。**注**：计划阶段的第 4 个依赖 `gin-swagger` 已被实施期否决（自写 index.html 更少依赖），故不计入 |
 | 新增 `tools/openapi3` 一个额外可执行包 | 2.0→3.0 转换与漂移比对需要代码，且必须离线可跑（FR-014） | ① 用 `npx swagger2openapi`：给 Go 构建链引入 Node 依赖，且离线环境不可靠；② 放入 `internal/`：会被业务包误 import，且语义上不属于服务运行时；③ 塞进 `internal/api/docs`：会让测试与运行时依赖转换库 |
 | 新增 `internal/api/docs/` 目录（AGENTS.md §3 未列） | `//go:embed` 要求被嵌入文件与源文件同包目录 | 输出到根 `docs/` 后用 `go:generate` 复制一份到包内：产生两份真源，漂移检测基准变得含糊 |
 | 文档路由返回非统一响应（HTML / 原始 JSON） | 文档页必须由浏览器直接渲染，JSON 描述文件必须被 OpenAPI 工具消费 | 套 `{code,message,data,traceId}`：`swagger-ui` 与任何 OpenAPI 消费方都无法解析，且与"文档要能被标准工具链消费"直接矛盾 |
