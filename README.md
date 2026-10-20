@@ -4,9 +4,10 @@
 
 - 协议层：`github.com/zitadel/oidc/v3`，授权码 + PKCE（仅 S256）
 - 浏览器侧只持有 `HttpOnly` 的 `sid` 会话 cookie，**前端代码不接触任何 token**
-- 规范以 [`AGENTS.md`](./AGENTS.md) 为唯一权威；前端交互契约见 [`PRD.md`](./PRD.md)
+- 规范与文档：实现细节以 [`AGENTS.md`](./AGENTS.md) 为唯一权威；前端交互契约见 [`PRD.md`](./PRD.md)；
+  开发流程（含分级路径与门禁）见 [`开发流程规范.md`](./开发流程规范.md)
 
-## 功能
+## 1. 功能
 
 | 模块 | 能力 |
 |---|---|
@@ -17,16 +18,17 @@
 
 **非目标（本期不做）**：邮件/短信通知、SAML、SCIM、多租户计费、i18n、暗色主题、移动端管理后台。
 
-## 技术栈
+## 2. 技术栈
 
 | 层 | 组件 |
 |---|---|
-| 后端 | Go 1.26.0、gin v1.10.0（管理 API）、uber/fx v1.23.0、gorm v1.25.12、zitadel/oidc/v3 v3.28.0、go-jose/v4、argon2id、redis/go-redis/v9 |
-| 门户 | Vue 3.5.13 + Vite 6.3.5 + TS 5.7.2 + Pinia + vue-router + Tailwind CSS 4.1.0 |
-| 后台 | 同上组件基线 + Element Plus 2.9.1 |
-| 存储 | MySQL 8.4、Redis 7.4 |
+| 语言 / 框架 | Go 1.26.0、gin 1.10.0（管理 API）、uber/fx 1.23.0、gorm 1.25.12 |
+| 身份协议 | zitadel/oidc/v3 3.28.0、go-jose/v4、argon2id、pquerna/otp |
+| 存储 | MySQL 8.4、Redis 7.4（go-redis/v9） |
+| 门户前端 | Vue 3.5.13、Vite 6.3.5、TS 5.7.2、Pinia、vue-router、Tailwind 4.1.0 |
+| 后台前端 | 同门户基线 + Element Plus 2.9.1 |
 
-## 端口与路径
+## 3. 端口与路径
 
 | 服务 | 地址 | 说明 |
 |---|---|---|
@@ -37,16 +39,17 @@
 | MySQL | `127.0.0.1:3307` | docker-compose 映射，避开本机 3306 |
 | Redis | `127.0.0.1:6380` | docker-compose 映射 |
 
-## 环境要求
+## 4. 环境要求
 
 - Go 1.26.0+
 - Node.js 20+ / npm 10+
 - Docker 27+ 与 Docker Compose v2（或自备 MySQL 8.4 + Redis 7.4）
 - `openssl`（生成开发签名密钥）、`mysql` 客户端（手动迁移时需要）
+- `golangci-lint`（`make lint` 的门禁工具，缺失时会明确报错而不是静默通过）
 
-## 快速开始
+## 5. 快速开始
 
-### 1. 启动依赖
+### 5.1 启动依赖
 
 ```bash
 docker compose up -d          # mysql(3307) + redis(6380)
@@ -57,7 +60,7 @@ docker compose ps             # 两者 healthy 后再继续
 
 > 若数据库已存在但缺表，执行 `make migrate-up` 手动迁移（默认连 `127.0.0.1:3307`，可用 `DB_HOST/DB_PORT/...` 覆盖）。
 
-### 2. 配置环境变量与签名密钥
+### 5.2 配置环境变量与签名密钥
 
 ```bash
 cp .env.example .env          # 按需修改；变量含义见文件内注释
@@ -66,7 +69,7 @@ make keys                     # 生成 configs/dev-signing-key.pem
 
 `.env` 中的必填项（缺失会启动失败）：`OIDC_ISSUER`、`OIDC_SIGNING_KEY_PATH`、`OIDC_CRYPTO_KEY`（32 字节）、`DB_USER`、`DB_PASSWORD`、`REDIS_ADDR`。
 
-### 3. 启动后端
+### 5.3 启动后端
 
 ```bash
 make dev                      # go run ./cmd/sso，同时监听 :8080 与 :8081
@@ -74,7 +77,7 @@ make dev                      # go run ./cmd/sso，同时监听 :8080 与 :8081
 
 首次启动且 `users` 表为空时，会按 `ADMIN_BOOTSTRAP_*` 创建初始管理员。
 
-### 4. 启动前端
+### 5.4 启动前端
 
 ```bash
 # 门户
@@ -86,7 +89,7 @@ cd web/admin  && npm install && npm run dev     # http://localhost:5174
 
 两端 dev server 均已把 `/api` 代理到 `:8081`，会话 cookie 为 host-only + `Path=/`，因此两个端口共享同一登录态。
 
-### 5. 默认账号（来自 `.env.example`）
+### 5.5 默认账号（来自 `.env.example`）
 
 | 账号 | 密码 | 角色 | 说明 |
 |---|---|---|---|
@@ -97,7 +100,7 @@ cd web/admin  && npm install && npm run dev     # http://localhost:5174
 > 种子数据由 `internal/bootstrap/seed.go` 在 `users` 表为空时写入；`APP_ENV=prod` 只创建管理员。
 > 演示账号的 TOTP 密钥会打印在启动日志的 `seed: demo users created` 一行中，仅供本地联调，生产请立即清理演示数据并修改初始密码。
 
-## 验证既有功能
+## 6. 验证既有功能
 
 ```bash
 # 健康检查
@@ -115,11 +118,12 @@ curl -s -b /tmp/c.txt http://localhost:8081/api/v1/me
 curl -s http://localhost:8080/.well-known/openid-configuration
 ```
 
-## 构建与产物
+## 7. 构建与产物
 
 ```bash
-make build                    # 后端 -> bin/sso
+make build                    # 后端 -> bin/sso（内部先跑 docs-check）
 make build-web                # 前端 -> web/dist/portal、web/dist/admin
+make build-web NPM_INSTALL="npm install"   # 本机 npm ci 被批量删除保护拦截时的替代
 ```
 
 单个前端的构建与本地预览：
@@ -132,7 +136,7 @@ npm start                     # vite preview，:5173（同样代理 /api）
 
 `package.json` 脚本：`dev`（开发）、`build`（构建）、`start`（预览构建产物）、`typecheck`（仅类型检查）。
 
-### 接口文档（OpenAPI 3.0.3）
+### 7.1 接口文档（OpenAPI 3.0.3）
 
 文档由 handler 注解生成，产物 `internal/api/docs/openapi.json` 入库并随二进制内嵌：
 
@@ -148,135 +152,22 @@ make docs-serve               # 生成后启动服务，回显文档地址
 
 文档入口：<http://127.0.0.1:8081/docs/>（仅 `APP_ENV != prod` 时提供，prod 下与不存在的路径表现完全一致）。
 
-## 开发流程规范（Spec Kit）
+## 8. 开发流程
 
-新功能一律走规格驱动流程（SDD）：**先写清「做什么/为什么」，再定技术方案，最后才写代码**。
-原则层约束见 `.specify/memory/constitution.md`，实现细节以 `AGENTS.md` 为唯一权威。
+新功能一律走规格驱动流程（SDD），但**流程强度与改动规模匹配**——先判档，再选流程：
 
-### 工具与环境
-
-仓库已通过 `specify init --here --integration codebuddy` 完成初始化，产物为 `.specify/` 与
-`.codebuddy/commands/speckit.*.md`（共 54 个命令：10 个核心命令 + 44 个扩展命令）。
-
-| 项 | 说明 |
-|---|---|
-| CLI 版本 | `specify 1.2.2`（`uv tool install` 安装） |
-| 重装/升级 | `uv tool install --python 3.12 --with "cryptography==44.0.2" specify-cli` |
-| 为何锁定 cryptography | 50.x 无 macOS x86_64 预编译 wheel，会退化为源码编译并因缺少 Rust 失败 |
-| 已安装扩展 | 10 个：`git` `gates` `api-evolve` `bug` `assess` `ears` `critique` `checkpoint` `doctor` `changelog`（`.specify/extensions.yml` 中 `auto_execute_hooks: true`） |
-| 浏览扩展 | `specify extension search`；`specify integration status` 查看集成状态 |
-
-### 分支约定
-
-仓库已安装 `git` 扩展，`/speckit.specify` 会先执行**强制前置钩子** `speckit.git.feature`，
-自动创建并切到与 spec 目录同名的分支（如 `001-mfa-self-binding`），因此**无需手动建分支**。
-`before_clarify` / `before_plan` 还注册了可选的自动提交钩子（`speckit.git.commit`）。
-
-若需要手动控制分支（例如要从最新 `main` 出发或复用已有分支）：
-
-```bash
-git switch main && git pull
-git switch -c 001-mfa-self-binding   # 与后续 spec 目录编号一致
-```
-
-### 入口分流：先判断想法是否已成形
-
-`/speckit.specify` 的输入必须已是「做什么 / 为什么 / 不做什么」的清晰描述。想法还停留在「感觉该做个 X」时，先走评估链，别把探索成本带进 spec：
-
-| 想法状态 | 入口 | 产物 |
+| 档位 | 判定 | 流程 |
 |---|---|---|
-| 只是一个粗糙念头（一句话、一个链接、一个工单、某段代码） | `/speckit.assess.intake` → `.research` → `.define` → `.shape` → `.decide` | `.specify/assessments/<slug>/{intake,research,problem,concept,decision}.md` |
-| 已能写清用户是谁、痛点是什么、怎么算成功 | 直接 `/speckit.specify` | `specs/NNN-xxx/spec.md` |
+| **L0 直改** | 不碰契约、无第二消费方、单文件、< 1 天 | 直接改 → 门禁三条命令 → 提交 |
+| **L1 轻量** | 1–3 天，边界一句话能说清 | 一页 spec + 手写 tasks → implement → converge |
+| **L2 全套** | 触及对外契约 / 多方协作 / > 3 天 | 规范 §4 的完整七步 |
 
-五个命令各管一件事，顺序不可随意调换（`shape` 读 `problem.md`，`decide` 读 `concept.md`）：
+完整说明（判档反例、七步细节、入口分流、轻量化原则、质量门禁、文档分工）见
+**[`开发流程规范.md`](./开发流程规范.md)**。
 
-| 命令 | 做什么 | 不做什么 |
-|---|---|---|
-| `/speckit.assess.intake` | 把原始想法（文本 / URL / 工单 / 代码位置）归一成 `intake.md` | 不做判断、不写需求 |
-| `/speckit.assess.research` | 收集用户、市场、先例与数据证据，支持或挑战该想法 | 不给方案、不排期 |
-| `/speckit.assess.define` | 界定问题：谁受影响、痛在哪、目标与非目标、成功指标 → `problem.md` | 不给解法 |
-| `/speckit.assess.shape` | 打磨方案候选：范围、投入、取舍 → `concept.md` | 不做实现设计（不出现库名 / 表名 / 接口） |
-| `/speckit.assess.decide` | 出裁决 `go` / `needs-clarification` / `kill` → `decision.md` | 不写 spec，`go` 时只交接摘要给 `/speckit.specify` |
+日常只需记住门禁三条命令与分级判档；工具链、扩展按需启用等内容都在该文件中。
 
-判定规则（来自扩展自身，不可绕过）：证据强度为 `weak` / `unknown` 时不得判 `go`；跳过 `shape` 直接 `decide`，`go` 会被降级为 `needs-clarification`。
-
-> **砍掉想法是这条链的正常产出，不是失败。** 评估的全部意义就是让不该做的事停在写代码之前；`decision.md` 里写清「为什么不做」比勉强开一个 feature 更有价值。
-
-### 七步节奏
-
-一条命令一步，**每步产物 review 通过后再敲下一条**，禁止连发。
-
-| 步 | 命令 | 输入 | 产出 | 进入下一步的门槛 |
-|---|---|---|---|---|
-| 1 | `/speckit.specify` | 业务描述（做什么、为什么、不做什么） | `specs/NNN-xxx/spec.md` | 需求无歧义，且不含任何技术方案 |
-| 2 | `/speckit.clarify` | 直接回车（由它提问） | spec.md 中的澄清条目 | 所有提问已回答 |
-| 3 | `/speckit.plan` | 技术偏好，可省略 | `plan.md`、`research.md`、`data-model.md`、`contracts/` | 复用既有架构，无规范外依赖 |
-| 4 | `/speckit.tasks` | 无需参数 | `tasks.md` | 任务粒度可独立完成 |
-| 5 | `/speckit.analyze` | 无需参数 | 一致性报告 | 无与宪法/`AGENTS.md` 冲突的 Critical 项 |
-| 6 | `/speckit.implement` | 无需参数 | 代码 + 勾选 `tasks.md` | 任务全部完成，`make test` 通过 |
-| 7 | `/speckit.converge` | 无需参数 | 收敛报告 | 报告为 `Converged`；否则回到第 6 步循环 |
-
-可选命令：`/speckit.checklist`（第 3 步后生成质量清单）、`/speckit.taskstoissues`（任务转 GitHub Issue）。
-
-### 第 1 步怎么写（最容易写错）
-
-只写**用户视角的行为 + 边界**，出现库名、表名、缓存、类名即视为写错——那属于第 3 步。
-
-```text
-/speckit.specify 允许员工在账号中心自助绑定 TOTP：未绑定用户可生成密钥并展示二维码、
-输入 6 位验证码确认后启用；已绑定用户可解绑，解绑需再次输入登录密码；
-管理员可将指定用户标记为强制 MFA，被强制且未绑定的用户登录成功后先被引导到绑定页。
-
-边界：不改变现有 /oauth2/* 协议流程与 /api/v1/** 统一响应结构；
-不实现短信/邮件/备用码；前端交互契约参考 PRD.md 对应页面章节。
-```
-
-### 产物与提交节奏
-
-```
-specs/001-mfa-self-binding/
-├── spec.md          # 需求（人话，无技术方案）
-├── plan.md          # 技术方案
-├── research.md      # 备选方案与取舍
-├── data-model.md    # 数据模型增量
-├── contracts/       # 接口契约（对齐 AGENTS.md §4）
-├── quickstart.md    # 验证步骤
-└── tasks.md         # 任务清单（implement 时逐项勾选）
-```
-
-一步一提交，便于单独回滚与评审：
-
-```bash
-git add specs/001-mfa-self-binding/spec.md && git commit -m "spec: MFA 自助绑定需求"
-git add specs/001-mfa-self-binding/         && git commit -m "plan: MFA 自助绑定技术方案"
-# implement 之后按模块提交，提交前跑 make test / make build-web
-# 改了 handler 注解：先 make docs，再把 openapi.json 与注解改动放进同一个提交（make build 会执行 docs-check 拦截漂移）
-```
-
-### 三条铁律
-
-1. **一次只开一个 feature 目录**，走完 `converge` 再开 `002-xxx`；并行会让 plan/analyze 互相污染。
-2. **spec.md 出现技术名词即返工**：它只回答「用户看到什么、什么情况算成功或失败」。
-3. **每一步都要人工拍板**：`implement` 前没看 `plan.md`，等于把架构决策权交给模型。
-
-### 文档分工
-
-| 文档 | 角色 | 何时被读 |
-|---|---|---|
-| `.specify/memory/constitution.md` | 不可协商的原则（5 条） | 每次 `plan` / `analyze` |
-| `AGENTS.md` | 实现细节唯一权威（版本、字段、错误码、非目标） | 写 spec/plan 的输入 |
-| `PRD.md` | 前端交互契约（页面、路由、接口） | 前端类特性的 spec 输入 |
-| `specs/NNN-xxx/` | 本次变更的过程记录 | 逐阶段产出 |
-
-### 命令不可用时的兜底
-
-若当前 AI 会话未注册 `/speckit.*`，可直接要求按命令文件执行，产物与流程一致：
-
-```text
-按 .codebuddy/commands/speckit.specify.md 执行，参数是「<业务描述>」
-```
-
-## 生产部署要点
+## 9. 生产部署要点
 
 1. 反向代理把协议层与管理 API 置于同一域名下（否则 `sid` cookie 无法共享）：
    - `/oauth2/*`、`/.well-known/*`、`/login`、`/logout` → `:8080`
@@ -286,24 +177,25 @@ git add specs/001-mfa-self-binding/         && git commit -m "plan: MFA 自助�
 3. 管理后台产物默认使用 `base: '/'`，挂到 `/admin/` 子路径时需要在 `vite.config.ts` 调整 `base` 并同步 `createWebHistory`。
 4. 数据库与 Redis 密码、`OIDC_CRYPTO_KEY`、签名私钥须通过密钥管理下发，不要提交进仓库。
 
-## 目录速览
+## 10. 目录速览
 
 ```
 cmd/sso            # fx 装配入口
 internal/oidc      # OIDC Provider、Storage 适配、登录闭环、签名密钥
-internal/api       # Gin 路由、中间件、auth/me/admin 处理器
+internal/api       # Gin 路由、中间件、auth/me/admin 处理器、docs（内嵌 OpenAPI 与文档页）
 internal/service   # 业务规则层
 internal/store     # gorm 模型与各 store 实现（Redis 会话）
 internal/pkg       # crypto / id / clock / log
 migrations/        # 手写 SQL（禁止 AutoMigrate）
+tools/             # 构建期工具（独立 module）：Swagger 2.0 -> OpenAPI 3.0.3 转换与漂移比对
 web/portal         # 门户（Tailwind）
 web/admin          # 管理后台（Element Plus）
-.specify/          # Spec Kit 配置：宪法（memory/）、模板、脚本
+.specify/          # Spec Kit 配置：宪法（memory/）、模板、脚本、质量门禁运行时（gates/）
 specs/             # 每个功能的规格/计划/任务（由 /speckit.specify 生成）
 .codebuddy/        # AI 斜杠命令（speckit.*）
 ```
 
-## 常见问题
+## 11. 常见问题
 
 | 现象 | 处理 |
 |---|---|
@@ -313,3 +205,7 @@ specs/             # 每个功能的规格/计划/任务（由 /speckit.specify 
 | 管理后台 403 | 当前账号不含 `admin` 角色 |
 | 端口占用 | `HTTP_IDP_ADDR`/`HTTP_API_ADDR` 可改；前端端口在各自 `vite.config.ts` |
 | MySQL 3306 冲突 | docker-compose 已映射到 3307，可用 `MYSQL_HOST_PORT` 覆盖 |
+| `make lint` 报未安装 | `go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8` |
+| `make build` 因 `docs-check` 失败 | 注解已改但产物未更新：`make docs` 后与注解同提交 |
+| `make build-web` 报 `SAFE_DELETE_BULK_CONFIRM_REQUIRED` | 本机 npm 的批量删除保护：`make build-web NPM_INSTALL="npm install"` |
+| 提交被 `commit-msg` 拒绝 | 提交信息须为 conventional commits；改受保护文件需加 `Protected-Change:` / `Approved-By:` 尾注 |
