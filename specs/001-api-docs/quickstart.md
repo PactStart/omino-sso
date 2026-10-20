@@ -11,7 +11,7 @@
 | 项 | 要求 |
 |---|---|
 | 工作目录 | 仓库根 `/Users/apple/ai_workspace/omino-sso`，分支 `001-api-docs` |
-| Go | 1.24.x（`go version` 通过） |
+| Go | 1.26.x（`go version` 通过；2026-10-20 由 1.24.1 升级，见 AGENTS.md §2.1） |
 | 网络 | **不需要**。生成与校验必须离线完成（FR-014）；仅 `go mod download` 首次需要 |
 | MySQL / Redis | **不需要**用于场景 1–3；仅场景 4/5（启动服务）需要，走既有 `docker-compose.yml` |
 | 环境变量 | 场景 4/5 需要 `.env`（复制 `.env.example` 后填 DB/Redis） |
@@ -33,7 +33,7 @@ make keys && make migrate-up
 | 2 | ✅ | 两次生成 sha256 一致；`docs-check` 退出码 0；把一处 `@Summary` 改掉后退出码非零并输出 `POST /api/v1/auth/mfa/verify: summary changed` |
 | 3 | ⚠️ 部分 | `make build` ✅、`go test ./...` ✅、`make lint` ✅（本机原先未装 `golangci-lint`，已 `go install` v1.64.8，主模块与 `tools/` 均 0 issue）；**`make build-web` 未能整条跑通**——本环境的 npm 11.19 有批量删除保护，`npm ci` 报 `SAFE_DELETE_BULK_CONFIRM_REQUIRED` 并中止（`--force` 亦无效）。改以 `npm run build` 直接构建两个前端：admin、portal 均成功（portal 的 `node_modules` 因此前中断的 `npm ci` 缺包，已用 `npm install` 修复） |
 | 4 | ✅ | curl 断言通过；**真实 Chrome（headless + CDP）**打开 `/docs/`：渲染出标题 `omino-sso 管理 API <version> OAS3`、16 个 `opblock`、6 个分组；页面内 `fetch(credentials:'include')` 依次完成 `login(200, mfaRequired=false)` → `GET /api/v1/me(200, admin)` → `GET /api/v1/admin/orgs/tree(200)` → `POST /api/v1/admin/users(201)` → `GET /api/v1/admin/users?keyword=…(200, total=1)`，随后把验收用户 `PATCH` 为 `disabled` 清理；网络采集 15 个请求，**外部域 0 个**（全为 `127.0.0.1:8081`）。`docker stop omino-sso-redis` 后 `docs=200`、`spec=200`、业务登录仍返回 400（限流 fail-open） |
-| 5 | ⏭️ 跳过 | 按用户决定不执行 prod 冒烟；prod 隔离已由 `internal/api/router_test.go` 的 CT-4/CT-5 单测覆盖 |
+| 5 | ✅ 补做 | `APP_ENV=prod` + `bin/sso`（`HTTP_API_ADDR=:18081`、`OIDC_ISSUER=https://sso.example.com`）实机跑通：`/docs/index.html`、`/docs/`、`/docs/openapi.json`、`/docs/swagger-ui.css`、`/docs-does-not-exist` 全部 `404 NOT_FOUND` 且 `data=null`；文档路径与不存在路径的响应体除 `traceId` 外逐字段一致，响应头除 `X-Trace-Id` 外一致、均 `application/json; charset=utf-8` 且无 `Set-Cookie`；`POST /api/v1/auth/login` 空体仍 `400`（业务无回归），`:18080` 的 `/.well-known/openid-configuration` 仍 `200` |
 | 6 | ✅ | `README.md` 含 `make docs` / `make docs-check` / `make docs-serve`、可粘贴到 CI 的 `make docs-check` 与文档入口地址 |
 
 > 遗留提醒：场景 4 会在库里留下一个 `docsck######`、状态 `disabled` 的验收用户（接口无删除能力），如需清理可直接 `DELETE FROM users WHERE username LIKE 'docsck%'`。
