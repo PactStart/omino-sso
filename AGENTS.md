@@ -67,6 +67,23 @@
 | Redis | `7.4` | 单实例 + AOF，不使用 Cluster |
 | Docker / Compose | `27.x` / `v2` | 本地与 MVP 部署 |
 
+### 2.4 接口文档生成链（构建期依赖）
+
+**不进入请求路径**，仅在 `make docs` / `make docs-check` 时使用；四个依赖均为 MIT 许可。版本为 `go.mod` 实际锁定值，升级需按本文件顶部约定单独提交并说明回归范围。
+
+| 组件 | 模块 | 锁定版本 | 许可证 | 用途 |
+|---|---|---|---|---|
+| 注解解析 | `github.com/swaggo/swag` | `v1.16.6` | MIT | 从 handler 注释生成 Swagger 2.0（**该库不产出 OpenAPI 3**，见下） |
+| 规范转换 | `github.com/getkin/kin-openapi` | `v0.135.0` | MIT | `openapi2conv.ToV3` 做 2.0→3.0 转换、`openapi3` 做漂移比对 |
+| 文档 UI（接入） | `github.com/swaggo/gin-swagger` | `v1.6.1` | MIT | 在 Gin 上挂载文档页 |
+| 文档 UI（资源） | `github.com/swaggo/files` | `v1.0.1` | MIT | swagger-ui 静态资源，内嵌进二进制，不依赖 CDN |
+
+**锁定理由（不得随意改动）**
+
+- `kin-openapi` 停在 `v0.135.0`：`v0.136.0` 起的版本要求 `go >= 1.25`，与本项目 `go 1.24.1` 不兼容。升级此处必然连带升级 Go 版本，属独立议题。
+- `swaggo/swag` 仅产出 Swagger 2.0（其 OpenAPI 3 支持自 2019 年起一直是未合入的提案），因此**转换步骤不可省略**，禁止为了"少一个依赖"而直接交付 2.0。
+- swag CLI 通过 `tools/tools.go`（`//go:build tools`）纳入 `go.mod`，命令行调用一律写 `go run github.com/swaggo/swag/cmd/swag`，**禁止写 `@version`**（会绕过 `go.sum` 锁定并要求联网）。
+
 ---
 
 ## 3. 目录结构
@@ -79,6 +96,12 @@ omino-sso/
 ├── Makefile
 ├── docker-compose.yml                 # mysql + redis + sso + portal + admin
 ├── .env.example                       # 环境变量模板（§9）
+├── .tmp/                              # 文档生成中间产物（gitignore，不入库）
+├── tools/                             # 构建期工具，禁止被业务包 import
+│   ├── tools.go                       # //go:build tools，固定 swag CLI 版本
+│   └── openapi3/
+│       ├── main.go                    # Swagger 2.0 → OpenAPI 3.0.3 转换 + -check 漂移比对
+│       └── main_test.go
 ├── cmd/
 │   └── sso/
 │       └── main.go                    # fx.New 入口，仅装配，无业务
@@ -105,6 +128,10 @@ omino-sso/
 │   │   ├── response/
 │   │   │   ├── response.go            # 统一响应封装（§5）
 │   │   │   └── errors.go              # 错误码枚举与 HTTP 映射
+│   │   ├── docs/                      # 接口文档（非 prod 可达；§4.0 豁免统一响应）
+│   │   │   ├── docs.go                # //go:embed 产物 + 运行时注入环境/版本 + gin handler
+│   │   │   ├── openapi.json           # 生成物，入库（OpenAPI 3.0.3）
+│   │   │   └── docs_test.go
 │   │   ├── auth/                      # /api/v1/auth/*
 │   │   │   ├── login.go               # 账号密码登录、失败计数、锁定
 │   │   │   ├── mfa.go                 # TOTP 校验、绑定/确认
@@ -193,8 +220,15 @@ omino-sso/
 |---|---|---|---|
 | IdP（`net/http`） | `:8080` | `/oauth2/*`、`/.well-known/*`、`/login`、`/logout` | **RFC 原生格式**，禁止套统一响应 |
 | 管理 API（Gin） | `:8081` | `/api/v1/*` | 统一响应（§5） |
+| 接口文档（Gin，仅非 prod） | `:8081` | `/docs/*` | **原始 HTML / JSON / 静态字节**，禁止套统一响应 |
 
 > `/oauth2/*` 与 `/.well-known/*` 的报文由 `zitadel/oidc/v3` 生成，**不得包装、不得改写字段名**。
+
+**`/docs/*` 的三条硬性约定**
+
+1. **豁免统一响应**：文档页与 `openapi.json` 必须返回浏览器与 OpenAPI 工具链可直接消费的原始内容；套 `{code,message,data,traceId}` 会使 swagger-ui 与任何规范消费方无法解析。属与 `/oauth2/*` 同类的"非业务面"豁免。
+2. **仅非 prod 注册**：`APP_ENV=prod` 时该路由**不得注册**，请求须落入 `NoRoute` 分支，响应与任意不存在路径完全一致（不得返回 403 或"已禁用"提示）。环境判定只在 `internal/api/router.go` 一处。
+3. **不挂限流**：`/docs/*` 必须跳过全局限流中间件，使文档页不依赖 Redis 可用性（运维故障时正是最需要查文档的时刻）。
 
 ### 4.1 接口总览
 

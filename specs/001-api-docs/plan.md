@@ -17,9 +17,10 @@
 **Primary Dependencies**:
 - 现有：`github.com/gin-gonic/gin v1.10.0`（文档路由挂载点）、`go.uber.org/fx v1.23.0`（装配）、`internal/api/response`（统一响应结构 `Body` / `Page`）
 - 新增（需先写入 AGENTS.md §2，见 Constitution Check）：
-  - `github.com/swaggo/swag`（CLI + 注解解析库，`v1.16.x` 系列最新补丁）。**通过 `tools.go`（`//go:build tools`）纳入 `go.mod`**，使 `make docs` 可写 `go run github.com/swaggo/swag/cmd/swag`（不带 `@version`），版本由 `go.sum` 锁定、`go mod download` 一次后永久离线可用（修正 critique E9）
-  - `github.com/getkin/kin-openapi`（`openapi2conv` 做 2.0→3.0 转换，`openapi3` 做漂移语义比对）
-  - `github.com/swaggo/gin-swagger` + `github.com/swaggo/files`（文档 UI，资源内嵌进二进制，无 CDN 依赖）
+  - `github.com/swaggo/swag` `v1.16.6`（CLI + 注解解析库）。**通过 `tools.go`（`//go:build tools`）纳入 `go.mod`**，使 `make docs` 可写 `go run github.com/swaggo/swag/cmd/swag`（不带 `@version`），版本由 `go.sum` 锁定、`go mod download` 一次后永久离线可用（修正 critique E9）
+  - `github.com/getkin/kin-openapi` **`v0.135.0`**（`openapi2conv` 做 2.0→3.0 转换，`openapi3` 做漂移语义比对）。**版本上限受 Go 约束**：`v0.136.0+` 要求 `go >= 1.25`，本项目为 `go 1.24.1`
+  - `github.com/swaggo/gin-swagger` `v1.6.1` + `github.com/swaggo/files` `v1.0.1`（文档 UI，资源内嵌进二进制，无 CDN 依赖）
+  - 四个依赖均为 MIT；已登记于 `AGENTS.md` §2.4（T002 完成）
 
 **Storage**: 无。本特性不新增表、不写库、不做迁移（宪法原则 V 无触发点）；生成的 `openapi.json` 作为源文件随仓库提交。
 

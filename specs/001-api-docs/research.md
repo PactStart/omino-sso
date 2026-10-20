@@ -122,6 +122,8 @@ Technical Context 中不存在 `NEEDS CLARIFICATION` 标记（本特性的技术
 | `openapi2conv` 对 `x-` 扩展与 `example` 的保真度 | 需实施时验证 | 若字段级 `example` 在转换中丢失，改用 `@Success ... Example` 行内示例（swag 行内 example 语法转换后仍保留在 response 对象上）；验证点写入 T010 的验收项 |
 | `response.Body.Data` 为 `any` 类型 | 已知限制 | 注解使用 swag 的组合语法 `{object} response.Body{data=dto.User}` 逐接口指定内层类型；若某接口的 `data` 为数组，使用 `{array} response.Body{data=[]dto.App}` 形式 |
 | 文档页 Try it out 的同源限制 | 已记录（`requirements.md` Notes） | 本次不引入 CORS；文档页与业务接口同源，`make docs-serve` 的说明中明示 |
-| **swagger-ui 是否携带 `sid` cookie** | **未验证，且决定 US1 核心价值**（critique X1） | 列为 `/speckit.tasks` 的第一个任务：30 分钟 spike，非 prod 启动后用页面登录并调用 `/api/v1/me`，抓包确认请求是否带 `Cookie`。若不携带，需通过 swagger-ui 的 `requestInterceptor`/`withCredentials` 补齐，属计划外工作量；结论必须回写本表 |
+| **swagger-ui 是否携带 `sid` cookie** | **已确认携带**（2026-10-20 人工验证，critique X1 / T001 关闭） | 验证方式：`APP_ENV=dev make dev` 后浏览器完成 `POST /api/v1/auth/login`，确认响应下发 `Set-Cookie: sid=...`，且后续同源请求的请求头携带 `Cookie: sid=...`。结论：US1 的「Try it out 闭环」成立，SC-002 无需下调，不需要引入 `requestInterceptor`。**残余验证点**：结论基于浏览器同源默认行为；待 T007/T008 交付真实 `/docs/` 页面后，需用文档页本身再复核一次（`quickstart.md` 场景 4），届时若出现 401 再回看本行 |
 | 离线可生成 | 已解决（critique E9） | swag CLI 经 `tools.go` 纳入 `go.mod`，`make docs` 不带 `@version`；`quickstart.md` 场景 1 增加"断网复跑"验证 |
 | 非 prod 实例的网络暴露面 | 已确认（critique E4） | 负责人确认 dev/test 无公网可达部署，故零鉴权访问可接受；该前提写入 `spec.md` Clarifications 与 Assumptions，条件变化时须先收紧策略 |
+| **`kin-openapi` 版本天花板** | **已定（T002 查证）** | `v0.136.0` 起要求 `go >= 1.25`（`v0.139.0`/`v0.140.0`/`v0.145.0`/`v0.150.0`/`v0.151.0` 均为 `go 1.25`，`v0.136.0` 为 `go 1.26`），与本项目 `go 1.24.1` 不兼容。**锁定 `v0.135.0`**（`go 1.22.5`），其 `openapi2conv.ToV3(*openapi2.T) (*openapi3.T, error)` 签名已核验存在。升级该依赖 = 先升级 Go 版本，属独立议题 |
+| **本地 Go 工具链** | **环境注意** | 本机 `PATH` 上的 `go` 为 `go1.20.14`（gvm 默认），而 `go.mod` 要求 `go 1.24.1`，直接执行 `go build` / `make build` 会报 `invalid go version '1.24.1'`。可用 `/Users/apple/.gvm/gos/go1.24.1/bin/go`，或 `gvm use go1.24.1` 后再执行。实施与验收（含 `make docs` 内部的 `go run`）务必确认工具链为 1.24.1 |

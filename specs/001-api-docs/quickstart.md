@@ -26,6 +26,9 @@ make keys && make migrate-up
 
 ## 场景 0：前置 spike —— Try it out 是否真的携带会话 Cookie（写代码之前做）
 
+> **已执行（2026-10-20）**：结论为**携带**（登录下发 `Set-Cookie: sid=...`，同源后续请求带上 `Cookie: sid=...`），US1 的 Try it out 闭环成立，SC-002 无需下调。详见 `research.md` 风险登记。
+> 本节保留作为**可复现步骤**，以及将来改动会话机制（Cookie 属性、SameSite、域名）时的回归项。
+
 这是 critique X1 提出的、决定 US1 核心价值能否成立的一步。不写业务代码，只用现有 `make dev` 加浏览器验证：
 
 ```bash

@@ -34,8 +34,8 @@ description: "Task list for API 接口文档与自助调试门户"
 
 **Purpose**: 先验证可行性、再同步规范、再引入依赖。**顺序不可调换**——宪法要求"先改规范再改代码"，而 `quickstart.md` 场景 0 的 spike 决定 US1 是否要缩水，必须先做。
 
-- [ ] T001 执行 `quickstart.md` 场景 0 的可行性 spike：`APP_ENV=dev make dev` 后用浏览器在 `/docs/index.html`（临时可用任一本地页面替代）分别调用 `POST /api/v1/auth/login` 与 `GET /api/v1/me`，在开发者工具 Network 面板确认第二个请求是否携带 `Cookie: sid=...`；把结论（携带 / 不携带 / 需 `requestInterceptor` 补齐）回写 `specs/001-api-docs/research.md` 的「未决与风险登记」对应行
-- [ ] T002 更新 `AGENTS.md`：§2 技术栈表新增 4 个依赖（`swaggo/swag`、`getkin/kin-openapi`、`swaggo/gin-swagger`、`swaggo/files`）的精确版本、许可证、维护状态与引入理由；§3 目录结构新增 `internal/api/docs/`、`tools/openapi3/`、`.tmp/`；§4.0 增补一行「`/docs/*` 不套统一响应」豁免说明
+- [x] T001 ✅ **已完成 2026-10-20** — 执行 `quickstart.md` 场景 0 的可行性 spike：`APP_ENV=dev make dev` 后登录，确认响应下发 `Set-Cookie: sid=...` 且同源后续请求携带 `Cookie: sid=...`。**结论：携带，US1 的 Try it out 闭环成立，SC-002 不下调**。已回写 `specs/001-api-docs/research.md`「未决与风险登记」；残余验证点（用真实 `/docs/` 页面复核）保留在 T017 中
+- [x] T002 ✅ **已完成 2026-10-20** — 更新 `AGENTS.md`：新增 §2.4「接口文档生成链」登记 4 个依赖的锁定版本、许可证与锁定理由（`swag v1.16.6` / `kin-openapi v0.135.0` / `gin-swagger v1.6.1` / `files v1.0.1`，均 MIT）；§3 目录树新增 `.tmp/`、`tools/tools.go`、`tools/openapi3/`、`internal/api/docs/`；§4.0 新增 `/docs/*` 行与三条硬性约定（豁免统一响应、仅非 prod 注册、不挂限流）。**关键发现**：`kin-openapi v0.136.0+` 要求 `go >= 1.25`，故锁定 `v0.135.0`（`go 1.22.5`）
 - [ ] T003 引入依赖并固定 swag CLI：在 `tools/tools.go` 新建 `//go:build tools` 包并 blank-import `github.com/swaggo/swag/cmd/swag`，`go get` 四个依赖后执行 `go mod tidy`，确认 `go.mod` 出现 `swag` 的 require 且 `go.sum` 已锁定；在 `.gitignore` 增加 `.tmp/`
 
 **Checkpoint**: 规范与依赖就位，`go build ./...` 仍通过。
