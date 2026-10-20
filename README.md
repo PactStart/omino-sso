@@ -21,7 +21,7 @@
 
 | 层 | 组件 |
 |---|---|
-| 后端 | Go 1.24、gin v1.10.0（管理 API）、uber/fx v1.23.0、gorm v1.25.12、zitadel/oidc/v3 v3.28.0、go-jose/v4、argon2id、redis/go-redis/v9 |
+| 后端 | Go 1.26.0、gin v1.10.0（管理 API）、uber/fx v1.23.0、gorm v1.25.12、zitadel/oidc/v3 v3.28.0、go-jose/v4、argon2id、redis/go-redis/v9 |
 | 门户 | Vue 3.5.13 + Vite 6.3.5 + TS 5.7.2 + Pinia + vue-router + Tailwind CSS 4.1.0 |
 | 后台 | 同上组件基线 + Element Plus 2.9.1 |
 | 存储 | MySQL 8.4、Redis 7.4 |
@@ -39,7 +39,7 @@
 
 ## 环境要求
 
-- Go 1.24+
+- Go 1.26.0+
 - Node.js 20+ / npm 10+
 - Docker 27+ 与 Docker Compose v2（或自备 MySQL 8.4 + Redis 7.4）
 - `openssl`（生成开发签名密钥）、`mysql` 客户端（手动迁移时需要）
