@@ -1,6 +1,6 @@
 # API Evolve · Orchestration — `001-api-docs`
 
-**状态说明**：`after_specify`（detect）与 `after_plan`（baseline）两个 hook 均为 `optional: true`，本特性从未执行，故不存在 `detected.json` / `baseline/` / `diff.json` / `classification.md` / `bump.json` / `deprecations.json` / `policy.yml` / `client-impact.md`。缺省策略（项目根与特性目录均无 `policy.yml`）下的门禁判定如下。
+**状态说明**：`after_specify`（detect）与 `after_plan`（baseline）两个 hook 在本特性执行期间均为 `optional: true` 且未被执行，故 15:07 那次门禁判定时状态目录只有本文件。**2026-10-20T15:20 已用 `/speckit.api-evolve.orchestrate` 回填全量状态**（detect → baseline → diff → classify → bump → client-impact → gate），`after_plan` 的 baseline 亦已在 `.specify/extensions.yml` 改为 `optional: false`，后续特性不再出现无基线的情况。缺省策略（项目根与特性目录均无 `policy.yml`）下的门禁判定如下。
 
 契约面事实：本特性不修改任何既有端点的请求/响应契约，仅新增 16 个端点的人类可读文档（`internal/api/docs/openapi.json`）与 `/docs/*` 非业务路由；`/oauth2/*`、`/.well-known/*` 由 `zitadel/oidc/v3` 生成，未改动。
 
@@ -30,3 +30,23 @@ for f in detected.json diff.json classification.md policy.yml deprecations.json 
 done   # 除本文件外全部 absent
 ls api-evolve 2>/dev/null   # 项目根无 api-evolve/policy.yml
 ```
+
+---
+
+## Orchestration — 2026-10-20T15:20:00+08:00
+
+Result: **PASS**（backfill，exit 0）
+
+| Phase | Artifact | Result |
+|---|---|---|
+| detect | `detected.json` | 1 个契约文件：`internal/api/docs/openapi.json`（openapi-3，16 端点 / 22 schema） |
+| baseline | `baseline/manifest.json` + `baseline/internal/api/docs/openapi.json` | 冻结 sha256 `e29a35aa…`（未用 `--rebaseline`，此前无基线） |
+| diff | `diff.json` | `entries: []`（工作契约与基线逐字节一致） |
+| classify | `classification.md` | additive 0 / non-breaking 0 / breaking 0 / removal 0 |
+| bump | `bump.json` | implied `none`，`1.0 → 1.0`，`confirmed: true` |
+| client-impact | `client-impact.md` | 无 breaking，无受影响消费方 |
+| gate | 本文件「Gate — 2026-10-20T15:07」 | 5 条规则全 PASS |
+
+**为何 diff 为空**：本特性是管理 API 契约的**首次建立**而非修改 —— 16 个端点的请求/响应在实施前后未变（T009 具名化只改 Go 类型，JSON 键集经 `dto_test.go` 断言等价）；`/oauth2/*` 由协议库生成未改动；`/docs/*` 属非业务面不计入管理 API 契约。因此基线直接取交付后状态，供下一个特性作为 diff 锚点。
+
+**已知限制**：`policy.yml` 与 `clients:` 段仍未建立。下一个出现 breaking 变更的特性必须先补 `clients:` 段，否则 `client-impact` 只能给出空表。

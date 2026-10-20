@@ -214,3 +214,13 @@ Task: "环境判断单一来源审查（只读）"                   # T024
 - 每个 Phase 结束都有 Checkpoint，建议在 Checkpoint 处提交一次，便于定位回归
 - 本特性**不新增表、不写迁移**，任何要求改 `migrations/` 的实现方向都应立即停止并复核
 - 禁止顺手重构：`router.go` 的中间件顺序、`response` 包结构与既有 handler 业务逻辑一律不动
+
+---
+
+## Phase 7: Convergence
+
+> 来源：`/speckit.converge`（2026-10-20）。按宪法 MUST 优先排序，ID 接续 T032。
+
+- [x] T033 ✅ **已完成 2026-10-20** — `Makefile` 的 `build-web` 改为 `NPM_INSTALL ?= npm ci`，两个前端均用 `$(NPM_INSTALL)`；流水线仍走锁文件一致的 `npm ci`，本机可覆盖。实跑 `make build-web NPM_INSTALL="npm install"` 整条通过（portal + admin 均 `vite build` 成功，末尾输出 `web/dist ready: portal + admin`），且 `package-lock.json` 未被改写（`git status` 无该文件变更）| 原始描述：让 `make build-web` 在本机可整条通过 per Constitution「开发工作流与质量门禁」第 1 条 — 现状 `npm ci` 在本机 npm 11.19 下以 `SAFE_DELETE_BULK_CONFIRM_REQUIRED` 中止，T026/T029 只能改以两个前端各自的 `npm run build` 验证。做法取最保守路径：把安装命令提为可覆盖变量，流水线仍用 `npm ci`，本机按需覆盖；改完实跑一次并记录退出码
+- [x] T034 ✅ **已完成 2026-10-20** — `Makefile` 的 `lint` 去掉 `|| true`，并在工具缺失时以 `exit 1` 报出安装命令（不再静默通过）；`GOLANGCI ?= golangci-lint` 可覆盖。**变异验证**：临时写入一个 `declared and not used` 的探针文件后 `make lint` 返回 `make: *** [lint] Error 1`；删除探针后恢复 0，证明门禁真正生效 | 原始描述：`make lint` 不再吞错 per Constitution「`make lint` 必须执行」(contradicts) — 现状 `Makefile:62` 为 `golangci-lint run ./... || true`，返回码恒 0，该步骤无法起到门禁作用。去掉 `|| true`；若本机未安装 golangci-lint，应以「未安装」而非「通过」的形式暴露
+- [x] T035 ✅ **已完成 2026-10-20** — `internal/api/docs/docs_test.go` 新增 `TestAnnotationErrorCodesAreRegistered`：解析内嵌 `openapi.json`，按 ` / ` 切分每个响应的 `description`，取形如 `^[A-Z][A-Z0-9_]{8,}$` 的业务码 token（长度下限排除 `MFA`/`TOTP` 这类缩写），断言均在 `internal/api/response/errors.go` 的登记集合内；登记集合由 `go/ast` 解析源码 `&Error{...}` 字面量取得，不另存副本。**变异验证**：把 `AUTH_INVALID_CREDENTIALS` 改成 `AUTH_INVALID_CREDS` 后测试失败并指出具体端点，还原后通过 | 原始描述：把「注解业务码 ⊆ `response/errors.go` 登记项」（AC-5）自动化 per FR-006 / contracts AC-5 (partial) — 现状仅在 T029 用一次性脚本比对过，未入库为测试
