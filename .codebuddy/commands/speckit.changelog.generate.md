@@ -1,0 +1,1 @@
+../../.specify/extensions/changelog/.specify-dev/agent-commands/codebuddy/speckit.changelog.generate.md

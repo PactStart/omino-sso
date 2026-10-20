@@ -8,6 +8,15 @@ feature.json
 # Per-machine extension config overrides.
 extensions/*/local-config.yml
 
+# Extension download cache and backups — reproducible by re-running `specify
+# extension add`, so they must not enter version control.
+extensions/.cache/
+extensions/.backup/
+
+# Dev-mode install artifacts (`specify extension add --dev` copies each command
+# into .specify-dev/). The live copies live in .codebuddy/commands/.
+extensions/*/.specify-dev/
+
 # Executable adapter packages and their per-checkout provenance registry.
 # Execution consent is stored separately in the user's local trust registry.
 integrations/packages/

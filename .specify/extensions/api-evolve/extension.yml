@@ -1,0 +1,80 @@
+schema_version: "1.0"
+
+extension:
+  id: api-evolve
+  name: API Evolve
+  version: "1.0.0"
+  description: "Managed API contract evolution — breaking-change detection, semver enforcement, deprecation orchestration, and lifecycle gates across REST, GraphQL, and gRPC."
+  author: Quratulain-bilal
+  repository: https://github.com/Quratulain-bilal/spec-kit-api-evolve
+  homepage: https://github.com/Quratulain-bilal/spec-kit-api-evolve
+  license: MIT
+
+requires:
+  speckit_version: ">=0.4.0"
+
+
+provides:
+  commands:
+    - name: speckit.api-evolve.baseline
+      file: commands/speckit.api-evolve.baseline.md
+      description: "Freeze a snapshot of the current contract files before any plan-driven changes are implemented."
+    - name: speckit.api-evolve.bump
+      file: commands/speckit.api-evolve.bump.md
+      description: "Recommend the SemVer bump implied by the classified diff and refuse silent semver violations."
+    - name: speckit.api-evolve.changelog
+      file: commands/speckit.api-evolve.changelog.md
+      description: "Generate the consumer-facing changelog entry from the final classified diff."
+    - name: speckit.api-evolve.classify
+      file: commands/speckit.api-evolve.classify.md
+      description: "Classify each diff entry as additive, non-breaking, breaking, or removal — with rationale."
+    - name: speckit.api-evolve.client-impact
+      file: commands/speckit.api-evolve.client-impact.md
+      description: "Map breaking changes to known consumers so impact is visible before the change ships."
+    - name: speckit.api-evolve.deprecate
+      file: commands/speckit.api-evolve.deprecate.md
+      description: "Open a deprecation entry — required for any breaking change or removal before the gate passes."
+    - name: speckit.api-evolve.deprecation-status
+      file: commands/speckit.api-evolve.deprecation-status.md
+      description: "Show every active deprecation, days until sunset, and which endpoints still use it."
+    - name: speckit.api-evolve.detect
+      file: commands/speckit.api-evolve.detect.md
+      description: "Discover every API contract file in the project and classify by format."
+    - name: speckit.api-evolve.diff
+      file: commands/speckit.api-evolve.diff.md
+      description: "Diff working contracts against the frozen baseline; emit a structured change list."
+    - name: speckit.api-evolve.gate
+      file: commands/speckit.api-evolve.gate.md
+      description: "Run the policy gate that blocks /speckit.implement on undeclared breaking changes or unmet deprecation policy."
+    - name: speckit.api-evolve.orchestrate
+      file: commands/speckit.api-evolve.orchestrate.md
+      description: "Run the full API Evolve pipeline end-to-end on the current feature branch."
+    - name: speckit.api-evolve.release
+      file: commands/speckit.api-evolve.release.md
+      description: "Apply the bump, mark deprecations as published, and tag the release artifact."
+
+hooks:
+  after_specify:
+    command: speckit.api-evolve.detect
+    optional: true
+    description: "Detect API contract files and annotate the spec"
+  after_plan:
+    command: speckit.api-evolve.baseline
+    optional: true
+    description: "Capture contract baseline before plan-driven changes"
+  before_implement:
+    command: speckit.api-evolve.gate
+    optional: false
+    description: "Block implement on undeclared breaking changes or unmet deprecation policy"
+
+tags:
+  - api
+  - contracts
+  - versioning
+  - openapi
+  - graphql
+  - grpc
+  - deprecation
+  - breaking-changes
+  - semver
+  - governance

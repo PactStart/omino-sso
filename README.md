@@ -132,6 +132,110 @@ npm start                     # vite preview，:5173（同样代理 /api）
 
 `package.json` 脚本：`dev`（开发）、`build`（构建）、`start`（预览构建产物）、`typecheck`（仅类型检查）。
 
+## 开发流程规范（Spec Kit）
+
+新功能一律走规格驱动流程（SDD）：**先写清「做什么/为什么」，再定技术方案，最后才写代码**。
+原则层约束见 `.specify/memory/constitution.md`，实现细节以 `AGENTS.md` 为唯一权威。
+
+### 工具与环境
+
+仓库已通过 `specify init --here --integration codebuddy` 完成初始化，产物为 `.specify/` 与
+`.codebuddy/commands/speckit.*.md`（共 54 个命令：10 个核心命令 + 44 个扩展命令）。
+
+| 项 | 说明 |
+|---|---|
+| CLI 版本 | `specify 1.2.2`（`uv tool install` 安装） |
+| 重装/升级 | `uv tool install --python 3.12 --with "cryptography==44.0.2" specify-cli` |
+| 为何锁定 cryptography | 50.x 无 macOS x86_64 预编译 wheel，会退化为源码编译并因缺少 Rust 失败 |
+| 已安装扩展 | 10 个：`git` `gates` `api-evolve` `bug` `assess` `ears` `critique` `checkpoint` `doctor` `changelog`（`.specify/extensions.yml` 中 `auto_execute_hooks: true`） |
+| 浏览扩展 | `specify extension search`；`specify integration status` 查看集成状态 |
+
+### 分支约定
+
+仓库已安装 `git` 扩展，`/speckit.specify` 会先执行**强制前置钩子** `speckit.git.feature`，
+自动创建并切到与 spec 目录同名的分支（如 `001-mfa-self-binding`），因此**无需手动建分支**。
+`before_clarify` / `before_plan` 还注册了可选的自动提交钩子（`speckit.git.commit`）。
+
+若需要手动控制分支（例如要从最新 `main` 出发或复用已有分支）：
+
+```bash
+git switch main && git pull
+git switch -c 001-mfa-self-binding   # 与后续 spec 目录编号一致
+```
+
+### 七步节奏
+
+一条命令一步，**每步产物 review 通过后再敲下一条**，禁止连发。
+
+| 步 | 命令 | 输入 | 产出 | 进入下一步的门槛 |
+|---|---|---|---|---|
+| 1 | `/speckit.specify` | 业务描述（做什么、为什么、不做什么） | `specs/NNN-xxx/spec.md` | 需求无歧义，且不含任何技术方案 |
+| 2 | `/speckit.clarify` | 直接回车（由它提问） | spec.md 中的澄清条目 | 所有提问已回答 |
+| 3 | `/speckit.plan` | 技术偏好，可省略 | `plan.md`、`research.md`、`data-model.md`、`contracts/` | 复用既有架构，无规范外依赖 |
+| 4 | `/speckit.tasks` | 无需参数 | `tasks.md` | 任务粒度可独立完成 |
+| 5 | `/speckit.analyze` | 无需参数 | 一致性报告 | 无与宪法/`AGENTS.md` 冲突的 Critical 项 |
+| 6 | `/speckit.implement` | 无需参数 | 代码 + 勾选 `tasks.md` | 任务全部完成，`make test` 通过 |
+| 7 | `/speckit.converge` | 无需参数 | 收敛报告 | 报告为 `Converged`；否则回到第 6 步循环 |
+
+可选命令：`/speckit.checklist`（第 3 步后生成质量清单）、`/speckit.taskstoissues`（任务转 GitHub Issue）。
+
+### 第 1 步怎么写（最容易写错）
+
+只写**用户视角的行为 + 边界**，出现库名、表名、缓存、类名即视为写错——那属于第 3 步。
+
+```text
+/speckit.specify 允许员工在账号中心自助绑定 TOTP：未绑定用户可生成密钥并展示二维码、
+输入 6 位验证码确认后启用；已绑定用户可解绑，解绑需再次输入登录密码；
+管理员可将指定用户标记为强制 MFA，被强制且未绑定的用户登录成功后先被引导到绑定页。
+
+边界：不改变现有 /oauth2/* 协议流程与 /api/v1/** 统一响应结构；
+不实现短信/邮件/备用码；前端交互契约参考 PRD.md 对应页面章节。
+```
+
+### 产物与提交节奏
+
+```
+specs/001-mfa-self-binding/
+├── spec.md          # 需求（人话，无技术方案）
+├── plan.md          # 技术方案
+├── research.md      # 备选方案与取舍
+├── data-model.md    # 数据模型增量
+├── contracts/       # 接口契约（对齐 AGENTS.md §4）
+├── quickstart.md    # 验证步骤
+└── tasks.md         # 任务清单（implement 时逐项勾选）
+```
+
+一步一提交，便于单独回滚与评审：
+
+```bash
+git add specs/001-mfa-self-binding/spec.md && git commit -m "spec: MFA 自助绑定需求"
+git add specs/001-mfa-self-binding/         && git commit -m "plan: MFA 自助绑定技术方案"
+# implement 之后按模块提交，提交前跑 make test / make build-web
+```
+
+### 三条铁律
+
+1. **一次只开一个 feature 目录**，走完 `converge` 再开 `002-xxx`；并行会让 plan/analyze 互相污染。
+2. **spec.md 出现技术名词即返工**：它只回答「用户看到什么、什么情况算成功或失败」。
+3. **每一步都要人工拍板**：`implement` 前没看 `plan.md`，等于把架构决策权交给模型。
+
+### 文档分工
+
+| 文档 | 角色 | 何时被读 |
+|---|---|---|
+| `.specify/memory/constitution.md` | 不可协商的原则（5 条） | 每次 `plan` / `analyze` |
+| `AGENTS.md` | 实现细节唯一权威（版本、字段、错误码、非目标） | 写 spec/plan 的输入 |
+| `PRD.md` | 前端交互契约（页面、路由、接口） | 前端类特性的 spec 输入 |
+| `specs/NNN-xxx/` | 本次变更的过程记录 | 逐阶段产出 |
+
+### 命令不可用时的兜底
+
+若当前 AI 会话未注册 `/speckit.*`，可直接要求按命令文件执行，产物与流程一致：
+
+```text
+按 .codebuddy/commands/speckit.specify.md 执行，参数是「<业务描述>」
+```
+
 ## 生产部署要点
 
 1. 反向代理把协议层与管理 API 置于同一域名下（否则 `sid` cookie 无法共享）：
@@ -154,6 +258,9 @@ internal/pkg       # crypto / id / clock / log
 migrations/        # 手写 SQL（禁止 AutoMigrate）
 web/portal         # 门户（Tailwind）
 web/admin          # 管理后台（Element Plus）
+.specify/          # Spec Kit 配置：宪法（memory/）、模板、脚本
+specs/             # 每个功能的规格/计划/任务（由 /speckit.specify 生成）
+.codebuddy/        # AI 斜杠命令（speckit.*）
 ```
 
 ## 常见问题
