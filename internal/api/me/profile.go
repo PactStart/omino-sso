@@ -53,15 +53,15 @@ func (h *Handler) Apps(c *gin.Context) {
 		response.Fail(c, response.ErrInternal)
 		return
 	}
-	list := make([]gin.H, 0, len(items))
+	list := make([]dto.AppItem, 0, len(items))
 	for _, it := range items {
-		list = append(list, gin.H{
-			"clientId":     it.ClientID,
-			"name":         it.Name,
-			"description":  it.Description,
-			"logoUrl":      it.LogoURL,
-			"homeUrl":      it.HomeURL,
-			"lastAccessAt": dto.TimePtr(it.LastAccessAt),
+		list = append(list, dto.AppItem{
+			ClientID:     it.ClientID,
+			Name:         it.Name,
+			Description:  it.Description,
+			LogoURL:      it.LogoURL,
+			HomeURL:      it.HomeURL,
+			LastAccessAt: dto.TimePtr(it.LastAccessAt),
 		})
 	}
 	response.Success(c, list)
@@ -124,16 +124,16 @@ func (h *Handler) Sessions(c *gin.Context) {
 		response.Fail(c, response.ErrInternal)
 		return
 	}
-	out := make([]gin.H, 0, len(list))
+	out := make([]dto.SessionItem, 0, len(list))
 	for i := range list {
 		s := list[i]
-		out = append(out, gin.H{
-			"sid":        s.SID,
-			"ip":         s.IP,
-			"userAgent":  s.UserAgent,
-			"createdAt":  dto.Time(s.CreatedAt),
-			"lastSeenAt": dto.Time(s.LastSeenAt),
-			"current":    cur != nil && cur.SID == s.SID,
+		out = append(out, dto.SessionItem{
+			SID:        s.SID,
+			IP:         s.IP,
+			UserAgent:  s.UserAgent,
+			CreatedAt:  dto.Time(s.CreatedAt),
+			LastSeenAt: dto.Time(s.LastSeenAt),
+			Current:    cur != nil && cur.SID == s.SID,
 		})
 	}
 	response.Success(c, out)

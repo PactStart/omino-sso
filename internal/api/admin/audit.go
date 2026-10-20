@@ -48,20 +48,20 @@ func (h *Handler) ListAuditLogs(c *gin.Context) {
 		response.Fail(c, response.ErrInternal)
 		return
 	}
-	out := make([]gin.H, 0, len(list))
+	out := make([]dto.AuditItem, 0, len(list))
 	for i := range list {
 		e := list[i]
-		out = append(out, gin.H{
-			"id":        e.ID,
-			"eventType": e.EventType,
-			"userId":    e.UserID,
-			"username":  e.Username,
-			"clientId":  e.ClientID,
-			"ip":        e.IP,
-			"userAgent": e.UserAgent,
-			"result":    e.Result,
-			"detail":    e.Detail,
-			"createdAt": dto.Time(e.CreatedAt),
+		out = append(out, dto.AuditItem{
+			ID:        e.ID,
+			EventType: e.EventType,
+			UserID:    e.UserID,
+			Username:  e.Username,
+			ClientID:  e.ClientID,
+			IP:        e.IP,
+			UserAgent: e.UserAgent,
+			Result:    e.Result,
+			Detail:    e.Detail,
+			CreatedAt: dto.Time(e.CreatedAt),
 		})
 	}
 	response.Success(c, response.Page{List: out, Total: total, Page: page, PageSize: pageSize})

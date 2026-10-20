@@ -72,9 +72,9 @@ func (h *Handler) CreateClient(c *gin.Context) {
 	if secret != "" {
 		secretPtr = &secret
 	}
-	response.Created(c, gin.H{
-		"clientId":     c0.ClientID,
-		"clientSecret": secretPtr,
+	response.Created(c, dto.CreatedClient{
+		ClientID:     c0.ClientID,
+		ClientSecret: secretPtr,
 	})
 }
 
@@ -102,9 +102,9 @@ func (h *Handler) RotateSecret(c *gin.Context) {
 		Type: model.EventClientSecretRotated, ClientID: clientID,
 		IP: c.ClientIP(), UserAgent: c.Request.UserAgent(), Result: "success",
 	})
-	response.Success(c, gin.H{
-		"clientId":     clientID,
-		"clientSecret": secret,
-		"expiresAt":    nil,
+	response.Success(c, dto.RotatedSecret{
+		ClientID:     clientID,
+		ClientSecret: secret,
+		ExpiresAt:    nil,
 	})
 }

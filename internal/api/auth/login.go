@@ -76,10 +76,10 @@ func (h *Handler) Login(c *gin.Context) {
 			return
 		}
 		// 严格对齐规范 §4.3：二次验证响应只含 mfaRequired / mfaTicket / expiresIn。
-		response.Success(c, gin.H{
-			"mfaRequired": true,
-			"mfaTicket":   ticket,
-			"expiresIn":   300,
+		response.Success(c, dto.LoginMfaChallenge{
+			MFARequired: true,
+			MFATicket:   ticket,
+			ExpiresIn:   300,
 		})
 		return
 	}
@@ -109,12 +109,12 @@ func (h *Handler) completeLogin(c *gin.Context, u *model.User, amr []string, rem
 		UserAgent: c.Request.UserAgent(),
 		Result:    "success",
 	})
-	response.Success(c, gin.H{
-		"mfaRequired": false,
-		"mfaTicket":   nil,
-		"expiresIn":   0,
-		"redirectTo":  "/account",
-		"user":        dto.Brief(u),
+	response.Success(c, dto.LoginResult{
+		MFARequired: false,
+		MFATicket:   nil,
+		ExpiresIn:   0,
+		RedirectTo:  "/account",
+		User:        dto.Brief(u),
 	})
 }
 

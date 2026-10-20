@@ -60,9 +60,9 @@ func (h *Handler) VerifyMFA(c *gin.Context) {
 		return
 	}
 	setCookie(c, h.cfg, sess.SID, h.cfg.SessionTTL)
-	response.Success(c, gin.H{
-		"redirectTo": "/account",
-		"user":       dto.Brief(u),
+	response.Success(c, dto.MfaResult{
+		RedirectTo: "/account",
+		User:       dto.Brief(u),
 	})
 }
 
