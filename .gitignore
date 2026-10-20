@@ -1,0 +1,11 @@
+# 本地配置与密钥
+.env
+configs/*.pem
+bin/
+
+# 前端
+web/*/node_modules/
+web/*/dist/
+web/dist/
+*.log
+.DS_Store

@@ -1,0 +1,59 @@
+@import 'tailwindcss';
+
+/* 品牌变量：仅此一处定义，页面通过 Tailwind 语义类使用（bg-brand-600 / rounded-card 等） */
+@theme {
+  --color-brand-50: #eef4ff;
+  --color-brand-100: #dae6ff;
+  --color-brand-200: #bfd3ff;
+  --color-brand-300: #93b4ff;
+  --color-brand-400: #608cff;
+  --color-brand-500: #3b66f6;
+  --color-brand-600: #2549e6;
+  --color-brand-700: #1d39c4;
+  --color-brand-800: #1c339e;
+
+  --color-ink-50: #f7f8fa;
+  --color-ink-100: #eef0f4;
+  --color-ink-200: #dfe3ea;
+  --color-ink-400: #8b93a5;
+  --color-ink-600: #4d5566;
+  --color-ink-800: #23283a;
+
+  --radius-card: 14px;
+
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: #f5f7fb;
+  color: #23283a;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 骨架屏动画 */
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.skeleton {
+  background-color: #e8ebf1;
+  border-radius: 6px;
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}

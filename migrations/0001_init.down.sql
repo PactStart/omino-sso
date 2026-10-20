@@ -1,0 +1,8 @@
+DROP TABLE IF EXISTS consents;
+DROP TABLE IF EXISTS audit_events;
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS refresh_tokens;
+DROP TABLE IF EXISTS auth_codes;
+DROP TABLE IF EXISTS clients;
+DROP TABLE IF EXISTS organizations;
+DROP TABLE IF EXISTS users;
