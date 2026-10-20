@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"sort"
 	"strings"
 	"testing"
 
@@ -78,6 +79,54 @@ func TestConvertProducesOpenAPI303(t *testing.T) {
 	}
 }
 
+// TestConvertFoldsBasePathIntoPaths 锁定回归：servers 被固定为 "/" 后，basePath 必须
+// 折进 path，否则 swagger-ui 会请求 /users 而非 /api/v1/users（Try it out 全 404）。
+func TestConvertFoldsBasePathIntoPaths(t *testing.T) {
+	out, err := convert([]byte(swagger2Fixture))
+	if err != nil {
+		t.Fatalf("convert: %v", err)
+	}
+	var doc struct {
+		Servers []struct {
+			URL string `json:"url"`
+		} `json:"servers"`
+		Paths map[string]any `json:"paths"`
+	}
+	if err := json.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if len(doc.Servers) != 1 || doc.Servers[0].URL != "/" {
+		t.Fatalf("servers = %+v, want [{url:/}]", doc.Servers)
+	}
+	if _, ok := doc.Paths["/api/v1/users"]; !ok {
+		t.Fatalf("path 未折叠 basePath，实际 paths = %v", keysOf(doc.Paths))
+	}
+	if _, ok := doc.Paths["/users"]; ok {
+		t.Fatal("不得保留未带 basePath 的 path")
+	}
+}
+
+// TestFoldBasePathIsIdempotent 防止重复转换把前缀叠加成 /api/v1/api/v1/...
+func TestFoldBasePathIsIdempotent(t *testing.T) {
+	doc := mustDoc(t, swagger2Fixture)
+	foldBasePath(doc, "/api/v1")
+	if _, ok := doc.Paths.Map()["/api/v1/api/v1/users"]; ok {
+		t.Fatalf("basePath 被重复叠加: %v", keysOf(doc.Paths.Map()))
+	}
+	if _, ok := doc.Paths.Map()["/api/v1/users"]; !ok {
+		t.Fatalf("path 丢失: %v", keysOf(doc.Paths.Map()))
+	}
+}
+
+func keysOf[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func TestConvertIsDeterministic(t *testing.T) {
 	first, err := convert([]byte(swagger2Fixture))
 	if err != nil {
@@ -134,7 +183,7 @@ func TestDiffDocsDetectsRemovedOperation(t *testing.T) {
 	if len(diffs) == 0 {
 		t.Fatal("expected drift after removing the operation, got none")
 	}
-	if !strings.Contains(strings.Join(diffs, "\n"), "POST /users: operation removed") {
+	if !strings.Contains(strings.Join(diffs, "\n"), "POST /api/v1/users: operation removed") {
 		t.Fatalf("unexpected drift output: %v", diffs)
 	}
 }

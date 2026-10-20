@@ -714,7 +714,7 @@
   },
   "openapi": "3.0.3",
   "paths": {
-    "/admin/audit-logs": {
+    "/api/v1/admin/audit-logs": {
       "get": {
         "description": "按用户、应用、事件类型、结果与时间范围筛选认证审计事件，按时间倒序分页返回；detail 为 JSON 字符串快照，无附加信息时为 null。",
         "parameters": [
@@ -898,7 +898,7 @@
         "x-auth-level": "admin"
       }
     },
-    "/admin/clients": {
+    "/api/v1/admin/clients": {
       "get": {
         "description": "按关键字分页返回已注册的 OAuth 客户端，含 redirectUris / grantTypes / scopes / postLogoutUris；不返回任何密钥。",
         "parameters": [
@@ -1147,7 +1147,7 @@
         "x-auth-level": "admin"
       }
     },
-    "/admin/clients/{id}/secret": {
+    "/api/v1/admin/clients/{id}/secret": {
       "post": {
         "description": "生成新的 clientSecret 并立即替换旧密钥（旧密钥随即失效，无宽限期；请求体的 gracePeriodSeconds 当前被忽略）。新密钥仅本次返回，expiresAt 恒为 null；写入 client_secret_rotated 审计事件。",
         "parameters": [
@@ -1268,7 +1268,7 @@
         "x-auth-level": "admin"
       }
     },
-    "/admin/orgs/tree": {
+    "/api/v1/admin/orgs/tree": {
       "get": {
         "description": "返回完整组织树（根节点为 parentId=null），每个节点的 userCount 为该部门及其子部门的用户数汇总。",
         "responses": {
@@ -1350,7 +1350,7 @@
         "x-auth-level": "admin"
       }
     },
-    "/admin/users": {
+    "/api/v1/admin/users": {
       "get": {
         "description": "按关键字、部门与状态筛选用户，返回分页结果；keyword 同时匹配 username 与 displayName。",
         "parameters": [
@@ -1620,7 +1620,7 @@
         "x-auth-level": "admin"
       }
     },
-    "/admin/users/{id}": {
+    "/api/v1/admin/users/{id}": {
       "patch": {
         "description": "局部更新用户资料、组织、状态、角色与 MFA 策略；未传的字段保持不变（指针语义），写入 user_updated 审计事件。",
         "parameters": [
@@ -1742,7 +1742,7 @@
         "x-auth-level": "admin"
       }
     },
-    "/auth/login": {
+    "/api/v1/auth/login": {
       "post": {
         "description": "校验账号密码。账号启用 MFA 时不下发会话，改返回 mfaTicket（300 秒内有效，需再调用 /auth/mfa/verify）；连续失败 5 次锁定 15 分钟。成功时通过 Set-Cookie 下发 HttpOnly 的 sid，响应体不含任何令牌。\n响应 data 有两种形状：需 MFA 时为 dto.LoginMfaChallenge（mfaRequired/mfaTicket/expiresIn），登录完成时为 dto.LoginResult（含 redirectTo 与 user）；文档只保留后者的 schema。",
         "requestBody": {
@@ -1857,7 +1857,7 @@
         ]
       }
     },
-    "/auth/logout": {
+    "/api/v1/auth/logout": {
       "post": {
         "description": "吊销服务端会话并清除 sid cookie，立即生效（幂等：会话已失效时仍返回成功），并写入 logout 审计事件。",
         "responses": {
@@ -1913,7 +1913,7 @@
         ]
       }
     },
-    "/auth/mfa/verify": {
+    "/api/v1/auth/mfa/verify": {
       "post": {
         "description": "消费 mfaTicket 并校验 6 位 TOTP 动态码。校验通过后创建会话并下发 sid cookie；ticket 一次性，重复使用返回 AUTH_MFA_TICKET_EXPIRED，校验失败写入 mfa_failure 审计事件。",
         "requestBody": {
@@ -2008,7 +2008,7 @@
         ]
       }
     },
-    "/me": {
+    "/api/v1/me": {
       "get": {
         "description": "返回会话所属用户的完整资料，含部门路径、角色与 MFA 状态。",
         "responses": {
@@ -2076,7 +2076,7 @@
         ]
       }
     },
-    "/me/apps": {
+    "/api/v1/me/apps": {
       "get": {
         "description": "返回该用户有权访问的应用清单；lastAccessAt 为该用户最近一次通过该应用登录的时间，从未访问为 null。",
         "responses": {
@@ -2147,7 +2147,7 @@
         ]
       }
     },
-    "/me/password": {
+    "/api/v1/me/password": {
       "post": {
         "description": "校验原密码后更新为新密码，成功后吊销该用户的全部会话并清除 sid cookie（需重新登录），同时写入 password_changed 审计事件。",
         "requestBody": {
@@ -2225,7 +2225,7 @@
         ]
       }
     },
-    "/me/sessions": {
+    "/api/v1/me/sessions": {
       "get": {
         "description": "返回该用户全部有效会话；current 标识当前请求所用的会话，供\"退出其他设备\"场景使用。",
         "responses": {
@@ -2296,7 +2296,7 @@
         ]
       }
     },
-    "/me/sessions/{sid}": {
+    "/api/v1/me/sessions/{sid}": {
       "delete": {
         "description": "吊销本人名下指定 sid 的服务端会话，立即失效；该 sid 不属于当前用户时按 NOT_FOUND 处理，不泄露是否存在。",
         "parameters": [

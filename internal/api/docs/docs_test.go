@@ -112,6 +112,10 @@ func TestEmbeddedSpecStructure(t *testing.T) {
 
 	ops := 0
 	for path, item := range doc.Paths {
+		// servers 固定为 "/"，因此 path 必须自带 /api/v1 前缀，否则 Try it out 会 404。
+		if !strings.HasPrefix(path, "/api/v1/") {
+			t.Errorf("path %q 缺少 /api/v1 前缀（basePath 未折入）", path)
+		}
 		for method, op := range item {
 			ops++
 			if strings.TrimSpace(op.Summary) == "" {
@@ -136,7 +140,7 @@ func TestEmbeddedSpecStructure(t *testing.T) {
 				t.Errorf("%s %s 缺少 500 响应", method, path)
 			}
 			// 公开端点不标 security，其余必须标。
-			if path == "/auth/login" || path == "/auth/mfa/verify" {
+			if path == "/api/v1/auth/login" || path == "/api/v1/auth/mfa/verify" {
 				if len(op.Security) != 0 {
 					t.Errorf("%s %s 是公开端点，不应声明 security", method, path)
 				}

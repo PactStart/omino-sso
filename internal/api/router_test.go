@@ -144,13 +144,14 @@ func TestDocsNotRegisteredInProd(t *testing.T) {
 func TestDocsPathsMatchRouterRoutes(t *testing.T) {
 	r := newTestRouter(t, "test")
 
+	// 文档的 path 必须带 /api/v1 前缀：servers 固定为 "/"，basePath 已在转换时折进 path，
+	// 否则 swagger-ui 的 Try it out 会打到 /auth/login 之类的裸路径上（全 404）。
 	registered := map[string]bool{}
 	for _, ri := range r.Routes() {
 		if !strings.HasPrefix(ri.Path, "/api/v1") {
 			continue
 		}
-		path := strings.TrimPrefix(ri.Path, "/api/v1")
-		registered[toOpenAPIPath(path)] = true
+		registered[toOpenAPIPath(ri.Path)] = true
 	}
 
 	documented := map[string]bool{}

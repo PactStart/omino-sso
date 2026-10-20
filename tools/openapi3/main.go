@@ -107,11 +107,35 @@ func convert(raw []byte) ([]byte, error) {
 	if doc3.Info == nil {
 		doc3.Info = &openapi3.Info{Title: "omino-sso", Version: "1.0"}
 	}
+	// Swagger 2.0 keeps the route prefix in basePath while OpenAPI 3 has none.
+	// Because servers is forced to "/", basePath must be folded into every path —
+	// otherwise swagger-ui would call "/auth/login" and get a 404 instead of
+	// "/api/v1/auth/login" (see contracts/doc-endpoints.md §4).
+	foldBasePath(doc3, doc2.BasePath)
 	out, err := json.MarshalIndent(doc3, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("marshal openapi 3.0.3: %w", err)
 	}
 	return append(out, '\n'), nil
+}
+
+// foldBasePath prefixes every path with the Swagger 2.0 basePath, since OpenAPI 3
+// has no equivalent field and servers is pinned to "/". Paths that already start
+// with the prefix are left untouched so repeated runs stay idempotent.
+func foldBasePath(doc *openapi3.T, basePath string) {
+	prefix := "/" + strings.Trim(basePath, "/")
+	if prefix == "/" || doc == nil || doc.Paths == nil {
+		return
+	}
+	folded := openapi3.NewPathsWithCapacity(doc.Paths.Len())
+	for path, item := range doc.Paths.Map() {
+		if strings.HasPrefix(path, prefix+"/") || path == prefix {
+			folded.Set(path, item)
+			continue
+		}
+		folded.Set(prefix+path, item)
+	}
+	doc.Paths = folded
 }
 
 func loadDoc(raw []byte) (*openapi3.T, error) {
