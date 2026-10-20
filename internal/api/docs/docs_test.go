@@ -2,6 +2,11 @@ package docs
 
 import (
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -96,6 +101,84 @@ func TestGlobalFailurePathsDocumented(t *testing.T) {
 	if !strings.Contains(desc, `{"code":"NOT_FOUND"`) || !strings.Contains(desc, `{"code":"RATE_LIMITED"`) {
 		t.Fatalf("info.description 缺少 404/429 的响应体样例:\n%s", desc)
 	}
+}
+
+// codeTokenPattern 匹配注解里作为业务码书写的 token：全大写 + 数字/下划线，长度 >= 9
+// （最短的登记码为 FORBIDDEN，9 个字符），从而排除 "MFA" / "TOTP" 这类缩写。
+var codeTokenPattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]{8,}$`)
+
+// TestAnnotationErrorCodesAreRegistered 覆盖 AC-5 与 INV-11：注解中出现的业务码必须全部
+// 登记在 internal/api/response/errors.go，禁止 handler 侧自造 code。
+// 注解把业务码写在响应的 description 中（多个码用 " / " 分隔），故按 token 解析。
+func TestAnnotationErrorCodesAreRegistered(t *testing.T) {
+	registered := registeredErrorCodes(t)
+
+	var doc struct {
+		Paths map[string]map[string]struct {
+			Responses map[string]struct {
+				Description string `json:"description"`
+			} `json:"responses"`
+		} `json:"paths"`
+	}
+	if err := json.Unmarshal(embeddedSpec, &doc); err != nil {
+		t.Fatalf("内嵌 openapi.json 解析失败: %v", err)
+	}
+
+	seen := make(map[string]struct{})
+	for path, item := range doc.Paths {
+		for method, op := range item {
+			for status, resp := range op.Responses {
+				for _, part := range strings.Split(resp.Description, "/") {
+					part = strings.TrimSpace(part)
+					if !codeTokenPattern.MatchString(part) {
+						continue
+					}
+					if _, ok := registered[part]; !ok {
+						t.Errorf("%s %s 的 %s 响应声明了未登记的业务码 %q（AC-5 / INV-11）",
+							strings.ToUpper(method), path, status, part)
+					}
+					seen[part] = struct{}{}
+				}
+			}
+		}
+	}
+	if len(seen) == 0 {
+		t.Fatal("未从注解中提取到任何业务码：AC-5 断言已失效，请检查错误码是否仍写在响应 description 中")
+	}
+}
+
+// registeredErrorCodes 解析 response/errors.go 中 &Error{<status>, "<code>", "<msg>"} 形式的
+// 字面量，返回已登记的业务码集合（以源码为唯一真源，避免测试自带一份副本）。
+func registeredErrorCodes(t *testing.T) map[string]struct{} {
+	t.Helper()
+	const src = "../response/errors.go"
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, src, nil, 0)
+	if err != nil {
+		t.Fatalf("解析 %s 失败: %v", src, err)
+	}
+
+	out := make(map[string]struct{})
+	ast.Inspect(file, func(n ast.Node) bool {
+		lit, ok := n.(*ast.CompositeLit)
+		if !ok || len(lit.Elts) < 2 {
+			return true
+		}
+		basic, ok := lit.Elts[1].(*ast.BasicLit)
+		if !ok || basic.Kind != token.STRING {
+			return true
+		}
+		code, err := strconv.Unquote(basic.Value)
+		if err != nil {
+			return true
+		}
+		out[code] = struct{}{}
+		return true
+	})
+	if len(out) == 0 {
+		t.Fatalf("%s 中未解析到任何业务码，登记项提取失效", src)
+	}
+	return out
 }
 
 func infoDescription(t *testing.T, raw []byte) string {
