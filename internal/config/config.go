@@ -40,6 +40,7 @@ type Config struct {
 	Redis RedisConfig
 
 	Argon2 Argon2Config
+	OSS    OSSConfig
 
 	LoginMaxFailures     int
 	LoginLockDuration    time.Duration
@@ -79,6 +80,24 @@ type Argon2Config struct {
 	MemoryKiB   uint32
 	Iterations  uint32
 	Parallelism uint8
+}
+
+// OSSConfig 对象存储配置（provider 驱动，004-object-storage-upload）。
+// Provider 为空表示未启用；为 aliyun_oss 时走 STS AssumeRole（经 ramossrole 角色）签发临时凭证。
+// AccessKey/SecretKey 为调用 AssumeRole 的 RAM 用户长期凭证，RoleArn 必填。
+type OSSConfig struct {
+	Provider           string
+	Endpoint           string
+	Bucket             string
+	AccessKey          string        // RAM 用户 AK（用于调用 STS AssumeRole）
+	SecretKey          string        // RAM 用户 SK
+	BasePath           string        // 对象键前缀（如 "sso"），空则不加前缀
+	CustomDomain       string        // 公开访问域名，空则用 https://<bucket>.<endpoint>
+	RoleArn            string        // 必填：被扮演角色的 ARN（acs:ram::<accountId>:role/ramossrole）
+	RoleSessionName    string        // AssumeRole 会话名（可选，默认 omino-sso）
+	StsEndpoint        string        // STS 端点（可选，默认 sts.aliyuncs.com）
+	StsDurationSeconds int           // AssumeRole DurationSeconds（可选，默认 3600）
+	CredentialTTL      time.Duration // 直传凭证（PostObject policy）有效期
 }
 
 // Load 从环境变量读取配置并校验。
@@ -132,6 +151,20 @@ func Load() (*Config, error) {
 			Iterations:  uint32(envInt("ARGON2_ITERATIONS", 3)),
 			Parallelism: uint8(envInt("ARGON2_PARALLELISM", 2)),
 		},
+		OSS: OSSConfig{
+			Provider:           env("OSS_PROVIDER", ""),
+			Endpoint:           env("OSS_ENDPOINT", ""),
+			Bucket:             env("OSS_BUCKET", ""),
+			AccessKey:          env("OSS_ACCESS_KEY", ""),
+			SecretKey:          env("OSS_SECRET_KEY", ""),
+			BasePath:           env("OSS_BASE_PATH", ""),
+			CustomDomain:       env("OSS_CUSTOM_DOMAIN", ""),
+			RoleArn:            env("OSS_ROLE_ARN", ""),
+			RoleSessionName:    env("OSS_ROLE_SESSION_NAME", "omino-sso"),
+			StsEndpoint:        env("OSS_STS_ENDPOINT", "sts.aliyuncs.com"),
+			StsDurationSeconds: envInt("OSS_STS_DURATION_SECONDS", 3600),
+			CredentialTTL:      time.Duration(envInt("OSS_CREDENTIAL_TTL", 300)) * time.Second,
+		},
 	}
 
 	raw := env("OIDC_CRYPTO_KEY", "")
@@ -170,6 +203,32 @@ func (c *Config) validate() error {
 	}
 	if c.AuthCodeTTL > 60*time.Second {
 		return errors.New("OIDC_AUTH_CODE_TTL must not exceed 60s")
+	}
+	if c.OSS.Provider != "" {
+		if c.OSS.Provider != "aliyun_oss" {
+			return fmt.Errorf("unsupported OSS_PROVIDER: %s", c.OSS.Provider)
+		}
+		var ossMissing []string
+		for name, v := range map[string]string{
+			"OSS_ACCESS_KEY": c.OSS.AccessKey,
+			"OSS_SECRET_KEY": c.OSS.SecretKey,
+			"OSS_ROLE_ARN":   c.OSS.RoleArn,
+			"OSS_BUCKET":     c.OSS.Bucket,
+			"OSS_ENDPOINT":   c.OSS.Endpoint,
+		} {
+			if strings.TrimSpace(v) == "" {
+				ossMissing = append(ossMissing, name)
+			}
+		}
+		if len(ossMissing) > 0 {
+			return fmt.Errorf("missing required env for OSS: %s", strings.Join(ossMissing, ", "))
+		}
+		if !strings.HasPrefix(c.OSS.RoleArn, "acs:ram::") || !strings.Contains(c.OSS.RoleArn, ":role/") {
+			return fmt.Errorf("OSS_ROLE_ARN must be like acs:ram::<accountId>:role/<roleName>")
+		}
+		if c.OSS.StsDurationSeconds < 900 || c.OSS.StsDurationSeconds > 43200 {
+			return fmt.Errorf("OSS_STS_DURATION_SECONDS must be in [900, 43200]")
+		}
 	}
 	if c.AppEnv == "prod" {
 		if !strings.HasPrefix(c.Issuer, "https://") {

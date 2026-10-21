@@ -15,6 +15,9 @@ import type {
   CreateRolePayload,
   CreatedClient,
   CreateUserPayload,
+  FileQuery,
+  FileRow,
+  FileUploadPayload,
   MemberGrantResult,
   MemberQuery,
   Me,
@@ -30,6 +33,7 @@ import type {
   UpdatePermissionPayload,
   UpdateRolePayload,
   UpdateUserPayload,
+  UploadCredential,
   UserIdSet,
   UserRow,
 } from './types'
@@ -284,5 +288,39 @@ export function putRoleMembers(
     url: `${clientBase(clientId)}/roles/${encodeURIComponent(roleId)}/members`,
     method: 'PUT',
     data: payload,
+  })
+}
+
+/* ---------------- 004 文件上传 ---------------- */
+
+export function getUploadCredential(payload: { scene: string; format: string; size: number }) {
+  return request<UploadCredential>({ url: '/files/upload-credential', method: 'POST', data: payload })
+}
+
+export function setClientLogo(clientId: string, payload: FileUploadPayload) {
+  return request<FileRow>({
+    url: `/admin/clients/${encodeURIComponent(clientId)}/logo`,
+    method: 'POST',
+    data: payload,
+  })
+}
+
+export function setUserAvatar(userId: string, payload: FileUploadPayload) {
+  return request<FileRow>({
+    url: `/admin/users/${encodeURIComponent(userId)}/avatar`,
+    method: 'POST',
+    data: payload,
+  })
+}
+
+export function listFiles(query: FileQuery) {
+  return request<Paged<FileRow>>({ url: '/admin/files', method: 'GET', params: query })
+}
+
+export function updateFileStatus(id: string, status: 'active' | 'disabled' | 'deleted') {
+  return request<FileRow>({
+    url: `/admin/files/${encodeURIComponent(id)}`,
+    method: 'PATCH',
+    data: { status },
   })
 }

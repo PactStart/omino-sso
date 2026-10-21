@@ -9,6 +9,7 @@ import (
 	"github.com/omino/omino-sso/internal/api/admin"
 	"github.com/omino/omino-sso/internal/api/auth"
 	"github.com/omino/omino-sso/internal/api/docs"
+	"github.com/omino/omino-sso/internal/api/files"
 	"github.com/omino/omino-sso/internal/api/me"
 	"github.com/omino/omino-sso/internal/api/middleware"
 	"github.com/omino/omino-sso/internal/api/response"
@@ -27,6 +28,7 @@ func NewRouter(
 	clients *service.ClientService,
 	orgs *service.OrgService,
 	appAuth *service.AppAuthService,
+	fileSvc *service.FileService,
 	audit *service.Auditor,
 	logger *slog.Logger,
 ) *gin.Engine {
@@ -41,8 +43,9 @@ func NewRouter(
 	r.Use(middleware.RateLimit(st.Redis(), "api", cfg.RateLimitAPIPerMin, time.Minute))
 
 	authH := auth.NewHandler(cfg, users, sessions, audit, logger)
-	meH := me.NewHandler(users, sessions, clients, audit, logger)
-	adminH := admin.NewHandler(users, clients, orgs, appAuth, audit, logger)
+	meH := me.NewHandler(users, sessions, clients, fileSvc, audit, logger)
+	adminH := admin.NewHandler(users, clients, orgs, appAuth, fileSvc, audit, logger)
+	filesH := files.NewHandler(fileSvc, logger)
 
 	// 接口文档（规范 §4.0）：仅非 prod 注册，且不套统一响应、不挂限流。
 	// prod 下该分支不执行，请求落入 NoRoute，响应与任意不存在路径完全一致。
@@ -67,6 +70,8 @@ func NewRouter(
 		authed.POST("/me/password", meH.ChangePassword)
 		authed.GET("/me/sessions", meH.Sessions)
 		authed.DELETE("/me/sessions/:sid", meH.RevokeSession)
+		authed.POST("/me/avatar", meH.UpdateAvatar)
+		authed.POST("/files/upload-credential", filesH.CreateUploadCredential)
 	}
 
 	// 管理端点
@@ -104,6 +109,12 @@ func NewRouter(
 		adminGroup.DELETE("/clients/:id/permissions/:pid", adminH.DeletePermission)
 
 		adminGroup.GET("/audit-logs", adminH.ListAuditLogs)
+
+		// 图片上传（004）。
+		adminGroup.POST("/clients/:id/logo", adminH.SetClientLogo)
+		adminGroup.POST("/users/:id/avatar", adminH.SetUserAvatar)
+		adminGroup.GET("/files", adminH.ListFiles)
+		adminGroup.PATCH("/files/:id", adminH.UpdateFileStatus)
 	}
 
 	// 未匹配路由与方法也必须返回统一格式（规范 §5）。

@@ -21,13 +21,14 @@ type Handler struct {
 	client  *service.ClientService
 	orgs    *service.OrgService
 	appAuth *service.AppAuthService
+	files   *service.FileService
 	audit   *service.Auditor
 	log     *slog.Logger
 }
 
 // NewHandler 构造。
-func NewHandler(users *service.UserService, clients *service.ClientService, orgs *service.OrgService, appAuth *service.AppAuthService, audit *service.Auditor, logger *slog.Logger) *Handler {
-	return &Handler{users: users, client: clients, orgs: orgs, appAuth: appAuth, audit: audit, log: logger}
+func NewHandler(users *service.UserService, clients *service.ClientService, orgs *service.OrgService, appAuth *service.AppAuthService, files *service.FileService, audit *service.Auditor, logger *slog.Logger) *Handler {
+	return &Handler{users: users, client: clients, orgs: orgs, appAuth: appAuth, files: files, audit: audit, log: logger}
 }
 
 // ListUsers GET /api/v1/admin/users

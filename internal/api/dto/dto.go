@@ -398,3 +398,44 @@ type AuditItem struct {
 	Detail    *string `json:"detail"`
 	CreatedAt string  `json:"createdAt" example:"2026-10-20T10:12:33Z"`
 }
+
+// ---- 文件上传（004-object-storage-upload）----
+
+// UploadCredential 预签名直传凭证（POST /files/upload-credential 响应）。
+type UploadCredential struct {
+	Key           string `json:"key" example:"user_avatar/01J9ZK9M1N3P5Q7R9S1T3V5W7X.png"`
+	UploadURL     string `json:"uploadUrl" example:"https://bucket.oss-cn-hangzhou.aliyuncs.com"`
+	AccessKeyID   string `json:"accessKeyId" example:"STS.xxxx"`
+	SecurityToken string `json:"securityToken" example:"<STS security token>"`
+	Policy        string `json:"policy" example:"<base64 policy>"`
+	Signature     string `json:"signature" example:"<hmac-sha1>"`
+	ExpiresAt     string `json:"expiresAt" example:"2026-10-21T10:05:00Z"`
+}
+
+// FileItem 文件记录（GET /admin/files 元素与确认/状态更新响应）。
+type FileItem struct {
+	ID        string `json:"id" example:"01J9ZK9M1N3P5Q7R9S1T3V5W7X"`
+	Provider  string `json:"provider" example:"aliyun.oss"`
+	Scene     string `json:"scene" example:"app_logo"`
+	Format    string `json:"format" example:"png"`
+	Size      int64  `json:"size" example:"245760"`
+	URL       string `json:"url" example:"https://cdn.example.com/logo/portal.png"`
+	Status    string `json:"status" example:"active"`
+	Creator   string `json:"creator" example:"01J9ZJ8Q2M4N6P8R0T2V4X6Z8A"`
+	CreatedAt string `json:"createdAt" example:"2026-10-21T10:04:00Z"`
+}
+
+// FromFile 构造文件记录视图。
+func FromFile(f *model.File) FileItem {
+	return FileItem{
+		ID:        f.ID,
+		Provider:  f.Provider,
+		Scene:     f.Scene,
+		Format:    f.Format,
+		Size:      f.Size,
+		URL:       f.URL,
+		Status:    f.Status,
+		Creator:   f.Creator,
+		CreatedAt: Time(f.CreatedAt),
+	}
+}

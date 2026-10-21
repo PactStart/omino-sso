@@ -327,3 +327,42 @@ export interface AuditQuery {
   page?: number
   pageSize?: number
 }
+
+/* ---------------- 004 文件上传 ---------------- */
+
+/** 预签名直传凭证（POST /files/upload-credential 响应） */
+export interface UploadCredential {
+  key: string
+  uploadUrl: string
+  accessKeyId: string
+  securityToken: string
+  policy: string
+  signature: string
+  expiresAt: string
+}
+
+export interface FileRow {
+  id: string
+  provider: string
+  scene: 'app_logo' | 'user_avatar'
+  format: string
+  size: number
+  url: string
+  status: 'active' | 'disabled' | 'deleted'
+  creator: string
+  createdAt: string
+}
+
+export interface FileQuery {
+  scene?: string
+  status?: string
+  keyword?: string
+  page?: number
+  pageSize?: number
+}
+
+export interface FileUploadPayload {
+  key: string
+  format: string
+  size: number
+}
