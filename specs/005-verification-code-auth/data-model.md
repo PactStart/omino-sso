@@ -18,7 +18,7 @@
 | `created_at` | `BIGINT` | NOT NULL | Unix 毫秒（发送时间，清理依据） |
 
 - 字符集 `utf8mb4`；枚举为小写字符串。
-- 索引：`(channel, created_at)`、`(scene, created_at)`、`(result, created_at)` 支持管理端按渠道/场景/结果分页筛选（FR-014）。
+- 索引：主索引 `(created_at)` 支持按时间范围分页；辅助索引 `(channel, created_at)`、`(scene, created_at)`、`(result, created_at)` 支持带时间范围的组合筛选（FR-014）。管理端分页查询一律带时间范围并命中 `created_at` 索引，避免全表扫描。
 - **不使用软删除**（宪法 III：token/code/session 类禁软删除；本表为审计型流水，由定时任务物理清理，见数据保留）。
 
 ### 枚举

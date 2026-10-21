@@ -35,6 +35,8 @@
 
 **错误**：`VALIDATION_FAILED`、`AUTH_CAPTCHA_INVALID`、`RATE_LIMITED`（60s 内重发）、`VERIFY_SEND_FAILED`（供应商失败）。
 
+**防枚举约定**：`login` / `find_password` 场景对「未注册或未绑定目标联系方式」返回**统一成功响应**但不真实发送（不泄露账号存在性）；`bind_phone` / `bind_email` 场景对「已被其他账号占用」的目标返回 `VERIFY_TARGET_IN_USE`。
+
 ## 2. 登录（扩展多方式）
 
 `POST /api/v1/auth/login`
