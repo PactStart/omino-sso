@@ -46,7 +46,60 @@ func newTestRouter(t *testing.T, env string) *gin.Engine {
 	users := service.NewUserService(st, cfg, audit, logger)
 	sessions := service.NewSessionService(st, cfg)
 	clients := service.NewClientService(st)
-	return NewRouter(cfg, st, users, sessions, clients, audit, logger)
+	orgs := service.NewOrgService(st, logger)
+	return NewRouter(cfg, st, users, sessions, clients, orgs, audit, logger)
+}
+
+// TestOrgRoutesRegistered 固化组织架构的 4 条路由，并验证三条写路由在无
+// 会话时于触达业务前返回统一响应格式的 401（契约 C-1）。
+func TestOrgRoutesRegistered(t *testing.T) {
+	r := newTestRouter(t, "test")
+
+	registered := map[string]bool{}
+	for _, ri := range r.Routes() {
+		registered[ri.Method+" "+ri.Path] = true
+	}
+	for _, want := range []string{
+		"GET /api/v1/admin/orgs/tree",
+		"POST /api/v1/admin/orgs",
+		"PATCH /api/v1/admin/orgs/:id",
+		"DELETE /api/v1/admin/orgs/:id",
+	} {
+		if !registered[want] {
+			t.Errorf("缺少路由 %s", want)
+		}
+	}
+
+	cases := []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodPost, "/api/v1/admin/orgs", `{"name":"技术中心"}`},
+		{http.MethodPatch, "/api/v1/admin/orgs/01J9ZK9M1N3P5Q7R9S1T3V5W7X", `{"name":"x"}`},
+		{http.MethodDelete, "/api/v1/admin/orgs/01J9ZK9M1N3P5Q7R9S1T3V5W7X", ""},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("%s %s = %d, 期望 401", tc.method, tc.path, rec.Code)
+		}
+		var body map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("%s %s 响应体不是统一响应: %v", tc.method, tc.path, err)
+		}
+		for _, key := range []string{"code", "message", "data", "traceId"} {
+			if _, ok := body[key]; !ok {
+				t.Errorf("%s %s 响应体缺少 %q", tc.method, tc.path, key)
+			}
+		}
+		if body["code"] != "UNAUTHENTICATED" {
+			t.Errorf("%s %s code = %v, 期望 UNAUTHENTICATED", tc.method, tc.path, body["code"])
+		}
+	}
 }
 
 func get(r http.Handler, path string) *httptest.ResponseRecorder {
@@ -101,8 +154,8 @@ func TestDocsServedWithoutRedis(t *testing.T) {
 	for _, item := range doc.Paths {
 		ops += len(item)
 	}
-	if ops != 16 {
-		t.Fatalf("(method,path) 组合数为 %d, 期望 16", ops)
+	if ops != 19 {
+		t.Fatalf("(method,path) 组合数为 %d, 期望 19", ops)
 	}
 	if !strings.Contains(doc.Info.Description, "环境：test") {
 		t.Fatalf("info.description 未注入环境: %q", doc.Info.Description)

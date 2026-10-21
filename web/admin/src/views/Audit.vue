@@ -107,10 +107,55 @@ function userText(row: AuditRow): string {
   return '-'
 }
 
-function detailText(value: unknown): string {
-  if (value === null || value === undefined) return '-'
-  if (typeof value === 'string') return value
-  return JSON.stringify(value)
+interface DetailEntry {
+  key: string
+  text: string
+  /** 对象/数组等结构化值按缩进 JSON 以代码块展示 */
+  block: boolean
+}
+
+/**
+ * detail 列是服务端存的 JSON 文本（如 {"message":"invalid password"}），不是对象；
+ * 直接对它 v-for 会把字符串按字符迭代成"一字符一行"，必须先解析。
+ */
+function parseDetailRow(row: AuditRow): Record<string, unknown> | null {
+  if (!row.detail) return null
+  try {
+    const value: unknown = JSON.parse(row.detail)
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return value as Record<string, unknown>
+    }
+  } catch {
+    // 历史数据可能不是合法 JSON，按原文展示
+  }
+  return null
+}
+
+function detailValueText(value: unknown): { text: string; block: boolean } {
+  if (value === null || value === undefined) return { text: '-', block: false }
+  if (typeof value === 'string') return { text: value, block: false }
+  if (typeof value === 'number' || typeof value === 'boolean') return { text: String(value), block: false }
+  return { text: JSON.stringify(value, null, 2), block: true }
+}
+
+function detailEntries(row: AuditRow): DetailEntry[] {
+  const parsed = parseDetailRow(row)
+  if (!parsed) return []
+  return Object.entries(parsed).map(([key, value]) => {
+    const { text, block } = detailValueText(value)
+    return { key, text, block }
+  })
+}
+
+/** 折叠态单行预览：优先 message，其余拼成 key=value，超长由 CSS 截断 */
+function detailPreview(row: AuditRow): string {
+  const entries = detailEntries(row)
+  if (entries.length === 0) return row.detail || '-'
+  const message = entries.find((entry) => entry.key === 'message')
+  if (message && !message.block) return message.text
+  return entries
+    .map((entry) => `${entry.key}=${entry.text.replace(/\s+/g, ' ')}`)
+    .join('，')
 }
 
 onMounted(loadLogs)
@@ -189,12 +234,14 @@ onMounted(loadLogs)
         <el-table-column type="expand">
           <template #default="{ row }">
             <div class="detail-box">
-              <template v-if="row.detail && Object.keys(row.detail).length">
-                <div v-for="(value, key) in row.detail" :key="key" class="detail-line">
-                  <span class="detail-key">{{ key }}</span>
-                  <span class="mono detail-value">{{ detailText(value) }}</span>
+              <template v-if="detailEntries(row).length">
+                <div v-for="entry in detailEntries(row)" :key="entry.key" class="detail-line">
+                  <span class="detail-key">{{ entry.key }}</span>
+                  <pre v-if="entry.block" class="mono detail-value detail-json">{{ entry.text }}</pre>
+                  <span v-else class="detail-value">{{ entry.text }}</span>
                 </div>
               </template>
+              <p v-else-if="row.detail" class="mono detail-raw">{{ row.detail }}</p>
               <span v-else class="detail-empty">无附加详情</span>
               <div class="detail-line">
                 <span class="detail-key">userAgent</span>
@@ -233,7 +280,7 @@ onMounted(loadLogs)
         </el-table-column>
         <el-table-column label="详情" min-width="200">
           <template #default="{ row }">
-            <span class="detail-preview">{{ row.detail ? detailText(row.detail) : '-' }}</span>
+            <span class="detail-preview" :title="detailPreview(row)">{{ detailPreview(row) }}</span>
           </template>
         </el-table-column>
 
@@ -307,24 +354,45 @@ onMounted(loadLogs)
 }
 
 .detail-box {
-  padding: 8px 48px 12px;
+  padding: 10px 48px 14px;
   font-size: 13px;
 }
 
+/* 键固定宽、值占满剩余宽度：flex 子项默认 min-width:auto 会被压到 1 字符宽 */
 .detail-line {
   display: flex;
+  align-items: flex-start;
   gap: 12px;
   padding: 3px 0;
 }
 
 .detail-key {
-  width: 96px;
-  flex-shrink: 0;
+  flex: 0 0 96px;
+  padding-top: 1px;
   color: var(--app-text-secondary);
 }
 
 .detail-value {
-  word-break: break-all;
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.detail-json {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: #f7f8fc;
+  border-radius: 6px;
+}
+
+.detail-raw {
+  margin: 0 0 4px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .detail-empty {

@@ -35,6 +35,7 @@
 | DI | `go.uber.org/fx` | `v1.23.0` | 生命周期与装配 |
 | ORM | `gorm.io/gorm` | `v1.25.12` | 管理类 CRUD |
 | MySQL 驱动 | `gorm.io/driver/mysql` | `v1.5.7` | |
+| MySQL 错误码 | `github.com/go-sql-driver/mysql` | `v1.7.0` | 组织写事务识别 `1213`（死锁）/`1205`（锁等待超时）后重试；2026-10-21 由间接依赖转为直接依赖，版本未变 |
 | OIDC Provider | `github.com/zitadel/oidc/v3` | `v3.28.0` | 协议层（OP），**唯一实现来源** |
 | JOSE | `github.com/go-jose/go-jose/v4` | `v4.0.4` | JWS / JWKS，禁止使用 v3 |
 | 密码哈希 | `golang.org/x/crypto` | `v0.31.0` | `argon2.IDKey` |
@@ -257,10 +258,17 @@ omino-sso/
 | POST | `/api/v1/admin/users` | 创建用户 | admin |
 | PATCH | `/api/v1/admin/users/:id` | 更新用户 | admin |
 | GET | `/api/v1/admin/orgs/tree` | 组织树 | admin |
+| POST | `/api/v1/admin/orgs` | 创建组织节点 | admin |
+| PATCH | `/api/v1/admin/orgs/:id` | 更新组织节点（改名 / 调序 / 移动） | admin |
+| DELETE | `/api/v1/admin/orgs/:id` | 删除组织节点 | admin |
 | GET | `/api/v1/admin/clients` | 应用列表 | admin |
 | POST | `/api/v1/admin/clients` | 注册应用 | admin |
 | POST | `/api/v1/admin/clients/:id/secret` | 轮换密钥 | admin |
 | GET | `/api/v1/admin/audit-logs` | 审计日志 | admin |
+
+> **`PATCH /api/v1/admin/users/:id` 的行为修正**：提交 `deptId` 时，服务端在短事务内锁定目标部门并校验其存在，不存在返回 `400 VALIDATION_FAILED`（过去为静默写入，会与部门删除竞态产生悬空 `dept_id`）。`POST /api/v1/admin/users` 的 `deptId` 校验方式同步调整为同一临界区，对外行为不变。
+>
+> **组织写操作的并发语义**：三个组织写端点在同一事务内先对 `organizations` 全表加一次 `SELECT ... FOR UPDATE`（该表无 `tenant_id` 索引，实际为全局串行化），再读、校验、写；账号归属写入侧对目标部门行加锁。因此同级唯一性、10 级深度、成环、删除保护不依赖数据库唯一索引即可成立。
 
 ---
 
@@ -515,6 +523,9 @@ omino-sso/
 | `GET /api/v1/me/sessions` | — | `[{sid,ip,userAgent,createdAt,lastSeenAt,current}]` |
 | `GET /api/v1/admin/users` | `keyword`,`deptId`,`status`,`page`(默认1),`pageSize`(默认20,最大100) | `{list:[...],total,page,pageSize}` |
 | `GET /api/v1/admin/orgs/tree` | — | `[{id,name,parentId,path,userCount,children[]}]` |
+| `POST /api/v1/admin/orgs` | `parentId`(可空=根级), `name`(1–64，同级唯一), `sort`(可选，默认0) | `201` + `{id,parentId,name,path,sort,tenantId,userCount,createdAt}` |
+| `PATCH /api/v1/admin/orgs/:id` | `name` / `sort`（缺失=不变）、`parentId`（三态：缺失=不变 / `null`=移到根级 / 值=移到该节点下）；移动整棵子树，`sort` 不被改写 | `{id,parentId,name,path,sort,tenantId,userCount,createdAt}`，`userCount` 为子树汇总 |
+| `DELETE /api/v1/admin/orgs/:id` | — | `data: null` |
 | `GET /api/v1/admin/clients` | `keyword`,`page`,`pageSize` | `{list:[{clientId,clientName,isPublic,redirectUris,grantTypes,scopes,createdAt}],total,page,pageSize}` |
 | `POST /api/v1/admin/clients` | `clientName`,`redirectUris[]`,`grantTypes[]`,`scopes[]`,`isPublic` | `{clientId,clientSecret}`（secret **仅此一次返回**，不落日志） |
 | `POST /api/v1/admin/clients/:id/secret` | `gracePeriodSeconds`(默认0) | `{clientId,clientSecret,expiresAt}` |
@@ -585,6 +596,10 @@ omino-sso/
 | 409 | `EMAIL_ALREADY_EXISTS` | 邮箱冲突 |
 | 409 | `CLIENT_ALREADY_EXISTS` | client_id 冲突 |
 | 400 | `WEAK_PASSWORD` | 密码不满足策略 |
+| 409 | `ORG_NAME_ALREADY_EXISTS` | 同租户 + 同父节点下已存在同名部门（区分大小写） |
+| 409 | `ORG_HAS_CHILDREN` | 部门下仍有子部门，不允许删除 |
+| 409 | `ORG_HAS_USERS` | 部门下仍有账号归属，不允许删除 |
+| 400 | `ORG_INVALID_PARENT` | 上级部门不存在 / 为自身或自身后代 / 跨租户 |
 | 429 | `RATE_LIMITED` | 触发限流 |
 | 500 | `INTERNAL_ERROR` | 未预期错误（日志记录完整堆栈，响应不含） |
 | 503 | `DEPENDENCY_UNAVAILABLE` | MySQL/Redis 不可用 |
@@ -731,7 +746,9 @@ omino-sso/
 | `trace_id` | VARCHAR(32) | NULL | |
 | `created_at` | BIGINT | NOT NULL, INDEX | |
 
-`event_type` 枚举（新增需登记）：`login_success`、`login_failure`、`mfa_success`、`mfa_failure`、`logout`、`password_changed`、`token_issued`、`token_revoked`、`code_reused`、`refresh_reused`、`user_created`、`user_updated`、`client_created`、`client_secret_rotated`。
+`event_type` 枚举（新增需登记）：`login_success`、`login_failure`、`mfa_success`、`mfa_failure`、`logout`、`password_changed`、`token_issued`、`token_revoked`、`code_reused`、`refresh_reused`、`user_created`、`user_updated`、`client_created`、`client_secret_rotated`、`org_created`、`org_updated`、`org_deleted`。
+
+> 组织写操作的审计划分以条件为准而非 HTTP 状态码：同级重名、存在子部门、存在账号、目标不存在、非法上级、层级超过 10 级都写 `failure`；JSON 绑定失败、名称/排序值等输入格式错误、401、403 只在应用日志留痕。
 
 ### 6.8 `consents`
 

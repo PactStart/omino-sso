@@ -8,7 +8,7 @@ import (
 
 	"github.com/omino/omino-sso/internal/api/dto"
 	"github.com/omino/omino-sso/internal/api/response"
-	"github.com/omino/omino-sso/internal/store"
+	"github.com/omino/omino-sso/internal/service"
 )
 
 // ListAuditLogs GET /api/v1/admin/audit-logs
@@ -40,7 +40,7 @@ func (h *Handler) ListAuditLogs(c *gin.Context) {
 		response.Fail(c, response.ErrValidation)
 		return
 	}
-	f := store.AuditFilter{
+	f := service.AuditFilter{
 		UserID:    c.Query("userId"),
 		ClientID:  c.Query("clientId"),
 		EventType: c.Query("eventType"),
@@ -64,7 +64,7 @@ func (h *Handler) ListAuditLogs(c *gin.Context) {
 		}
 		f.To = ms
 	}
-	list, total, err := h.st.ListAuditEvents(c.Request.Context(), f)
+	list, total, err := h.audit.List(c.Request.Context(), f)
 	if err != nil {
 		h.log.Error("list audit logs", "err", err)
 		response.Fail(c, response.ErrInternal)

@@ -24,9 +24,16 @@ var (
 	ErrEmailExists        = &Error{http.StatusConflict, "EMAIL_ALREADY_EXISTS", "邮箱已存在"}
 	ErrClientExists       = &Error{http.StatusConflict, "CLIENT_ALREADY_EXISTS", "应用标识已存在"}
 	ErrWeakPassword       = &Error{http.StatusBadRequest, "WEAK_PASSWORD", "密码强度不足"}
-	ErrRateLimited        = &Error{http.StatusTooManyRequests, "RATE_LIMITED", "请求过于频繁"}
-	ErrInternal           = &Error{http.StatusInternalServerError, "INTERNAL_ERROR", "服务内部错误"}
-	ErrDependencyDown     = &Error{http.StatusServiceUnavailable, "DEPENDENCY_UNAVAILABLE", "依赖服务不可用"}
+
+	// 组织架构写操作（规范 §5.3）。
+	ErrOrgNameExists    = &Error{http.StatusConflict, "ORG_NAME_ALREADY_EXISTS", "同级已存在同名部门"}
+	ErrOrgHasChildren   = &Error{http.StatusConflict, "ORG_HAS_CHILDREN", "部门下仍有子部门"}
+	ErrOrgHasUsers      = &Error{http.StatusConflict, "ORG_HAS_USERS", "部门下仍有账号"}
+	ErrOrgInvalidParent = &Error{http.StatusBadRequest, "ORG_INVALID_PARENT", "上级部门不存在或不可作为上级"}
+
+	ErrRateLimited    = &Error{http.StatusTooManyRequests, "RATE_LIMITED", "请求过于频繁"}
+	ErrInternal       = &Error{http.StatusInternalServerError, "INTERNAL_ERROR", "服务内部错误"}
+	ErrDependencyDown = &Error{http.StatusServiceUnavailable, "DEPENDENCY_UNAVAILABLE", "依赖服务不可用"}
 )
 
 // WithMessage 返回带自定义提示的副本（code 与 HTTP 状态不变）。
