@@ -266,8 +266,8 @@ func TestEmbeddedSpecStructure(t *testing.T) {
 			}
 		}
 	}
-	if ops != 43 {
-		t.Fatalf("operation 数为 %d，规范要求 43", ops)
+	if ops != 46 {
+		t.Fatalf("operation 数为 %d，规范要求 46", ops)
 	}
 
 	scheme, ok := doc.Components.SecuritySchemes["cookieAuth"]

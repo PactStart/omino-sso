@@ -10,8 +10,8 @@ import { getUploadCredential } from '@/api'
 const props = withDefaults(
   defineProps<{
     scene: 'app_logo' | 'user_avatar'
-    /** 直传完成后回写业务字段，返回最终 url */
-    confirm: (key: string, format: string, size: number) => Promise<{ url: string }>
+    /** 直传完成后回写业务字段，返回最终 url 与（可选）文件记录 id */
+    confirm: (key: string, format: string, size: number) => Promise<{ url: string; id?: string }>
     enableCrop?: boolean
     cropAspectRatio?: number
     accept?: string
@@ -29,6 +29,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (e: 'success', url: string): void
+  (e: 'success-file', url: string, fileId?: string): void
   (e: 'error', message: string): void
   (e: 'uploading', value: boolean): void
 }>()
@@ -107,8 +108,9 @@ async function upload(blob: Blob, format: string): Promise<boolean> {
     form.append('file', blob, cred.key.split('/').pop() || 'file')
     const resp = await fetch(cred.uploadUrl, { method: 'POST', body: form })
     if (!resp.ok) throw new Error('直传对象存储失败，请重试')
-    const { url } = await props.confirm(cred.key, format, blob.size)
-    emit('success', url)
+    const res = await props.confirm(cred.key, format, blob.size)
+    emit('success', res.url)
+    emit('success-file', res.url, res.id)
     return true
   } catch (err) {
     const msg = err instanceof Error ? err.message : '上传失败，请重试'

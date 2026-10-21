@@ -7,7 +7,7 @@
 1. 启动基础设施：`docker compose up -d mysql redis`（以及已配置的阿里云 OSS bucket）。
 2. 配置环境变量（`.env`，见 [AGENTS.md §9](../../../AGENTS.md) 与 research.md 决策 6）：
    ```text
-   OSS_PROVIDER=aliyun.oss
+   OSS_PROVIDER=aliyun_oss
    OSS_ENDPOINT=oss-cn-hangzhou.aliyuncs.com
    OSS_BUCKET=<bucket>
    OSS_ACCESS_KEY_ID=<ak>

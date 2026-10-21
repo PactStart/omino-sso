@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import PortalLayout from '@/layouts/PortalLayout.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import ImageUpload from '@/components/ImageUpload.vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { useSessionStore } from '@/stores/session'
-import { updateMyAvatar } from '@/api'
+import { clearMyAvatar, updateMyAvatar } from '@/api'
+import { errorMessage } from '@/api/client'
 import { useToast } from '@/composables/useToast'
 import { initialOf, orDash, roleLabel, formatTime } from '@/utils/format'
 
@@ -16,6 +18,15 @@ const loading = ref(false)
 const error = ref('')
 
 const me = computed(() => session.user)
+
+const avatarBroken = ref(false)
+
+watch(
+  () => me.value?.avatarUrl,
+  () => {
+    avatarBroken.value = false
+  },
+)
 
 const roleTags = computed(() =>
   (me.value?.roles ?? []).map((role) => ({
@@ -55,6 +66,27 @@ async function onAvatarSuccess() {
 
 function onAvatarError(message: string) {
   toast.error(message)
+}
+
+const clearConfirm = ref(false)
+const clearingAvatar = ref(false)
+
+function askClearAvatar() {
+  clearConfirm.value = true
+}
+
+async function confirmClearAvatar() {
+  clearingAvatar.value = true
+  try {
+    await clearMyAvatar()
+    toast.success('头像已清除')
+    clearConfirm.value = false
+    await session.fetchMe({ force: true })
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    clearingAvatar.value = false
+  }
 }
 
 onMounted(() => load())
@@ -114,10 +146,11 @@ onMounted(() => load())
       <!-- 左：身份卡片 -->
       <section class="rounded-card border border-ink-200 bg-white p-6 text-center">
         <img
-          v-if="me.avatarUrl"
+          v-if="me.avatarUrl && !avatarBroken"
           :src="me.avatarUrl"
           :alt="me.displayName"
           class="mx-auto h-20 w-20 rounded-full object-cover ring-1 ring-ink-200"
+          @error="avatarBroken = true"
         />
         <div
           v-else
@@ -136,6 +169,15 @@ onMounted(() => load())
             @error="onAvatarError"
           />
         </div>
+
+        <button
+          v-if="me.avatarUrl"
+          type="button"
+          class="mt-2 text-xs text-ink-400 transition hover:text-rose-600"
+          @click="askClearAvatar"
+        >
+          清除头像
+        </button>
 
         <h2 class="mt-4 text-lg font-semibold text-ink-800">{{ me.displayName }}</h2>
         <p class="mt-0.5 font-mono text-sm text-ink-400">{{ me.username }}</p>
@@ -241,5 +283,16 @@ onMounted(() => load())
         </section>
       </div>
     </div>
+
+    <ConfirmDialog
+      :open="clearConfirm"
+      title="清除头像？"
+      message="清除后将回退为姓名首字占位，可随时重新上传。"
+      confirm-text="清除"
+      danger
+      :loading="clearingAvatar"
+      @confirm="confirmClearAvatar"
+      @cancel="clearConfirm = false"
+    />
   </PortalLayout>
 </template>

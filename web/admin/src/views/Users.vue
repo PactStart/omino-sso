@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import AdminLayout from '@/layouts/AdminLayout.vue'
 import {
+  clearUserAvatar,
   createOrg,
   createUser,
   deleteOrg,
@@ -411,6 +412,9 @@ const formError = ref('')
 const formRef = ref<FormInstance>()
 const editingId = ref('')
 let snapshot: UserRow | null = null
+const avatarUrl = ref<string | null>(null)
+const clearingAvatar = ref(false)
+const avatarBroken = reactive<Record<string, boolean>>({})
 
 const form = reactive({
   username: '',
@@ -474,6 +478,7 @@ function openCreate() {
   drawerMode.value = 'create'
   editingId.value = ''
   snapshot = null
+  avatarUrl.value = null
   resetForm()
   drawerOpen.value = true
 }
@@ -482,6 +487,7 @@ function openEdit(row: UserRow) {
   drawerMode.value = 'edit'
   editingId.value = row.id
   snapshot = row
+  avatarUrl.value = row.avatarUrl
   formError.value = ''
   clearFieldErrors()
   form.username = row.username
@@ -604,12 +610,36 @@ async function confirmAvatar(key: string, format: string, size: number) {
   return { url: file.url }
 }
 
-function onAvatarSuccess() {
+function onAvatarSuccess(url: string) {
+  avatarUrl.value = url
   ElMessage.success('头像已更新')
 }
 
 function onAvatarError(message: string) {
   ElMessage.error(message)
+}
+
+async function clearAvatar() {
+  if (!editingId.value) return
+  try {
+    await ElMessageBox.confirm('清除后该用户头像将回退为姓名首字占位，确定？', '确认清除头像', {
+      type: 'warning',
+      confirmButtonText: '确定清除',
+      cancelButtonText: '取消',
+    })
+  } catch {
+    return
+  }
+  clearingAvatar.value = true
+  try {
+    await clearUserAvatar(editingId.value)
+    avatarUrl.value = null
+    ElMessage.success('头像已清除')
+  } catch (e) {
+    ElMessage.error(errorMessage(e))
+  } finally {
+    clearingAvatar.value = false
+  }
 }
 
 onMounted(() => {
@@ -759,7 +789,19 @@ onMounted(() => {
         <el-table v-loading="listLoading" :data="users" class="user-table" stripe>
           <el-table-column label="用户名" min-width="140">
             <template #default="{ row }">
-              <span class="mono">{{ row.username }}</span>
+              <div class="user-cell">
+                <img
+                  v-if="row.avatarUrl && !avatarBroken[row.id]"
+                  :src="row.avatarUrl"
+                  class="user-avatar"
+                  alt=""
+                  @error="avatarBroken[row.id] = true"
+                />
+                <span v-else class="user-avatar user-avatar-fallback">
+                  {{ (row.displayName || row.username || '?').slice(0, 1) }}
+                </span>
+                <span class="mono">{{ row.username }}</span>
+              </div>
             </template>
           </el-table-column>
           <el-table-column prop="displayName" label="姓名" min-width="110" />
@@ -863,13 +905,25 @@ onMounted(() => {
 
         <el-form-item v-if="drawerMode === 'edit'" label="头像">
           <div class="avatar-field">
-            <ImageUpload
-              scene="user_avatar"
-              :enable-crop="true"
-              :confirm="confirmAvatar"
-              @success="onAvatarSuccess"
-              @error="onAvatarError"
-            />
+            <div class="avatar-field-row">
+              <img v-if="avatarUrl" :src="avatarUrl" class="avatar-preview" alt="用户头像" />
+              <ImageUpload
+                scene="user_avatar"
+                :enable-crop="true"
+                :confirm="confirmAvatar"
+                @success="onAvatarSuccess"
+                @error="onAvatarError"
+              />
+              <el-button
+                v-if="avatarUrl"
+                link
+                type="danger"
+                :loading="clearingAvatar"
+                @click="clearAvatar"
+              >
+                清除头像
+              </el-button>
+            </div>
             <p class="field-hint">上传后立即生效；文件记录可在「文件管理」中查看</p>
           </div>
         </el-form-item>
@@ -1140,6 +1194,30 @@ onMounted(() => {
   width: 100%;
 }
 
+.user-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.user-avatar-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .role-tag {
   margin-right: 4px;
 }
@@ -1181,6 +1259,21 @@ onMounted(() => {
 
 .avatar-field {
   width: 100%;
+}
+
+.avatar-field-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.avatar-preview {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
 }
 
 .user-form :deep(.el-select),

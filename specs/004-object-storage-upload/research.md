@@ -5,9 +5,9 @@
 ## 决策 1 — 对象存储 SDK：`github.com/aliyun/aliyun-oss-go-sdk/oss`
 
 - **Decision**: 采用阿里云 OSS 官方 Go SDK（`aliyun-oss-go-sdk/oss`）作为本期唯一对象存储实现，版本以实施时 `go get` 解析的稳定补丁版为准，落定后登记 AGENTS.md §2.1。
-- **Rationale**: 首选供应商已确认为阿里云 OSS；官方 SDK 提供 bucket 管理、对象上传/删除、预签名 URL 等能力，与「provider 驱动的可插拔抽象」相符——本期只实现 `aliyun.oss`，后续 OBS/COS/S3/MinIO 各加一个实现即可。
+- **Rationale**: 首选供应商已确认为阿里云 OSS；官方 SDK 提供 bucket 管理、对象上传/删除、预签名 URL 等能力，与「provider 驱动的可插拔抽象」相符——本期只实现 `aliyun_oss`，后续 OBS/COS/S3/MinIO 各加一个实现即可。
 - **Alternatives considered**:
-  - S3 兼容 SDK（minio-go / aws-sdk-go-v2 指向 OSS 的 S3 兼容端点）：可一次覆盖多家，但配置语义与用户给定的 `provider=aliyun.oss + accessKeyId/accessSecret` 不一致，且 S3 兼容层对 OSS 的原生能力（如 PostObject 表单直传、ACL）支持不完整 → 拒绝。
+  - S3 兼容 SDK（minio-go / aws-sdk-go-v2 指向 OSS 的 S3 兼容端点）：可一次覆盖多家，但配置语义与用户给定的 `provider=aliyun_oss + accessKeyId/accessSecret` 不一致，且 S3 兼容层对 OSS 的原生能力（如 PostObject 表单直传、ACL）支持不完整 → 拒绝。
   - 自研 HTTP 客户端封装 OSS REST API：无 SDK 依赖，但要自维护签名/错误处理 → 拒绝（违反「协议/凭证类缺陷成本最高，不自研」的精神）。
 
 ## 决策 2 — 直传机制：预签名直传（PostObject 表单直传）
@@ -50,7 +50,7 @@
 - **Decision**:
   - 场景枚举 `scene`: `app_logo` / `user_avatar`（字符串）。
   - 状态枚举 `status`: `active` / `disabled` / `deleted`（字符串）。
-  - 配置（`internal/config`，环境变量）：`OSS_PROVIDER`（默认 `aliyun.oss`）、`OSS_ENDPOINT`、`OSS_BUCKET`、`OSS_ACCESS_KEY_ID`、`OSS_ACCESS_SECRET`、`OSS_PUBLIC_BASE_URL`、`OSS_CREDENTIAL_TTL`（默认 300s）。provider 不同则所需配置项不同，由 `validate()` 按 provider 校验（如 `aliyun.oss` 必填 accessKeyId/accessSecret）。
+  - 配置（`internal/config`，环境变量）：`OSS_PROVIDER`（默认 `aliyun_oss`）、`OSS_ENDPOINT`、`OSS_BUCKET`、`OSS_ACCESS_KEY_ID`、`OSS_ACCESS_SECRET`、`OSS_PUBLIC_BASE_URL`、`OSS_CREDENTIAL_TTL`（默认 300s）。provider 不同则所需配置项不同，由 `validate()` 按 provider 校验（如 `aliyun_oss` 必填 accessKeyId/accessSecret）。
 - **Rationale**: 满足用户「配置由 provider 决定」的要求；必填项缺失启动失败（宪法「环境变量统一加载并校验」）。
 
 ## 遗留（Non-blocking，交 tasks/实现）

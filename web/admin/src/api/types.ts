@@ -30,6 +30,7 @@ export interface UserRow {
   id: string
   username: string
   displayName: string
+  avatarUrl: string | null
   email: string | null
   phone: string | null
   deptId: string

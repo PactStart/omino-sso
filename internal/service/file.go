@@ -113,10 +113,21 @@ func (s *FileService) ConfirmUpload(ctx context.Context, in ConfirmUploadInput) 
 		return nil, err
 	}
 
-	// 替换：旧记录置 deleted，旧对象删除（best-effort）。
+	// 替换：旧记录置 deleted，旧对象删除（best-effort），并补 file_status_updated 审计（FR-010）。
 	if old != nil && old.ID != f.ID {
 		_ = s.st.UpdateFileStatus(ctx, old.ID, model.FileStatusDeleted)
 		_ = s.fs.DeleteObject(ctx, old.ObjectKey)
+		s.audit.Emit(ctx, Event{
+			Type:   model.EventFileStatusUpdated,
+			UserID: in.ActorID,
+			Fields: map[string]any{
+				"fileId":     old.ID,
+				"status":     model.FileStatusDeleted,
+				"scene":      old.Scene,
+				"targetId":   old.TargetID,
+				"replacedBy": f.ID,
+			},
+		})
 	}
 
 	s.audit.Emit(ctx, Event{
@@ -220,4 +231,34 @@ func (s *FileService) clearBusinessField(ctx context.Context, f *model.File) err
 	default:
 		return ErrFileValidation
 	}
+}
+
+// ClearByTarget 清除某业务对象的图片：旧记录置 deleted、删除对象、清空业务字段并发审计。
+// 无活跃图片时幂等返回 nil（FR-002/FR-004/FR-008/FR-011）。
+func (s *FileService) ClearByTarget(ctx context.Context, scene, targetID, actorID string) error {
+	old, err := s.st.GetActiveFileByTarget(ctx, scene, targetID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	if err := s.clearBusinessField(ctx, old); err != nil {
+		return err
+	}
+	if err := s.st.UpdateFileStatus(ctx, old.ID, model.FileStatusDeleted); err != nil {
+		return err
+	}
+	_ = s.fs.DeleteObject(ctx, old.ObjectKey)
+	s.audit.Emit(ctx, Event{
+		Type:   model.EventFileStatusUpdated,
+		UserID: actorID,
+		Fields: map[string]any{
+			"fileId":   old.ID,
+			"status":   model.FileStatusDeleted,
+			"scene":    scene,
+			"targetId": targetID,
+		},
+	})
+	return nil
 }

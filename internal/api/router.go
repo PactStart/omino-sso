@@ -71,6 +71,7 @@ func NewRouter(
 		authed.GET("/me/sessions", meH.Sessions)
 		authed.DELETE("/me/sessions/:sid", meH.RevokeSession)
 		authed.POST("/me/avatar", meH.UpdateAvatar)
+		authed.DELETE("/me/avatar", meH.ClearAvatar)
 		authed.POST("/files/upload-credential", filesH.CreateUploadCredential)
 		authed.POST("/files/confirm", filesH.ConfirmUpload)
 	}
@@ -113,7 +114,9 @@ func NewRouter(
 
 		// 图片上传（004）。
 		adminGroup.POST("/clients/:id/logo", adminH.SetClientLogo)
+		adminGroup.DELETE("/clients/:id/logo", adminH.ClearClientLogo)
 		adminGroup.POST("/users/:id/avatar", adminH.SetUserAvatar)
+		adminGroup.DELETE("/users/:id/avatar", adminH.ClearUserAvatar)
 		adminGroup.GET("/files", adminH.ListFiles)
 		adminGroup.PATCH("/files/:id", adminH.UpdateFileStatus)
 	}

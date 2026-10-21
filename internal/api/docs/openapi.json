@@ -914,7 +914,7 @@
             "type": "string"
           },
           "provider": {
-            "example": "aliyun.oss",
+            "example": "aliyun_oss",
             "type": "string"
           },
           "scene": {
@@ -1186,6 +1186,10 @@
       },
       "dto.UserAdmin": {
         "properties": {
+          "avatarUrl": {
+            "example": "https://cdn.example.com/avatar/zhangsan.png",
+            "type": "string"
+          },
           "createdAt": {
             "example": "2026-01-08T03:20:11Z",
             "type": "string"
@@ -2138,6 +2142,82 @@
       }
     },
     "/api/v1/admin/clients/{id}/logo": {
+      "delete": {
+        "description": "删除 logo 对象并清空业务字段，展示回退为名称首字占位（FR-002/FR-008）。",
+        "parameters": [
+          {
+            "description": "应用 ID（client_id）",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "success"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "清除应用 logo",
+        "tags": [
+          "应用管理"
+        ],
+        "x-auth-level": "admin"
+      },
       "post": {
         "description": "直传完成后调用，写入文件记录并回写 clients.logo_url。",
         "parameters": [
@@ -5288,6 +5368,82 @@
       }
     },
     "/api/v1/admin/users/{id}/avatar": {
+      "delete": {
+        "description": "删除头像对象并清空业务字段，展示回退为姓名首字占位（FR-011）。",
+        "parameters": [
+          {
+            "description": "用户 ID（ULID）",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "success"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "清除用户头像（管理员代管）",
+        "tags": [
+          "用户管理"
+        ],
+        "x-auth-level": "admin"
+      },
       "post": {
         "description": "直传完成后调用，写入文件记录并回写目标用户 users.avatar_url。",
         "parameters": [
@@ -6025,6 +6181,60 @@
       }
     },
     "/api/v1/me/avatar": {
+      "delete": {
+        "description": "删除头像对象并清空业务字段，展示回退为姓名首字占位（FR-004）。",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "success"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "清除本人头像",
+        "tags": [
+          "我的"
+        ]
+      },
       "post": {
         "description": "直传完成后调用，写入文件记录并回写 users.avatar_url。",
         "requestBody": {

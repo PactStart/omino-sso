@@ -134,7 +134,7 @@
 - **枚举取值（已定稿）**: 场景枚举 `app_logo`（应用 logo）/ `user_avatar`（用户头像）；状态枚举 `active`（生效）/ `disabled`（禁用）/ `deleted`（已删除）。
 - **存量兼容（合理默认）**: 历史上以外部 URL 填写的 logo/头像继续有效展示，仅新上传走新流程，不强制迁移存量数据。
 - **供应商（已澄清）**: 首选阿里云 OSS；后续扩展 OBS、COS、S3、MinIO 不属于本期范围。
-- **对象存储抽象与配置（用户澄清）**: 对象存储抽象须灵活，配置由供应商（provider）决定——如 `provider=aliyun.oss` 需 `accessKeyId` / `accessSecret`，其他 provider 对应各自的配置项；本期仅实现阿里云 OSS，但抽象与配置结构需为后续扩展预留。
+- **对象存储抽象与配置（用户澄清）**: 对象存储抽象须灵活，配置由供应商（provider）决定——如 `provider=aliyun_oss` 需 `accessKeyId` / `accessSecret`，其他 provider 对应各自的配置项；本期仅实现阿里云 OSS，但抽象与配置结构需为后续扩展预留。
 - **实现细节（留待计划阶段）**: 直传凭证机制、服务端 `FileStore` 接口边界、admin 与 portal 共享上传组件与裁剪器的具体实现，均属技术方案，由 `/speckit.plan` 决定，本规格不展开。
 - **合规依赖**: 本功能须遵循项目宪法（`.specify/memory/constitution.md`）——凭证不出服务端、分层 `api → service → store`、结构变更走手写 SQL 迁移；新增对象存储依赖与基础设施须先更新 `AGENTS.md` §2 与 §3。
 
@@ -147,4 +147,4 @@
 - Q: 上传后的头像与 logo 图片，其访问地址是公开可访问还是需登录才能查看？ → A: 公开可访问（无需登录即可查看）。
 - 补充需求（用户追加，2026-10-21）: ① 上传文件需记录并定义模型（供应商、场景、格式、大小、链接、状态、创建人、创建时间），管理后台可分页查看与更新状态，状态/场景为字符串枚举；② admin 与 portal 复用一致的公共单文件上传组件，上传完成后调用后端接口写入并回显、更新业务表对应字段；③ 上传组件支持裁剪（选择矩形区域）。
 - 补充澄清（用户追加，2026-10-21）: 裁剪为非强制能力，默认关闭，由传入组件的属性决定是否启用。
-- 补充澄清（用户追加，2026-10-21）: 对象存储抽象需灵活，配置由 provider 决定（如 `provider=aliyun.oss` 需 `accessKeyId` / `accessSecret`，其他 provider 各自配置）。
+- 补充澄清（用户追加，2026-10-21）: 对象存储抽象需灵活，配置由 provider 决定（如 `provider=aliyun_oss` 需 `accessKeyId` / `accessSecret`，其他 provider 各自配置）。

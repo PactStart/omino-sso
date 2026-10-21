@@ -53,6 +53,7 @@ type UserAdmin struct {
 	ID          string   `json:"id" example:"01J9ZJ8Q2M4N6P8R0T2V4X6Z8A"`
 	Username    string   `json:"username" example:"zhangsan"`
 	DisplayName string   `json:"displayName" example:"张三"`
+	AvatarURL   *string  `json:"avatarUrl" example:"https://cdn.example.com/avatar/zhangsan.png"`
 	Email       *string  `json:"email" example:"zhangsan@example.com"`
 	Phone       *string  `json:"phone" example:"13800000000"`
 	DeptID      string   `json:"deptId" example:"01J9ZJ7A1B2C3D4E5F6G7H8J9K"`
@@ -94,6 +95,7 @@ func Admin(u *model.User) UserAdmin {
 		ID:          u.ID,
 		Username:    u.Username,
 		DisplayName: u.DisplayName,
+		AvatarURL:   u.AvatarURL,
 		Email:       u.Email,
 		Phone:       u.Phone,
 		DeptID:      u.DeptID,
@@ -415,7 +417,7 @@ type UploadCredential struct {
 // FileItem 文件记录（GET /admin/files 元素与确认/状态更新响应）。
 type FileItem struct {
 	ID          string `json:"id" example:"01J9ZK9M1N3P5Q7R9S1T3V5W7X"`
-	Provider    string `json:"provider" example:"aliyun.oss"`
+	Provider    string `json:"provider" example:"aliyun_oss"`
 	Scene       string `json:"scene" example:"app_logo"`
 	Format      string `json:"format" example:"png"`
 	Size        int64  `json:"size" example:"245760"`

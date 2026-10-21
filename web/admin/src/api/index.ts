@@ -319,6 +319,20 @@ export function setUserAvatar(userId: string, payload: FileUploadPayload) {
   })
 }
 
+export function clearClientLogo(clientId: string) {
+  return request<null>({
+    url: `/admin/clients/${encodeURIComponent(clientId)}/logo`,
+    method: 'DELETE',
+  })
+}
+
+export function clearUserAvatar(userId: string) {
+  return request<null>({
+    url: `/admin/users/${encodeURIComponent(userId)}/avatar`,
+    method: 'DELETE',
+  })
+}
+
 export function listFiles(query: FileQuery) {
   return request<Paged<FileRow>>({ url: '/admin/files', method: 'GET', params: query })
 }

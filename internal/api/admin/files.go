@@ -239,3 +239,61 @@ func (h *Handler) UpdateFileStatus(c *gin.Context) {
 	}
 	response.Success(c, dto.FromFile(f))
 }
+
+// ClearClientLogo 清除应用 logo：删除对象并清空 clients.logo_url。
+//
+// @Summary      清除应用 logo
+// @Description  删除 logo 对象并清空业务字段，展示回退为名称首字占位（FR-002/FR-008）。
+// @Tags         应用管理
+// @Produce      json
+// @Security     cookieAuth
+// @Param        id    path  string  true  "应用 ID（client_id）"
+// @Success      200   {object}  response.Body  "success"
+// @Failure      401   {object}  response.Body  "UNAUTHENTICATED"
+// @Failure      403   {object}  response.Body  "FORBIDDEN"
+// @Failure      500   {object}  response.Body  "INTERNAL_ERROR"
+// @Failure      503   {object}  response.Body  "DEPENDENCY_UNAVAILABLE"
+// @x-auth-level  "admin"
+// @Router       /admin/clients/{id}/logo [delete]
+func (h *Handler) ClearClientLogo(c *gin.Context) {
+	u, ok := middleware.CurrentUser(c)
+	if !ok {
+		response.Fail(c, response.ErrUnauthenticated)
+		return
+	}
+	if err := h.files.ClearByTarget(c.Request.Context(), model.FileSceneAppLogo, c.Param("id"), u.ID); err != nil {
+		h.log.Error("clear client logo", "err", err)
+		response.Fail(c, response.ErrInternal)
+		return
+	}
+	response.Success(c, nil)
+}
+
+// ClearUserAvatar 管理员代管清除用户头像。
+//
+// @Summary      清除用户头像（管理员代管）
+// @Description  删除头像对象并清空业务字段，展示回退为姓名首字占位（FR-011）。
+// @Tags         用户管理
+// @Produce      json
+// @Security     cookieAuth
+// @Param        id    path  string  true  "用户 ID（ULID）"
+// @Success      200   {object}  response.Body  "success"
+// @Failure      401   {object}  response.Body  "UNAUTHENTICATED"
+// @Failure      403   {object}  response.Body  "FORBIDDEN"
+// @Failure      500   {object}  response.Body  "INTERNAL_ERROR"
+// @Failure      503   {object}  response.Body  "DEPENDENCY_UNAVAILABLE"
+// @x-auth-level  "admin"
+// @Router       /admin/users/{id}/avatar [delete]
+func (h *Handler) ClearUserAvatar(c *gin.Context) {
+	u, ok := middleware.CurrentUser(c)
+	if !ok {
+		response.Fail(c, response.ErrUnauthenticated)
+		return
+	}
+	if err := h.files.ClearByTarget(c.Request.Context(), model.FileSceneUserAvatar, c.Param("id"), u.ID); err != nil {
+		h.log.Error("clear user avatar", "err", err)
+		response.Fail(c, response.ErrInternal)
+		return
+	}
+	response.Success(c, nil)
+}

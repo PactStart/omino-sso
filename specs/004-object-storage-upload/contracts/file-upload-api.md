@@ -95,7 +95,7 @@
 ```json
 {
   "id": "01J9ZK9M1N3P5Q7R9S1T3V5W7X",
-  "provider": "aliyun.oss",
+  "provider": "aliyun_oss",
   "scene": "app_logo",
   "format": "png",
   "size": 245760,

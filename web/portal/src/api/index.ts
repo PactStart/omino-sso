@@ -53,3 +53,7 @@ export function getUploadCredential(payload: { scene: string; format: string; si
 export function updateMyAvatar(payload: { key: string; format: string; size: number }) {
   return request<FileRow>({ url: '/me/avatar', method: 'POST', data: payload })
 }
+
+export function clearMyAvatar() {
+  return request<null>({ url: '/me/avatar', method: 'DELETE' })
+}

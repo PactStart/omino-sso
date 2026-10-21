@@ -67,3 +67,29 @@ func (h *Handler) UpdateAvatar(c *gin.Context) {
 	}
 	response.Success(c, dto.FromFile(f))
 }
+
+// ClearAvatar 清除本人头像：删除对象并清空 users.avatar_url。
+//
+// @Summary      清除本人头像
+// @Description  删除头像对象并清空业务字段，展示回退为姓名首字占位（FR-004）。
+// @Tags         我的
+// @Produce      json
+// @Security     cookieAuth
+// @Success      200   {object}  response.Body  "success"
+// @Failure      401   {object}  response.Body  "UNAUTHENTICATED"
+// @Failure      500   {object}  response.Body  "INTERNAL_ERROR"
+// @Failure      503   {object}  response.Body  "DEPENDENCY_UNAVAILABLE"
+// @Router       /me/avatar [delete]
+func (h *Handler) ClearAvatar(c *gin.Context) {
+	u, ok := middleware.CurrentUser(c)
+	if !ok {
+		response.Fail(c, response.ErrUnauthenticated)
+		return
+	}
+	if err := h.files.ClearByTarget(c.Request.Context(), model.FileSceneUserAvatar, u.ID, u.ID); err != nil {
+		h.log.Error("clear avatar", "err", err)
+		response.Fail(c, response.ErrInternal)
+		return
+	}
+	response.Success(c, nil)
+}

@@ -2,7 +2,7 @@
 import { computed, inject, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { getClient, setClientLogo, updateClient } from '@/api'
+import { clearClientLogo, getClient, setClientLogo, updateClient } from '@/api'
 import { errorCode, errorMessage } from '@/api/client'
 import type { ClientDetail } from '@/api/types'
 import ImageUpload from '@/components/ImageUpload.vue'
@@ -32,6 +32,7 @@ const form = reactive({
 const formRef = ref<FormInstance>()
 const saving = ref(false)
 const formError = ref('')
+const logoBroken = ref(false)
 
 /** 首页地址：由首个回调地址的 origin 推导（门户"我的应用"入口使用） */
 const homeUrl = computed(() => {
@@ -213,6 +214,7 @@ async function confirmLogo(key: string, format: string, size: number) {
 
 function onLogoSuccess(url: string) {
   form.logoUrl = url
+  logoBroken.value = false
   ElMessage.success('Logo 已更新')
 }
 
@@ -220,8 +222,16 @@ function onLogoError(message: string) {
   ElMessage.error(message)
 }
 
-function clearLogo() {
-  form.logoUrl = ''
+async function clearLogo() {
+  try {
+    await clearClientLogo(clientId.value)
+    form.logoUrl = ''
+    logoBroken.value = false
+    ElMessage.success('Logo 已清除')
+    await reloadSummary()
+  } catch (e) {
+    ElMessage.error(errorMessage(e))
+  }
 }
 
 onMounted(load)
@@ -327,7 +337,13 @@ onMounted(load)
 
           <el-form-item label="Logo" prop="logoUrl">
             <div class="logo-editor">
-              <img v-if="form.logoUrl" :src="form.logoUrl" class="logo-preview" alt="应用 Logo" />
+              <img
+                v-if="form.logoUrl && !logoBroken"
+                :src="form.logoUrl"
+                class="logo-preview"
+                alt="应用 Logo"
+                @error="logoBroken = true"
+              />
               <div class="logo-actions">
                 <ImageUpload
                   scene="app_logo"

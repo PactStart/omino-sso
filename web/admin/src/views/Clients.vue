@@ -149,6 +149,8 @@ function removeRedirectUri(index: number) {
 
 /* ---------------- Logo 上传（先存文件、创建成功后绑定） ---------------- */
 
+const logoBroken = ref(false)
+
 async function confirmLogo(key: string, format: string, size: number) {
   const file = await confirmUpload({ scene: 'app_logo', key, format, size })
   return { url: file.url, id: file.id }
@@ -157,6 +159,7 @@ async function confirmLogo(key: string, format: string, size: number) {
 function onLogoFile(url: string, fileId?: string) {
   form.logoFileId = fileId ?? ''
   form.logoPreview = url
+  logoBroken.value = false
 }
 
 function onLogoError(message: string) {
@@ -166,6 +169,7 @@ function onLogoError(message: string) {
 function removeLogo() {
   form.logoFileId = ''
   form.logoPreview = ''
+  logoBroken.value = false
 }
 
 /* ---------------- 密钥一次性弹窗 ---------------- */
@@ -426,7 +430,13 @@ onMounted(loadClients)
         <el-form-item label="Logo">
           <div class="logo-field">
             <div class="logo-upload-row">
-              <img v-if="form.logoPreview" :src="form.logoPreview" class="logo-preview" alt="应用 Logo" />
+              <img
+                v-if="form.logoPreview && !logoBroken"
+                :src="form.logoPreview"
+                class="logo-preview"
+                alt="应用 Logo"
+                @error="logoBroken = true"
+              />
               <div class="logo-upload-actions">
                 <ImageUpload
                   scene="app_logo"
