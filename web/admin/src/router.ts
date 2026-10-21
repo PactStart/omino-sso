@@ -81,6 +81,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '审计日志', requiresAdmin: true },
   },
   {
+    path: '/admin/files',
+    name: 'files',
+    component: () => import('@/views/Files.vue'),
+    meta: { title: '文件管理', requiresAdmin: true },
+  },
+  {
     path: '/offline',
     name: 'offline',
     component: () => import('@/views/Offline.vue'),

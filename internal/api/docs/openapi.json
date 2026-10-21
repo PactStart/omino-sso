@@ -31,6 +31,11 @@
             "maxLength": 255,
             "type": "string"
           },
+          "fileId": {
+            "description": "FileID 为已上传（target_id 为空）的 logo 文件记录 ID；创建成功后回填 target_id 并写回 logo_url。",
+            "example": "01J9ZK9M1N3P5Q7R9S1T3V5W7X",
+            "type": "string"
+          },
           "grantTypes": {
             "example": [
               "authorization_code",
@@ -1324,6 +1329,38 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "files.ConfirmUploadRequest": {
+        "properties": {
+          "format": {
+            "example": "png",
+            "type": "string"
+          },
+          "key": {
+            "example": "app_logo/01J9ZK9M1N3P5Q7R9S1T3V5W7X.png",
+            "type": "string"
+          },
+          "scene": {
+            "example": "app_logo",
+            "type": "string"
+          },
+          "size": {
+            "example": 245760,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "targetId": {
+            "example": "01J9ZK9M1N3P5Q7R9S1T3V5W7X",
+            "type": "string"
+          }
+        },
+        "required": [
+          "format",
+          "key",
+          "scene",
+          "size"
+        ],
         "type": "object"
       },
       "files.UploadCredentialRequest": {
@@ -5623,6 +5660,116 @@
         "summary": "校验 TOTP 动态码",
         "tags": [
           "认证"
+        ]
+      }
+    },
+    "/api/v1/files/confirm": {
+      "post": {
+        "description": "直传完成后调用，写入 files 记录（仅 app_logo）；targetId 为空时仅落记录，创建应用成功后回填绑定。需 admin。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/files.ConfirmUploadRequest"
+              }
+            }
+          },
+          "description": "确认请求体",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.FileItem"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "确认上传",
+        "tags": [
+          "文件"
         ]
       }
     },

@@ -15,6 +15,7 @@ import type {
   CreateRolePayload,
   CreatedClient,
   CreateUserPayload,
+  FileConfirmPayload,
   FileQuery,
   FileRow,
   FileUploadPayload,
@@ -295,6 +296,11 @@ export function putRoleMembers(
 
 export function getUploadCredential(payload: { scene: string; format: string; size: number }) {
   return request<UploadCredential>({ url: '/files/upload-credential', method: 'POST', data: payload })
+}
+
+/** 通用上传确认；targetId 为空时仅落文件记录（如注册应用前上传 logo） */
+export function confirmUpload(payload: FileConfirmPayload) {
+  return request<FileRow>({ url: '/files/confirm', method: 'POST', data: payload })
 }
 
 export function setClientLogo(clientId: string, payload: FileUploadPayload) {

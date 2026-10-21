@@ -2,9 +2,19 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import AdminLayout from '@/layouts/AdminLayout.vue'
-import { createOrg, createUser, deleteOrg, getOrgTree, listUsers, updateOrg, updateUser } from '@/api'
+import {
+  createOrg,
+  createUser,
+  deleteOrg,
+  getOrgTree,
+  listUsers,
+  setUserAvatar,
+  updateOrg,
+  updateUser,
+} from '@/api'
 import { errorCode, errorMessage } from '@/api/client'
 import type { OrgNode, UpdateOrgPayload, UpdateUserPayload, UserRow, UserStatus } from '@/api/types'
+import ImageUpload from '@/components/ImageUpload.vue'
 import { formatTime, roleLabel, statusLabel, statusTagType } from '@/utils/format'
 
 const ALL_KEY = '__all__'
@@ -589,6 +599,19 @@ async function submitForm() {
   }
 }
 
+async function confirmAvatar(key: string, format: string, size: number) {
+  const file = await setUserAvatar(editingId.value, { key, format, size })
+  return { url: file.url }
+}
+
+function onAvatarSuccess() {
+  ElMessage.success('头像已更新')
+}
+
+function onAvatarError(message: string) {
+  ElMessage.error(message)
+}
+
 onMounted(() => {
   void loadTree()
   void loadUsers()
@@ -836,6 +859,19 @@ onMounted(() => {
 
         <el-form-item label="姓名" prop="displayName">
           <el-input v-model="form.displayName" placeholder="请输入姓名" maxlength="64" />
+        </el-form-item>
+
+        <el-form-item v-if="drawerMode === 'edit'" label="头像">
+          <div class="avatar-field">
+            <ImageUpload
+              scene="user_avatar"
+              :enable-crop="true"
+              :confirm="confirmAvatar"
+              @success="onAvatarSuccess"
+              @error="onAvatarError"
+            />
+            <p class="field-hint">上传后立即生效；文件记录可在「文件管理」中查看</p>
+          </div>
         </el-form-item>
 
         <el-form-item label="邮箱" prop="email" :error="fieldErrors.email">
@@ -1140,6 +1176,10 @@ onMounted(() => {
 }
 
 .field-wrap {
+  width: 100%;
+}
+
+.avatar-field {
   width: 100%;
 }
 

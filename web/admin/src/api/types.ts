@@ -290,6 +290,8 @@ export interface CreateClientPayload {
   grantTypes: string[]
   scopes: string[]
   isPublic: boolean
+  /** 已上传（target_id 为空）的 logo 文件记录 ID；创建成功后由服务端回填绑定 */
+  fileId?: string
 }
 
 export interface CreatedClient {
@@ -365,4 +367,13 @@ export interface FileUploadPayload {
   key: string
   format: string
   size: number
+}
+
+/** 通用上传确认（POST /files/confirm）；targetId 为空表示先落文件、后绑定 */
+export interface FileConfirmPayload {
+  scene: 'app_logo' | 'user_avatar'
+  key: string
+  format: string
+  size: number
+  targetId?: string
 }

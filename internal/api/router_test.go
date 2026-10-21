@@ -156,8 +156,8 @@ func TestDocsServedWithoutRedis(t *testing.T) {
 	for _, item := range doc.Paths {
 		ops += len(item)
 	}
-	if ops != 42 {
-		t.Fatalf("(method,path) 组合数为 %d, 期望 42", ops)
+	if ops != 43 {
+		t.Fatalf("(method,path) 组合数为 %d, 期望 43", ops)
 	}
 	if !strings.Contains(doc.Info.Description, "环境：test") {
 		t.Fatalf("info.description 未注入环境: %q", doc.Info.Description)

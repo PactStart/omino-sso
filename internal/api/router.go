@@ -72,6 +72,7 @@ func NewRouter(
 		authed.DELETE("/me/sessions/:sid", meH.RevokeSession)
 		authed.POST("/me/avatar", meH.UpdateAvatar)
 		authed.POST("/files/upload-credential", filesH.CreateUploadCredential)
+		authed.POST("/files/confirm", filesH.ConfirmUpload)
 	}
 
 	// 管理端点

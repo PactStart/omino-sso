@@ -41,8 +41,10 @@ const errorText = ref('')
 const cropping = ref(false)
 const cropSrc = ref('')
 const cropScale = ref(100)
-const cropOffsetX = ref(0)
-const cropOffsetY = ref(0)
+const cropBoxX = ref(0)
+const cropBoxY = ref(0)
+const cropBoxW = ref(200)
+const cropError = ref('')
 const imgEl = ref<HTMLImageElement>()
 let pending: File | null = null
 let pendingFormat = ''
@@ -50,6 +52,10 @@ let pendingFormat = ''
 function formatOf(name: string): string {
   const ext = name.split('.').pop()?.toLowerCase() ?? ''
   return ext === 'jpeg' ? 'jpg' : ext === 'jpg' || ext === 'png' || ext === 'webp' ? ext : ''
+}
+
+function formatMime(format: string): string {
+  return format === 'jpg' ? 'image/jpeg' : 'image/' + format
 }
 
 function pick() {
@@ -78,15 +84,16 @@ function onFileChange(e: Event) {
   if (props.enableCrop) {
     cropSrc.value = URL.createObjectURL(file)
     cropScale.value = 100
-    cropOffsetX.value = 0
-    cropOffsetY.value = 0
+    cropBoxX.value = 0
+    cropBoxY.value = 0
+    cropBoxW.value = 200
     cropping.value = true
   } else {
     void upload(file, fmt)
   }
 }
 
-async function upload(blob: Blob, format: string) {
+async function upload(blob: Blob, format: string): Promise<boolean> {
   uploading.value = true
   emit('uploading', true)
   try {
@@ -102,10 +109,12 @@ async function upload(blob: Blob, format: string) {
     if (!resp.ok) throw new Error('直传对象存储失败，请重试')
     const { url } = await props.confirm(cred.key, format, blob.size)
     emit('success', url)
+    return true
   } catch (err) {
     const msg = err instanceof Error ? err.message : '上传失败，请重试'
     errorText.value = msg
     emit('error', msg)
+    return false
   } finally {
     uploading.value = false
     emit('uploading', false)
@@ -114,22 +123,76 @@ async function upload(blob: Blob, format: string) {
 
 /* ---------- 裁剪（Canvas） ---------- */
 
-const boxSize = computed(() => 200) // 裁剪框展示尺寸（px）
+const boxH = computed(() => cropBoxW.value / props.cropAspectRatio)
+
+function clamp(v: number, min: number, max: number) {
+  return Math.min(Math.max(v, min), max)
+}
+
+// 图片加载完成后，把裁剪框初始化为居中
+function onImgLoad() {
+  const img = imgEl.value
+  if (!img) return
+  const w = Math.min(200, img.clientWidth)
+  const h = w / props.cropAspectRatio
+  cropBoxW.value = h > img.clientHeight ? img.clientHeight * props.cropAspectRatio : w
+  cropBoxX.value = (img.clientWidth - cropBoxW.value) / 2
+  cropBoxY.value = (img.clientHeight - boxH.value) / 2
+  cropScale.value = 100
+}
+
+// 拖动裁剪框
+let dragging = false
+let dragStartX = 0
+let dragStartY = 0
+let dragBoxX = 0
+let dragBoxY = 0
+
+function onBoxMouseDown(e: MouseEvent) {
+  dragging = true
+  dragStartX = e.clientX
+  dragStartY = e.clientY
+  dragBoxX = cropBoxX.value
+  dragBoxY = cropBoxY.value
+  window.addEventListener('mousemove', onBoxMouseMove)
+  window.addEventListener('mouseup', onBoxMouseUp)
+}
+
+function onBoxMouseMove(e: MouseEvent) {
+  if (!dragging || !imgEl.value) return
+  const img = imgEl.value
+  cropBoxX.value = clamp(dragBoxX + (e.clientX - dragStartX), 0, img.clientWidth - cropBoxW.value)
+  cropBoxY.value = clamp(dragBoxY + (e.clientY - dragStartY), 0, img.clientHeight - boxH.value)
+}
+
+function onBoxMouseUp() {
+  dragging = false
+  window.removeEventListener('mousemove', onBoxMouseMove)
+  window.removeEventListener('mouseup', onBoxMouseUp)
+}
+
+// 缩放裁剪框（保持中心）
+function onScaleChange() {
+  if (!imgEl.value) return
+  const img = imgEl.value
+  const w = clamp((200 * cropScale.value) / 100, 40, img.clientWidth)
+  const realW = w / props.cropAspectRatio > img.clientHeight ? img.clientHeight * props.cropAspectRatio : w
+  const cx = cropBoxX.value + cropBoxW.value / 2
+  const cy = cropBoxY.value + boxH.value / 2
+  cropBoxW.value = realW
+  cropBoxX.value = clamp(cx - realW / 2, 0, img.clientWidth - realW)
+  cropBoxY.value = clamp(cy - boxH.value / 2, 0, img.clientHeight - boxH.value)
+}
 
 async function confirmCrop() {
   if (!pending || !imgEl.value) return
+  cropError.value = ''
   const img = imgEl.value
-  const nw = img.naturalWidth
-  const nh = img.naturalHeight
-  // 展示区尺寸（保持图片比例，最大 360 宽）
-  const dispW = Math.min(360, nw)
-  const dispH = (nh * dispW) / nw
-  const size = (boxSize.value * dispW) / dispW // 裁剪框 = 边长 200 的方形
-  const ratio = nw / dispW
-  const sx = (-cropOffsetX.value) * ratio
-  const sy = (-cropOffsetY.value) * ratio
-  const sw = size * ratio
-  const sh = size * ratio
+  const ratio = img.naturalWidth / img.clientWidth
+  const sx = cropBoxX.value * ratio
+  const sy = cropBoxY.value * ratio
+  const sw = cropBoxW.value * ratio
+  const sh = boxH.value * ratio
 
   const canvas = document.createElement('canvas')
   canvas.width = 300
@@ -137,12 +200,17 @@ async function confirmCrop() {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
   ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
+  const fmt = pendingFormat
   const blob: Blob = await new Promise((resolve, reject) =>
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('裁剪失败'))), 'image/' + pendingFormat, 0.9),
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('裁剪失败'))), formatMime(fmt), 0.9),
   )
-  cropping.value = false
-  pending = null
-  await upload(blob, pendingFormat)
+  const ok = await upload(blob, fmt)
+  if (ok) {
+    cropping.value = false
+    pending = null
+  } else {
+    cropError.value = errorText.value
+  }
 }
 
 function cancelCrop() {
@@ -152,6 +220,8 @@ function cancelCrop() {
 
 onBeforeUnmount(() => {
   if (cropSrc.value) URL.revokeObjectURL(cropSrc.value)
+  window.removeEventListener('mousemove', onBoxMouseMove)
+  window.removeEventListener('mouseup', onBoxMouseUp)
 })
 </script>
 
@@ -166,18 +236,21 @@ onBeforeUnmount(() => {
     <div v-if="cropping" class="crop-mask" @click.self="cancelCrop">
       <div class="crop-panel">
         <div class="crop-stage">
-          <img ref="imgEl" :src="cropSrc" class="crop-img" alt="裁剪预览" />
+          <img ref="imgEl" :src="cropSrc" class="crop-img" alt="裁剪预览" @load="onImgLoad" />
           <div
             class="crop-box"
             :style="{
-              width: boxSize + 'px',
-              height: boxSize / cropAspectRatio + 'px',
-              transform: `translate(${cropOffsetX}px, ${cropOffsetY}px)`,
+              left: cropBoxX + 'px',
+              top: cropBoxY + 'px',
+              width: cropBoxW + 'px',
+              height: boxH + 'px',
             }"
+            @mousedown.prevent="onBoxMouseDown"
           ></div>
         </div>
+        <p v-if="cropError" class="crop-error">{{ cropError }}</p>
         <div class="crop-controls">
-          <label>缩放 <input v-model.number="cropScale" type="range" min="50" max="300" /></label>
+          <label>缩放 <input v-model.number="cropScale" type="range" min="50" max="300" @input="onScaleChange" /></label>
           <button type="button" @click="confirmCrop">裁剪并上传</button>
           <button type="button" @click="cancelCrop">取消</button>
         </div>
@@ -212,6 +285,11 @@ onBeforeUnmount(() => {
   font-size: 12px;
   margin: 0;
 }
+.crop-error {
+  color: #dc2626;
+  font-size: 13px;
+  margin: 8px 0 0;
+}
 .crop-mask {
   position: fixed;
   inset: 0;
@@ -237,12 +315,9 @@ onBeforeUnmount(() => {
 }
 .crop-box {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  margin-top: -100px;
-  margin-left: -100px;
   border: 2px dashed #2563eb;
   box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+  cursor: move;
 }
 .crop-controls {
   display: flex;

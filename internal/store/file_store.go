@@ -70,6 +70,12 @@ func (s *Store) UpdateFileStatus(ctx context.Context, id, status string) error {
 		Updates(map[string]any{"status": status, "updated_at": time.Now().UnixMilli()}).Error
 }
 
+// UpdateFileTargetID 回填文件记录的业务对象标识（注册应用后绑定 logo）。
+func (s *Store) UpdateFileTargetID(ctx context.Context, id, targetID string) error {
+	return s.DB(ctx).Model(&model.File{}).Where("id = ?", id).
+		Updates(map[string]any{"target_id": targetID, "updated_at": time.Now().UnixMilli()}).Error
+}
+
 // ClearClientLogoIf 仅当当前 logo 仍指向该 url 时清空（避免误清新上传）。
 func (s *Store) ClearClientLogoIf(ctx context.Context, clientID, url string, now int64) error {
 	return s.DB(ctx).Model(&model.Client{}).Where("client_id = ? AND logo_url = ?", clientID, url).

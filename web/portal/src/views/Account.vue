@@ -3,10 +3,14 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import PortalLayout from '@/layouts/PortalLayout.vue'
 import ErrorState from '@/components/ErrorState.vue'
+import ImageUpload from '@/components/ImageUpload.vue'
 import { useSessionStore } from '@/stores/session'
+import { updateMyAvatar } from '@/api'
+import { useToast } from '@/composables/useToast'
 import { initialOf, orDash, roleLabel, formatTime } from '@/utils/format'
 
 const session = useSessionStore()
+const toast = useToast()
 
 const loading = ref(false)
 const error = ref('')
@@ -38,6 +42,19 @@ async function load(force = false) {
   const user = await session.fetchMe({ force, silent: false })
   if (!user) error.value = '无法获取个人信息，请稍后重试'
   loading.value = false
+}
+
+async function confirmAvatar(key: string, format: string, size: number) {
+  const file = await updateMyAvatar({ key, format, size })
+  return { url: file.url }
+}
+
+async function onAvatarSuccess() {
+  await session.fetchMe({ force: true })
+}
+
+function onAvatarError(message: string) {
+  toast.error(message)
 }
 
 onMounted(() => load())
@@ -108,6 +125,16 @@ onMounted(() => load())
           aria-hidden="true"
         >
           {{ initialOf(me.displayName) }}
+        </div>
+
+        <div class="mt-4 flex justify-center">
+          <ImageUpload
+            scene="user_avatar"
+            :enable-crop="true"
+            :confirm="confirmAvatar"
+            @success="onAvatarSuccess"
+            @error="onAvatarError"
+          />
         </div>
 
         <h2 class="mt-4 text-lg font-semibold text-ink-800">{{ me.displayName }}</h2>

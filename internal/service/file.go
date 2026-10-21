@@ -76,9 +76,14 @@ func (s *FileService) ConfirmUpload(ctx context.Context, in ConfirmUploadInput) 
 	url := s.fs.ResolvePublicURL(in.Key)
 	now := nowMillis()
 
-	old, err := s.st.GetActiveFileByTarget(ctx, in.Scene, in.TargetID)
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
+	// target_id 为空表示「先存文件、后绑定」（注册应用上传 logo 前尚无 clientID）。
+	var old *model.File
+	if in.TargetID != "" {
+		var err error
+		old, err = s.st.GetActiveFileByTarget(ctx, in.Scene, in.TargetID)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
 	}
 
 	f := &model.File{
@@ -97,8 +102,11 @@ func (s *FileService) ConfirmUpload(ctx context.Context, in ConfirmUploadInput) 
 	}
 
 	if err := s.st.Transaction(ctx, func(ctx context.Context) error {
-		if err := s.applyBusinessField(ctx, in.Scene, in.TargetID, url); err != nil {
-			return err
+		// 无 target 时仅落文件记录，业务字段待绑定后回写。
+		if in.TargetID != "" {
+			if err := s.applyBusinessField(ctx, in.Scene, in.TargetID, url); err != nil {
+				return err
+			}
 		}
 		return s.st.CreateFile(ctx, f)
 	}); err != nil {
