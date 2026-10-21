@@ -127,7 +127,7 @@ ORDER BY u.username ASC
 LIMIT ? OFFSET ?;
 ```
 
-> 排序键必须是 `u.username`（`users` 上的唯一索引 `uk_users_username`，天然有序、稳定分页），**不得**用 `u.created_at`（无索引，会触发文件排序，E5）。`display_name` 的包含匹配无法走索引，因此候选接口 `pageSize ≤ 50`、`keyword ≤ 64` 字符。
+> 排序键必须是 `u.username`（`users` 上的唯一索引 `uk_users_username`，天然有序、稳定分页），**不得**用 `u.created_at`（无索引，会触发文件排序，E5）。`display_name` 的包含匹配无法走索引，因此候选接口 `pageSize ≤ 50`、`keyword ≤ 64` 字符；带关键字时候选计划可能含文件排序，属可接受的固有代价（实测 10k 用户 < 300ms），以 SC-002 为准。
 > `all=true`（跨页全选）返回 ID 列表时上限 **5,000**，超出返回 `400 VALIDATION_FAILED`（E6）。
 
 **应用列表的成员数**（`GET /admin/clients` 的 `memberCount` / `hasMembers`）：

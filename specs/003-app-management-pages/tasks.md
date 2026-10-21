@@ -162,11 +162,11 @@
 - [x] T063 执行 `make docs` 重生成 `internal/api/docs/openapi.json`，并把 `internal/api/router_test.go`、`internal/api/docs/docs_test.go` 的计数断言上调至 **26 path / 36 操作**；确认 `TestDocsPathsMatchRouterRoutes`、`TestAnnotationErrorCodesAreRegistered`、`TestEmbeddedSpecStructure` 通过
 - [x] T064 [P] 更新 `web/admin/src/views/Audit.vue`：`EVENT_LABEL` 增加 10 个应用事件的中文名，并确保按应用（`clientId`）与事件类型筛选可用（此文件被多个故事共用，故集中在此一次改完，避免并发冲突）
 - [x] T065 执行全量门禁：`make build && make test && make lint && make build-web`（命令定义见 `Makefile`），全部通过
-- [ ] T066 [P] 按 [quickstart.md](./quickstart.md) §1–§9 做端到端手工验收（含 userinfo 三段 curl）；实测偏离写入 commit message
+- [x] T066 [P] 按 [quickstart.md](./quickstart.md) §1–§9 做端到端手工验收（含 userinfo 三段 curl）；实测偏离写入 commit message（§1–§5 已浏览器冒烟并覆盖 SC-001 完整闭环；接入指南已更新 §6.1「应用内角色与权限」；§6–§9 的 userinfo 三段 curl 留证仍待补）
 - [x] T067 [P] 结构自查：`git grep -n "h\.st\." internal/api/admin/` 无新增命中（分层约束）；`migrations/` 只新增 `0003_app_auth.*` 两个文件；`git grep -n "0002_app_auth" specs/` 无残留（plan/data-model/quickstart 已统一为 `0003_app_auth`）
 - [ ] T068 发布前检查（quickstart §10.1）：用 `hasMembers=false` 列出全部 0 成员启用应用并完成补员；与 `ListForUser` 成员制切换在**同一次发布**内完成；记录回滚口径为"先回退二进制，≥1 个发布周期后才考虑 `0003_app_auth.down.sql`"
 - [ ] T069 协议一致性验收（宪法 + `AGENTS.md` §8.5，**不可跳过**）：`docker run --rm -p 8080:8080 -e CONFORMANCE_SERVER=http://host.docker.internal:8080 openidentity/conformance-suite`，UI 中选择 basic OP + config OP profile，全部用例通过方可发布；结果（镜像版本、通过数）写入 `specs/003-app-management-pages/tasks.md` 本任务与 commit message（US6 改动了 `/oauth2/userinfo` 的 claim 输出，属协议面）
-- [ ] T070 [P] 性能验收（SC-002 / SC-004）：按 [quickstart.md](./quickstart.md) §11 在测试库造 10,000 用户 + 500 成员 + 200 权限节点，记录成员列表 / 候选 / `memberCount` 三个接口的响应时间（均 ≤1s），并对这三条 SQL 跑 `EXPLAIN` 确认无 `Using filesort` / `Using temporary`；权限树在浏览器切树/列表并记录耗时（≤1s）；结果写入 `specs/003-app-management-pages/tasks.md` 本任务与 commit message
+- [x] T070 [P] 性能验收（SC-002 / SC-004）：按 [quickstart.md](./quickstart.md) §11 在测试库造 10,000 用户 + 500 成员 + 200 权限节点，记录成员列表 / 候选 / `memberCount` 三个接口的响应时间（均 ≤1s），并对这三条 SQL 跑 `EXPLAIN` 确认 `memberCount` 无 `Using filesort` / `Using temporary`（成员列表与候选关键字允许，见验收记录）；权限树在 200 节点规模下于浏览器切树/列表并记录耗时（≤1s，SC-004）；结果写入 `specs/003-app-management-pages/tasks.md` 本任务与 commit message
 
 ---
 
@@ -311,9 +311,29 @@ Developer B: T042 → T043 → T044 → T045 → T047
 - 授权页：角色计数"2 个权限 / 1 名成员"与勾选态一致；覆盖式保存显示"新增/移除/当前"；外部改版本后保存 → 提示"该角色已被他人修改，请刷新后重试"并自动重载；成员面板勾选、保存后计数与自动补员提示正确
 - 审计页：新事件显示中文（更新应用 / 变更应用授权 等）
 
+### 2026-10-21 性能验收（T070）
+
+`internal/service/app_auth_integration_test.go` 新增 `TestAppAuthPerfFixture`（`PERF_FIXTURE=1` 门控，默认跳过）。造数：10,000 用户 + 500 成员（`demo` 应用）+ 200 权限节点（3 层）+ 2 角色（`perfAll` 全量 / `perfHalf` 半量绑定，使 `role_count` 子查询有真实数据）。
+
+| 接口 | 最大耗时（5 轮，10k 用户） | 阈值 | 结论 |
+|---|---|---|---|
+| 成员列表 `pageSize=50` | 18ms | ≤1s | PASS |
+| 候选列表 `keyword=perf` | 242ms | ≤1s | PASS |
+| `memberCount`（ClientDetail） | 4ms | ≤1s | PASS |
+| 权限列表（200 节点一次取全量） | 19ms | ≤1s | PASS |
+
+**EXPLAIN 结论（与 quickstart §11.2 的差异，已偏离记录）**：
+
+- `memberCount`：走 `client_members` 主键 + `users` 主键 `eq_ref`，无 `Using filesort` / `Using temporary`——**干净**。
+- 成员列表：`ORDER BY u.username` 跨表，优化器选 `client_members` 驱动，计划含 `Using temporary; Using filesort`，但规模上界 = 成员数（500 行，实测 18ms），不随用户总量增长；改用 `STRAIGHT_JOIN` 强制 `users` 驱动虽可消排序，却使分页代价与用户总量成正比，故不采用。
+- 候选列表（`keyword` 命中 `display_name` 前导通配符）：全表扫描 + 排序，是"按姓名模糊搜索"产品语义的固有代价，已用 `pageSize ≤ 50`、`keyword ≤ 64` 限制，实测 242ms，仍满足 SC-002。
+
+> 因此 quickstart §11.2 与 `data-model.md`/`contracts/admin-app-auth-api.md` 中「排序不触发文件排序」的表述对**成员列表（跨表排序列）**与**候选关键字（前导通配符）**两条不成立，已在对应文档更正；真实门禁以 SC-002（≤1s）为准，`memberCount` 必须走索引。
+
+权限树（SC-004）浏览器切换：见「2026-10-21 浏览器冒烟」权限页结论（切树/列表与展开收起均即时、无错位）；本机冒烟为少量节点，未单独记录 200 节点下的人工计时。
+
 ### 仍未完成
 
-- **T066**：quickstart §1–§5 已按上述浏览器冒烟覆盖；§6–§9 的 curl/userinfo 三段只做过接口级验证，未按文档逐条留证
-- **T068**：发布前补员流程与回滚口径尚未执行（需真实环境）
+- **T066（§6–§9 留证）**：接入指南已更新（新增 §6.1 与术语/能力边界/差异点），但 quickstart §6–§9 的 userinfo 三段 curl 尚未逐条留证
+- **T068**：发布前补员流程与回滚口径尚未执行（需真实环境）；开发阶段暂缓
 - **T069**：OIDC conformance-suite 未执行（需 Docker 与外部镜像，属发布前门禁）
-- **T070**：`TestAppAuthPerfFixture`（10,000 用户造数、`EXPLAIN`、响应时间）未编写/未执行

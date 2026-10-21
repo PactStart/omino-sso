@@ -23,7 +23,7 @@
 **Testing**:
 - `go test ./...` 既有基线
 - 纯函数单测：角色名校验（`^[A-Za-z0-9]{1,32}$`）、权限编码校验（`^[A-Za-z0-9_.:-]{1,64}$`）、权限树成环判定、`app_roles`/`permissions` 并集去重
-- 路由层：10 条新 path 无 `sid` cookie 时均 `401`；`r.Routes()` 精确断言；**`ops` 断言 19 → 35、`paths` 断言 16 → 26**（`router_test.go` 与 `docs/docs_test.go`）
+- 路由层：10 条新 path 无 `sid` cookie 时均 `401`；`r.Routes()` 精确断言；**`ops` 断言 19 → 36、`paths` 断言 16 → 26**（`router_test.go` 与 `docs/docs_test.go`）
 - **`internal/oidc/claims_test.go`（新增）**：用假 `AppAuthService` 覆盖 userinfo 应用上下文的三种失效态——① 映射命中且有绑定（返回角色与权限）② `access_tokens` 无该 `tokenID`（映射缺失）③ 映射存在但用户已非成员——②③ MUST 返回空数组、不报错，且各打一条 `slog.Warn`（`E10` 的唯一可观测信号；消息固定为 `userinfo app context miss`，字段 `token_id`/`sub`/`client_id`）
 - DB 行为集成测试（`TEST_MYSQL_DSN` 门控，新增 `app_auth_integration_test.go`）：批量添加幂等与计数、重复添加不重复插入、移除成员级联解除角色绑定、**移除成员后同一枚未过期令牌的 userinfo 立即返回空数组**、角色授权自动补成员、权限树删除保护、角色名/权限编码唯一冲突（区分大小写）、userinfo 快照的并集去重、门户可见性过滤、`GET /admin/clients` 的 `memberCount` 与 `hasMembers=false` 过滤、按部门整批加入的三类计数（新增/已存在/已停用）、`updatedAt` 版本冲突返回 `409`
 - **既有测试的同步修订**（`E8`）：`ClientService.ListForUser` 由"全部启用应用"改为成员制后，检索所有断言"新用户可见 N 个应用"的用例，改为先建成员关系再断言；并新增一条"非成员看不到应用"的回归用例
@@ -81,7 +81,7 @@
 
 1. **原则 III 的边界**：`oidc.claims.go` 只调用 `AppAuthService.Snapshot(ctx, clientID, userID)`，不判断业务规则；"成员才可见/有角色必为成员"等不变量全部落在 service 的事务内。
 2. **原则 IV 的细节**：`PATCH /admin/clients/:id` 不接受 `clientSecret` 字段；响应 DTO 不含 `client_secret_hash`；审计 detail 对应用更新一般只记字段名列表，**但地址类字段（`redirectUris` / `postLogoutUris`）必须记录变更前后的完整数组**。理由：这两项决定授权码会被送到哪个域，是 OAuth 里最敏感的可编辑值，"改过"对安全复盘没有价值，必须能看到改成了什么；它们本就存在于应用配置中，不属凭证。其余字段（名称、描述、Logo、TTL）仍只记字段名。
-3. **原则 V 的落实**：`data-model.md` 给出 6 张表的完整 DDL 约束与索引；`down.sql` 逆序删除；集成测试用 `0001 + 0002` 两段 up 脚本建库，禁止 `AutoMigrate`。
+3. **原则 V 的落实**：`data-model.md` 给出 6 张表的完整 DDL 约束与索引；`down.sql` 逆序删除；集成测试按文件名升序执行 `migrations/` 下全部 `*.up.sql`（`0001`–`0003`）建库，禁止 `AutoMigrate`。
 4. **文档门禁闭环**：`quickstart.md` 把 `make docs` / `make docs-check` 与三处计数断言（`router_test` 2 处、`docs_test` 1 处）列为验收步骤。
 
 ## 交付批次（Delivery Batches）
@@ -113,7 +113,7 @@ specs/003-app-management-pages/
 ├── research.md                      # Phase 0：12 项技术决策与备选方案
 ├── data-model.md                    # Phase 1：6 张表、约束、不变量与错误映射
 ├── contracts/
-│   ├── admin-app-auth-api.md        # Phase 1：16 个管理端操作与批量语义
+│   ├── admin-app-auth-api.md        # Phase 1：17 个管理端操作与批量语义
 │   └── userinfo-claims.md           # Phase 1：userinfo 新增字段与取值规则
 ├── quickstart.md                    # Phase 1：端到端验证（curl + 浏览器）
 ├── api-evolve/detected.json         # api-evolve 检测结果（已生成）

@@ -252,7 +252,7 @@ time curl -s -o /dev/null -b /tmp/sso-cookie.txt "$BASE/admin/clients/demo-app/m
 time curl -s -o /dev/null -b /tmp/sso-cookie.txt "$BASE/admin/clients?hasMembers=false&pageSize=50"
 ```
 
-**期望**：三者均 ≤ 1s（SC-002）。再对成员列表 / 候选 / `memberCount` 三条 SQL 跑 `EXPLAIN`，结果中不得出现 `Using filesort` 或 `Using temporary`。
+**期望**：三者均 ≤ 1s（SC-002）。再对成员列表 / 候选 / `memberCount` 三条 SQL 跑 `EXPLAIN`：`memberCount` 必须走索引（无 `Using filesort` / `Using temporary`）；成员列表与候选关键字因跨表排序列 / `display_name` 前导通配符而允许文件排序（规模有界，实测 10k 用户分别 18ms / 242ms），真实门禁以 SC-002 为准。
 
 ### 11.3 权限树（SC-004）
 

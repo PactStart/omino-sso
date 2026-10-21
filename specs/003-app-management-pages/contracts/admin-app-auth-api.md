@@ -107,7 +107,7 @@ Query：`keyword`（`username` 前缀匹配 + `display_name` 包含匹配，长�
 }
 ```
 
-排序固定为 `u.username` 升序（唯一索引，稳定且不触发文件排序）。
+排序固定为 `u.username` 升序（唯一索引，分页稳定）。执行计划上 `ORDER BY` 跨表列会在成员集内排序（规模上界 = 成员数，不随用户总量增长），故允许 `Using filesort`；以 SC-002（响应 ≤1s）为真实门禁。
 
 `all=true` 时返回 `{"userIds":["01J…","01J…"]}`（用于跨分页全选/反选）。**上限 5,000**：筛选结果超过 5,000 时返回 `400 VALIDATION_FAILED`，message「结果过多，请先按部门或关键字缩小范围」。
 
@@ -150,7 +150,7 @@ Query：`keyword`（`username` 前缀匹配 + `display_name` 包含匹配，长�
 
 Query 同上（`keyword` 对 `username` 前缀匹配、`display_name` 包含匹配，长度 ≤64；`deptId` 含子部门），返回结构同成员列表，但元素为 `{userId, username, displayName, deptId, deptName}`，且**不含**已是成员的用户。`pageSize` 最大 50（`display_name` 无索引，包含匹配用不到索引，必须用小页限制扫描量）。`all=true` 返回当前筛选下的全部候选 `userIds`，同样受 **5,000 上限**约束（超出 → `400 VALIDATION_FAILED`）。
 
-> 候选查询用 `NOT EXISTS` 反连接排除已成员，`ORDER BY u.username`（唯一索引）——不使用 `u.created_at`（无索引，会退化为文件排序）。
+> 候选查询用 `NOT EXISTS` 反连接排除已成员，`ORDER BY u.username`（唯一索引）——不使用 `u.created_at`（无索引，会退化为文件排序）。无关键字时按 `uk_users_username` 有序扫描、无额外排序；带 `keyword`（`display_name` 前导通配符）时计划会退化为全表扫描 + 排序，属产品语义固有代价，已通过 `pageSize ≤ 50`、`keyword ≤ 64` 限制，实测 10k 用户 < 300ms。
 
 ## 7–11. 角色
 
