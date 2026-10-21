@@ -66,6 +66,27 @@ func argonParams(cfg *config.Config) crypto.Argon2Params {
 	return p
 }
 
+// UserListFilter 管理端用户列表筛选条件。
+// api 层只构造该结构并调用 service，不得直接持有 store（宪法原则 III）。
+type UserListFilter struct {
+	Keyword  string
+	DeptID   string
+	Status   *int8
+	Page     int
+	PageSize int
+}
+
+// List 分页查询用户，返回当页数据与总数。
+func (s *UserService) List(ctx context.Context, f UserListFilter) ([]model.User, int64, error) {
+	return s.st.ListUsers(ctx, store.UserFilter{
+		Keyword:  f.Keyword,
+		DeptID:   f.DeptID,
+		Status:   f.Status,
+		Page:     f.Page,
+		PageSize: f.PageSize,
+	})
+}
+
 // Meta 携带请求上下文（IP / UA）用于审计。
 type Meta struct {
 	IP        string
@@ -162,15 +183,11 @@ func ValidatePassword(pw string) bool {
 }
 
 // CreateUser 创建用户。
+// 参数校验与密码哈希在事务外完成；事务内先锁定目标部门行（与部门删除共用
+// 同一临界区，避免 dept_id 指向已删除部门），再插入用户。
 func (s *UserService) CreateUser(ctx context.Context, in CreateUserInput) (*model.User, error) {
 	if !ValidatePassword(in.Password) {
 		return nil, ErrWeakPassword
-	}
-	if _, err := s.st.GetOrganization(ctx, in.DeptID); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrDeptNotFound
-		}
-		return nil, err
 	}
 	if _, err := s.st.GetUserByUsername(ctx, in.Username); err == nil {
 		return nil, ErrUsernameExists
@@ -211,7 +228,15 @@ func (s *UserService) CreateUser(ctx context.Context, in CreateUserInput) (*mode
 	if in.Phone != "" {
 		u.Phone = &in.Phone
 	}
-	if err := s.st.CreateUser(ctx, u); err != nil {
+	if err := s.st.Transaction(ctx, func(ctx context.Context) error {
+		if _, err := s.st.LockOrganization(ctx, in.DeptID); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrDeptNotFound
+			}
+			return err
+		}
+		return s.st.CreateUser(ctx, u)
+	}); err != nil {
 		return nil, err
 	}
 	return u, nil
@@ -258,7 +283,19 @@ func (s *UserService) UpdateUser(ctx context.Context, userID string, in UpdateUs
 	if len(fields) == 0 {
 		return s.st.GetUserByID(ctx, userID)
 	}
-	if err := s.st.UpdateUserFields(ctx, userID, fields); err != nil {
+	// 提交了 deptId 时在短事务内锁定目标部门并校验存在（行为修正：过去静默写入，
+	// 会与部门删除竞态产生悬空引用）。
+	if err := s.st.Transaction(ctx, func(ctx context.Context) error {
+		if in.DeptID != nil {
+			if _, err := s.st.LockOrganization(ctx, *in.DeptID); err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return ErrDeptNotFound
+				}
+				return err
+			}
+		}
+		return s.st.UpdateUserFields(ctx, userID, fields)
+	}); err != nil {
 		return nil, err
 	}
 	return s.st.GetUserByID(ctx, userID)

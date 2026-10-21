@@ -4,12 +4,15 @@ import type {
   AuditRow,
   ClientRow,
   CreateClientPayload,
+  CreateOrgPayload,
   CreatedClient,
   CreateUserPayload,
   Me,
+  OrgDetail,
   OrgNode,
   Paged,
   RotatedSecret,
+  UpdateOrgPayload,
   UpdateUserPayload,
   UserRow,
 } from './types'
@@ -48,6 +51,22 @@ export function updateUser(id: string, payload: UpdateUserPayload) {
 
 export function getOrgTree() {
   return request<OrgNode[]>({ url: '/admin/orgs/tree', method: 'GET' })
+}
+
+export function createOrg(payload: CreateOrgPayload) {
+  return request<OrgDetail>({ url: '/admin/orgs', method: 'POST', data: payload })
+}
+
+export function updateOrg(id: string, payload: UpdateOrgPayload) {
+  return request<OrgDetail>({
+    url: `/admin/orgs/${encodeURIComponent(id)}`,
+    method: 'PATCH',
+    data: payload,
+  })
+}
+
+export function deleteOrg(id: string) {
+  return request<null>({ url: `/admin/orgs/${encodeURIComponent(id)}`, method: 'DELETE' })
 }
 
 export function listClients(query: { keyword?: string; page?: number; pageSize?: number }) {

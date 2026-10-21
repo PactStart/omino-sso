@@ -25,6 +25,7 @@ func NewRouter(
 	users *service.UserService,
 	sessions *service.SessionService,
 	clients *service.ClientService,
+	orgs *service.OrgService,
 	audit *service.Auditor,
 	logger *slog.Logger,
 ) *gin.Engine {
@@ -40,7 +41,7 @@ func NewRouter(
 
 	authH := auth.NewHandler(cfg, users, sessions, audit, logger)
 	meH := me.NewHandler(users, sessions, clients, audit, logger)
-	adminH := admin.NewHandler(st, users, clients, audit, logger)
+	adminH := admin.NewHandler(users, clients, orgs, audit, logger)
 
 	// 接口文档（规范 §4.0）：仅非 prod 注册，且不套统一响应、不挂限流。
 	// prod 下该分支不执行，请求落入 NoRoute，响应与任意不存在路径完全一致。
@@ -75,6 +76,9 @@ func NewRouter(
 		adminGroup.POST("/users", adminH.CreateUser)
 		adminGroup.PATCH("/users/:id", adminH.UpdateUser)
 		adminGroup.GET("/orgs/tree", adminH.OrgTree)
+		adminGroup.POST("/orgs", adminH.CreateOrg)
+		adminGroup.PATCH("/orgs/:id", adminH.UpdateOrg)
+		adminGroup.DELETE("/orgs/:id", adminH.DeleteOrg)
 		adminGroup.GET("/clients", adminH.ListClients)
 		adminGroup.POST("/clients", adminH.CreateClient)
 		adminGroup.POST("/clients/:id/secret", adminH.RotateSecret)

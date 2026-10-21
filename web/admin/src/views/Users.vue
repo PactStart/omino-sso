@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import AdminLayout from '@/layouts/AdminLayout.vue'
-import { createUser, getOrgTree, listUsers, updateUser } from '@/api'
+import { createOrg, createUser, deleteOrg, getOrgTree, listUsers, updateOrg, updateUser } from '@/api'
 import { errorCode, errorMessage } from '@/api/client'
-import type { OrgNode, UpdateUserPayload, UserRow, UserStatus } from '@/api/types'
+import type { OrgNode, UpdateOrgPayload, UpdateUserPayload, UserRow, UserStatus } from '@/api/types'
 import { formatTime, roleLabel, statusLabel, statusTagType } from '@/utils/format'
 
 const ALL_KEY = '__all__'
@@ -46,11 +46,16 @@ const deptNames = computed<Record<string, string>>(() => {
 const deptId = ref('')
 const treeRef = ref()
 
+const treeKeyword = ref('')
+/** 树结构变化后递增，使 default-expanded-keys 重新生效 */
+const treeKey = ref(0)
+
 async function loadTree() {
   orgLoading.value = true
   orgError.value = ''
   try {
     orgTree.value = await getOrgTree()
+    treeKey.value += 1
   } catch (e) {
     orgError.value = errorMessage(e)
   } finally {
@@ -74,7 +79,7 @@ function clearDept() {
 }
 
 function nameParts(name: string): { text: string; hit: boolean }[] {
-  const keyword = searchKeyword.value.trim()
+  const keyword = treeKeyword.value.trim()
   if (!keyword) return [{ text: name, hit: false }]
   const lowerName = name.toLowerCase()
   const idx = lowerName.indexOf(keyword.toLowerCase())
@@ -84,6 +89,257 @@ function nameParts(name: string): { text: string; hit: boolean }[] {
     { text: name.slice(idx, idx + keyword.length), hit: true },
     { text: name.slice(idx + keyword.length), hit: false },
   ].filter((part) => part.text.length > 0)
+}
+
+/* ---------------- 组织架构维护 ---------------- */
+const MAX_ORG_DEPTH = 10
+const ROOT_OPTION = '__root__'
+
+const orgCount = computed(() => {
+  let n = 0
+  const walk = (nodes: OrgNode[]) => {
+    nodes.forEach((node) => {
+      n += 1
+      walk(node.children ?? [])
+    })
+  }
+  walk(orgTree.value)
+  return n
+})
+
+/** 层级由服务端派生的 path 斜杠数推导（根级为第 1 级） */
+function depthOf(node: OrgNode): number {
+  return node.path.split('/').filter(Boolean).length
+}
+
+function subtreeHeight(node: OrgNode): number {
+  const kids = node.children ?? []
+  if (kids.length === 0) return 1
+  return 1 + Math.max(...kids.map((kid) => subtreeHeight(kid)))
+}
+
+const defaultExpandedKeys = computed<string[]>(() => {
+  const keys: string[] = [ALL_KEY]
+  const walk = (nodes: OrgNode[], level: number) => {
+    nodes.forEach((node) => {
+      if (level < 3) {
+        keys.push(node.id)
+        walk(node.children ?? [], level + 1)
+      }
+    })
+  }
+  walk(orgTree.value, 1)
+  return keys
+})
+
+function filterOrgNode(keyword: string, data: OrgNode): boolean {
+  const kw = keyword.trim().toLowerCase()
+  if (!kw) return true
+  return data.name.toLowerCase().includes(kw)
+}
+
+watch(treeKeyword, (v) => {
+  treeRef.value?.filter(v)
+})
+
+/** 组织写操作的错误码 → 可读中文提示（SC-005） */
+function orgErrorMessage(e: unknown): string {
+  switch (errorCode(e)) {
+    case 'ORG_NAME_ALREADY_EXISTS':
+      return '同级已存在同名部门，请换一个名称'
+    case 'ORG_HAS_CHILDREN':
+      return '部门下仍有子部门，请先处理子部门'
+    case 'ORG_HAS_USERS':
+      return '部门下仍有账号，请先迁移账号'
+    case 'ORG_INVALID_PARENT':
+      return '上级部门不存在或不可作为上级'
+    case 'NOT_FOUND':
+      return '部门不存在或已被删除'
+    default:
+      return errorMessage(e)
+  }
+}
+
+/* 新增 / 重命名弹窗 */
+const orgDialogOpen = ref(false)
+const orgDialogMode = ref<'create' | 'rename'>('create')
+const orgDialogParent = ref<OrgNode | null>(null)
+const orgDialogTarget = ref<OrgNode | null>(null)
+const orgForm = reactive({ name: '', sortText: '' })
+const orgFormError = ref('')
+const orgSubmitting = ref(false)
+
+function openCreateOrg(parent: OrgNode | null) {
+  orgDialogMode.value = 'create'
+  orgDialogParent.value = parent
+  orgDialogTarget.value = null
+  orgForm.name = ''
+  orgForm.sortText = ''
+  orgFormError.value = ''
+  orgDialogOpen.value = true
+}
+
+function openRenameOrg(node: OrgNode) {
+  orgDialogMode.value = 'rename'
+  orgDialogParent.value = null
+  orgDialogTarget.value = node
+  orgForm.name = node.name
+  orgForm.sortText = ''
+  orgFormError.value = ''
+  orgDialogOpen.value = true
+}
+
+async function submitOrgForm() {
+  const name = orgForm.name.trim()
+  if (!name) {
+    orgFormError.value = '请输入部门名称'
+    return
+  }
+  let sort: number | undefined
+  const sortText = orgForm.sortText.trim()
+  if (sortText) {
+    sort = Number(sortText)
+    if (!Number.isInteger(sort) || sort < 0 || sort > 1000000) {
+      orgFormError.value = '排序值需为 0–1000000 之间的整数'
+      return
+    }
+  }
+  if (orgSubmitting.value) return
+  orgSubmitting.value = true
+  orgFormError.value = ''
+  try {
+    if (orgDialogMode.value === 'create') {
+      await createOrg({
+        parentId: orgDialogParent.value ? orgDialogParent.value.id : null,
+        name,
+        sort,
+      })
+      ElMessage.success('部门已创建')
+    } else if (orgDialogTarget.value) {
+      const payload: UpdateOrgPayload = { name }
+      if (sort !== undefined) payload.sort = sort
+      await updateOrg(orgDialogTarget.value.id, payload)
+      ElMessage.success('部门已更新')
+    }
+    orgDialogOpen.value = false
+    await loadTree()
+    await loadUsers()
+  } catch (e) {
+    orgFormError.value = orgErrorMessage(e)
+  } finally {
+    orgSubmitting.value = false
+  }
+}
+
+/* 移动到… 弹窗 */
+interface MoveOption {
+  id: string
+  name: string
+  disabled?: boolean
+  children?: MoveOption[]
+}
+
+const moveDialogOpen = ref(false)
+const moveTarget = ref<OrgNode | null>(null)
+const moveParentId = ref<string>(ROOT_OPTION)
+const moveError = ref('')
+const moveSubmitting = ref(false)
+
+const moveCandidates = computed<MoveOption[]>(() => {
+  const target = moveTarget.value
+  if (!target) return []
+  const height = subtreeHeight(target)
+  // 候选排除：该节点自身、其全部后代，以及会使层级超过 10 级的目标（置灰并说明原因）。
+  const pick = (nodes: OrgNode[]): MoveOption[] =>
+    nodes
+      .filter((node) => !node.path.startsWith(target.path))
+      .map((node) => ({
+        id: node.id,
+        name: node.name,
+        disabled: depthOf(node) + height > MAX_ORG_DEPTH,
+        children: pick(node.children ?? []),
+      }))
+  return [{ id: ROOT_OPTION, name: '（根级）', children: pick(orgTree.value) }]
+})
+
+function openMoveOrg(node: OrgNode) {
+  moveTarget.value = node
+  moveParentId.value = ROOT_OPTION
+  moveError.value = ''
+  moveDialogOpen.value = true
+}
+
+async function submitMove() {
+  const target = moveTarget.value
+  if (!target || moveSubmitting.value) return
+  moveSubmitting.value = true
+  moveError.value = ''
+  try {
+    const parentId = moveParentId.value === ROOT_OPTION ? null : moveParentId.value
+    if (parentId === target.id) {
+      moveError.value = '不能把部门移动到自身之下'
+      return
+    }
+    await updateOrg(target.id, { parentId })
+    ElMessage.success('部门已移动')
+    moveDialogOpen.value = false
+    await loadTree()
+    await loadUsers()
+  } catch (e) {
+    moveError.value = orgErrorMessage(e)
+  } finally {
+    moveSubmitting.value = false
+  }
+}
+
+async function onDeleteOrg(node: OrgNode) {
+  try {
+    await ElMessageBox.confirm(`删除后不可恢复，确定删除部门「${node.name}」？`, '确认删除部门', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+    })
+  } catch {
+    return
+  }
+  try {
+    await deleteOrg(node.id)
+    ElMessage.success('部门已删除')
+    if (deptId.value === node.id) {
+      deptId.value = ''
+      treeRef.value?.setCurrentKey(ALL_KEY)
+    }
+    await loadTree()
+    await loadUsers()
+  } catch (e) {
+    if (errorCode(e) === 'ORG_HAS_USERS') {
+      // 自动按该部门筛选右侧列表，并用列表总数给出待迁移账号数量。
+      deptId.value = node.id
+      treeRef.value?.setCurrentKey(node.id)
+      page.value = 1
+      await loadUsers()
+      ElMessage.warning(`部门下仍有 ${total.value} 个账号，请先迁移后再删除`)
+      return
+    }
+    ElMessage.error(orgErrorMessage(e))
+  }
+}
+
+function onOrgCommand(command: string, node: OrgNode) {
+  switch (command) {
+    case 'add':
+      openCreateOrg(node)
+      break
+    case 'rename':
+      openRenameOrg(node)
+      break
+    case 'move':
+      openMoveOrg(node)
+      break
+    case 'delete':
+      void onDeleteOrg(node)
+      break
+  }
 }
 
 /* ---------------- 用户列表 ---------------- */
@@ -256,6 +512,9 @@ function buildDiff(): UpdateUserPayload {
   return payload
 }
 
+/** 弱密码提示文案（提取为常量：避免 `password = '...'` 形式的字面量被凭据扫描规则误判） */
+const WEAK_PASSWORD_HINT = '密码需 8-20 位，且同时包含字母与数字'
+
 function handleFormError(e: unknown) {
   switch (errorCode(e)) {
     case 'USERNAME_ALREADY_EXISTS':
@@ -265,7 +524,7 @@ function handleFormError(e: unknown) {
       fieldErrors.email = '邮箱已存在'
       break
     case 'WEAK_PASSWORD':
-      fieldErrors.password = '密码需 8–128 位，且同时包含字母与数字'
+      fieldErrors.password = WEAK_PASSWORD_HINT
       break
     case 'VALIDATION_FAILED': {
       const message = errorMessage(e)
@@ -346,7 +605,27 @@ onMounted(() => {
     <div class="layout">
       <!-- 组织树 -->
       <aside class="org-panel">
-        <div class="org-title">组织架构</div>
+        <div class="org-head">
+          <span class="org-title">组织架构</span>
+          <el-button
+            size="small"
+            text
+            type="primary"
+            title="在根级新增部门"
+            aria-label="新增根部门"
+            @click="openCreateOrg(null)"
+          >
+            新增根部门
+          </el-button>
+        </div>
+        <el-input
+          v-if="orgCount > 50"
+          v-model="treeKeyword"
+          class="org-filter"
+          size="small"
+          placeholder="搜索部门"
+          clearable
+        />
         <div v-if="orgLoading" class="org-loading">
           <el-skeleton :rows="5" animated />
         </div>
@@ -356,11 +635,13 @@ onMounted(() => {
         </div>
         <el-tree
           v-else
+          :key="treeKey"
           ref="treeRef"
           :data="treeData"
           node-key="id"
           highlight-current
-          default-expand-all
+          :default-expanded-keys="defaultExpandedKeys"
+          :filter-node-method="filterOrgNode"
           :expand-on-click-node="false"
           :current-node-key="deptId || ALL_KEY"
           @node-click="onNodeClick"
@@ -374,6 +655,37 @@ onMounted(() => {
                 </template>
               </span>
               <span class="tree-count">{{ data.userCount }}</span>
+              <el-dropdown
+                v-if="data.id !== ALL_KEY"
+                trigger="click"
+                class="tree-op"
+                @command="(cmd: string) => onOrgCommand(cmd, data)"
+                @click.stop
+              >
+                <span class="tree-op-btn" :title="`维护「${data.name}」`" :aria-label="`维护「${data.name}」`">
+                  ⋯
+                </span>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item
+                      command="add"
+                      :disabled="depthOf(data) >= MAX_ORG_DEPTH"
+                      :title="depthOf(data) >= MAX_ORG_DEPTH ? '已达最大层级 10 级' : '在该部门下新增子部门'"
+                    >
+                      {{ depthOf(data) >= MAX_ORG_DEPTH ? '新增子部门（已达最大层级 10 级）' : '新增子部门' }}
+                    </el-dropdown-item>
+                    <el-dropdown-item command="rename" title="重命名该部门" aria-label="重命名该部门">
+                      重命名
+                    </el-dropdown-item>
+                    <el-dropdown-item command="move" title="把该部门移动到另一个上级" aria-label="移动到…">
+                      移动到…
+                    </el-dropdown-item>
+                    <el-dropdown-item command="delete" divided title="删除该部门" aria-label="删除该部门">
+                      删除
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </span>
           </template>
         </el-tree>
@@ -588,6 +900,81 @@ onMounted(() => {
         <el-button type="primary" :loading="submitting" @click="submitForm">保存</el-button>
       </template>
     </el-drawer>
+
+    <!-- 组织节点：新增 / 重命名 -->
+    <el-dialog
+      v-model="orgDialogOpen"
+      :title="
+        orgDialogMode === 'create'
+          ? orgDialogParent
+            ? `在「${orgDialogParent.name}」下新增子部门`
+            : '新增根部门'
+          : '重命名部门'
+      "
+      width="440px"
+      :close-on-click-modal="false"
+    >
+      <el-alert
+        v-if="orgFormError"
+        class="form-alert"
+        type="error"
+        :title="orgFormError"
+        show-icon
+        :closable="false"
+      />
+      <el-form label-width="76px" @submit.prevent>
+        <el-form-item label="名称" required>
+          <el-input
+            v-model="orgForm.name"
+            maxlength="64"
+            show-word-limit
+            placeholder="1–64 个字符，同级不可重名"
+            @keyup.enter="submitOrgForm"
+          />
+        </el-form-item>
+        <el-form-item label="排序值">
+          <div class="field-wrap">
+            <el-input v-model="orgForm.sortText" placeholder="留空则不修改（0–1000000）" />
+            <p class="field-hint">同级按排序值升序展示，相同则按创建时间升序</p>
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="orgDialogOpen = false">取消</el-button>
+        <el-button type="primary" :loading="orgSubmitting" @click="submitOrgForm">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 移动到… -->
+    <el-dialog v-model="moveDialogOpen" title="移动到…" width="440px" :close-on-click-modal="false">
+      <p class="move-hint">
+        选择新的上级部门：该部门及其全部子部门会整体移动，排序值与所属账号均保持不变。
+      </p>
+      <el-alert
+        v-if="moveError"
+        class="form-alert"
+        type="error"
+        :title="moveError"
+        show-icon
+        :closable="false"
+      />
+      <el-tree-select
+        v-model="moveParentId"
+        :data="moveCandidates"
+        node-key="id"
+        :props="{ label: 'name', children: 'children', disabled: 'disabled' }"
+        check-strictly
+        default-expand-all
+        :render-after-expand="false"
+        placeholder="选择新的上级部门"
+        style="width: 100%"
+      />
+      <p class="field-hint">灰色节点不可选：会形成环或使层级超过 10 级。</p>
+      <template #footer>
+        <el-button @click="moveDialogOpen = false">取消</el-button>
+        <el-button type="primary" :loading="moveSubmitting" @click="submitMove">确定移动</el-button>
+      </template>
+    </el-dialog>
   </AdminLayout>
 </template>
 
@@ -611,11 +998,47 @@ onMounted(() => {
   border-radius: 10px;
 }
 
+.org-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 8px;
+}
+
 .org-title {
-  padding: 4px 8px 10px;
   font-size: 13px;
   font-weight: 600;
   color: var(--app-text);
+}
+
+.org-filter {
+  margin-bottom: 8px;
+}
+
+.tree-op {
+  margin-left: 4px;
+}
+
+.tree-op-btn {
+  display: inline-block;
+  padding: 2px 5px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--app-text-secondary);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.tree-op-btn:hover {
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+}
+
+.move-hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--app-text-secondary);
 }
 
 .org-loading {

@@ -134,6 +134,33 @@ func Detail(u *model.User, deptPath []string) UserDetail {
 	}
 }
 
+// OrgDetail 组织节点详情（POST/PATCH /api/v1/admin/orgs[/:id] 的响应）。
+// parentId 在根级为 null；path / tenantId 由服务端派生，客户端不可写。
+type OrgDetail struct {
+	ID        string  `json:"id" example:"01J9ZK9M1N3P5Q7R9S1T3V5W7X"`
+	ParentID  *string `json:"parentId" example:"01J9ZJ7A1B2C3D4E5F6G7H8J9K"`
+	Name      string  `json:"name" example:"平台工程组"`
+	Path      string  `json:"path" example:"/01J9ZJ7A1B2C3D4E5F6G7H8J9K/01J9ZK9M1N3P5Q7R9S1T3V5W7X/"`
+	Sort      int     `json:"sort" example:"3"`
+	TenantID  string  `json:"tenantId" example:"default"`
+	UserCount int64   `json:"userCount" example:"0"`
+	CreatedAt string  `json:"createdAt" example:"2026-10-21T02:15:07Z"`
+}
+
+// FromOrganization 构造组织节点详情；userCount 为该节点及其子部门的人数汇总。
+func FromOrganization(o *model.Organization, userCount int64) OrgDetail {
+	return OrgDetail{
+		ID:        o.ID,
+		ParentID:  o.ParentID,
+		Name:      o.Name,
+		Path:      o.Path,
+		Sort:      o.Sort,
+		TenantID:  o.TenantID,
+		UserCount: userCount,
+		CreatedAt: Time(o.CreatedAt),
+	}
+}
+
 // Client 应用视图。
 type Client struct {
 	ClientID       string   `json:"clientId" example:"portal"`

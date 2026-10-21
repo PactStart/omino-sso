@@ -36,7 +36,11 @@ type Event struct {
 	IP        string
 	UserAgent string
 	Result    string
-	Detail    string
+	// Detail 为简单文本原因，写入 detail 列时包成 {"message": "..."}。
+	Detail string
+	// Fields 为结构化变更摘要（如组织写操作的 orgId/name/parentId），
+	// 非空时优先于 Detail，直接序列化为 detail 列（规范 §6.7）。
+	Fields map[string]any
 }
 
 // Emit 非阻塞投递。
@@ -60,7 +64,12 @@ func (a *Auditor) Emit(ctx context.Context, e Event) {
 	if e.UserAgent != "" {
 		ev.UserAgent = &e.UserAgent
 	}
-	if e.Detail != "" {
+	if len(e.Fields) > 0 {
+		if raw, err := json.Marshal(e.Fields); err == nil {
+			v := string(raw)
+			ev.Detail = &v
+		}
+	} else if e.Detail != "" {
 		// detail 列为 JSON，字符串必须序列化为合法 JSON 文本。
 		raw, err := json.Marshal(map[string]string{"message": e.Detail})
 		if err == nil {
@@ -76,6 +85,33 @@ func (a *Auditor) Emit(ctx context.Context, e Event) {
 	default:
 		a.log.Warn("audit queue full, event dropped", "event_type", e.Type)
 	}
+}
+
+// AuditFilter 审计日志筛选条件。
+// api 层只构造该结构并调用 service，不得直接持有 store（宪法原则 III）。
+type AuditFilter struct {
+	UserID    string
+	ClientID  string
+	EventType string
+	Result    string
+	From      int64
+	To        int64
+	Page      int
+	PageSize  int
+}
+
+// List 分页查询审计事件，返回当页数据与总数。
+func (a *Auditor) List(ctx context.Context, f AuditFilter) ([]model.AuditEvent, int64, error) {
+	return a.st.ListAuditEvents(ctx, store.AuditFilter{
+		UserID:    f.UserID,
+		ClientID:  f.ClientID,
+		EventType: f.EventType,
+		Result:    f.Result,
+		From:      f.From,
+		To:        f.To,
+		Page:      f.Page,
+		PageSize:  f.PageSize,
+	})
 }
 
 // Run 消费队列，直到 ctx 取消。

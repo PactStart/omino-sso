@@ -33,4 +33,7 @@ const (
 	EventUserUpdated         = "user_updated"
 	EventClientCreated       = "client_created"
 	EventClientSecretRotated = "client_secret_rotated"
+	EventOrgCreated          = "org_created"
+	EventOrgUpdated          = "org_updated"
+	EventOrgDeleted          = "org_deleted"
 )

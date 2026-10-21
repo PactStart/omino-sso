@@ -51,6 +51,32 @@ export interface OrgNode {
   children: OrgNode[]
 }
 
+/** 组织节点详情（POST/PATCH /api/v1/admin/orgs[/:id] 的响应） */
+export interface OrgDetail {
+  id: string
+  parentId: string | null
+  name: string
+  path: string
+  sort: number
+  tenantId: string
+  userCount: number
+  createdAt: string
+}
+
+export interface CreateOrgPayload {
+  /** 缺失或 null 表示根级 */
+  parentId?: string | null
+  name: string
+  sort?: number
+}
+
+export interface UpdateOrgPayload {
+  name?: string
+  sort?: number
+  /** 缺失 = 不变；null = 移到根级；值 = 移到该节点下 */
+  parentId?: string | null
+}
+
 export interface CreateUserPayload {
   username: string
   displayName: string
@@ -117,7 +143,8 @@ export interface AuditRow {
   ip: string | null
   userAgent: string | null
   result: 'success' | 'failure'
-  detail: Record<string, unknown> | null
+  /** 服务端返回 detail 列的 JSON 文本（不是对象），展示前需 parse */
+  detail: string | null
   createdAt: string
 }
 

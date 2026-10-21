@@ -1,0 +1,62 @@
+{
+  "generated_at": "2026-10-21T09:52:00Z",
+  "baseline_ref": "baseline/manifest.json",
+  "baseline_sha256": "e29a35aac606a3a7599e91939698e319c1d3e48b2c3b8597844507ec7e9e20cd",
+  "working_sha256_note": "工作契约在 baseline 之后追加 3 个端点与 3 个 schema（见 entries）",
+  "entries": [
+    {
+      "kind": "additive",
+      "surface": "operation",
+      "method": "POST",
+      "path": "/api/v1/admin/orgs",
+      "rationale": "新增组织节点创建端点，不影响既有端点"
+    },
+    {
+      "kind": "additive",
+      "surface": "operation",
+      "method": "PATCH",
+      "path": "/api/v1/admin/orgs/{id}",
+      "rationale": "新增组织节点局部更新端点（改名 / 调序 / 移动）"
+    },
+    {
+      "kind": "additive",
+      "surface": "operation",
+      "method": "DELETE",
+      "path": "/api/v1/admin/orgs/{id}",
+      "rationale": "新增组织节点删除端点"
+    },
+    {
+      "kind": "additive",
+      "surface": "schema",
+      "name": "admin.CreateOrgRequest",
+      "rationale": "仅被新端点引用"
+    },
+    {
+      "kind": "additive",
+      "surface": "schema",
+      "name": "admin.UpdateOrgRequest",
+      "rationale": "仅被新端点引用；parentId 为 string + nullable"
+    },
+    {
+      "kind": "additive",
+      "surface": "schema",
+      "name": "dto.OrgDetail",
+      "rationale": "仅被新端点响应引用"
+    },
+    {
+      "kind": "non-breaking",
+      "surface": "schema",
+      "name": "admin.OrgNode",
+      "rationale": "仅补齐 example 注解；属性集合、类型与 required 均未变化（OrgTree 报文零变化）"
+    }
+  ],
+  "summary": {
+    "additive": 6,
+    "non_breaking": 1,
+    "breaking": 0,
+    "removal": 0
+  },
+  "removed_operations": [],
+  "modified_existing_operations": [],
+  "implied_bump": "minor"
+}

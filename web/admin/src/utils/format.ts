@@ -54,6 +54,9 @@ export const EVENT_LABEL: Record<string, string> = {
   user_updated: '更新用户',
   client_created: '注册应用',
   client_secret_rotated: '轮换密钥',
+  org_created: '创建组织',
+  org_updated: '更新组织',
+  org_deleted: '删除组织',
 }
 
 export function eventLabel(eventType: string): string {

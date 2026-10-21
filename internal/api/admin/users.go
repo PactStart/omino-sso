@@ -3,7 +3,6 @@ package admin
 import (
 	"errors"
 	"log/slog"
-	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -12,22 +11,22 @@ import (
 	"github.com/omino/omino-sso/internal/api/dto"
 	"github.com/omino/omino-sso/internal/api/response"
 	"github.com/omino/omino-sso/internal/service"
-	"github.com/omino/omino-sso/internal/store"
 	"github.com/omino/omino-sso/internal/store/model"
 )
 
 // Handler 处理 /api/v1/admin/*。
+// 只依赖 service，不持有 store：读路径同样经 service（宪法原则 III）。
 type Handler struct {
-	st     *store.Store
 	users  *service.UserService
 	client *service.ClientService
+	orgs   *service.OrgService
 	audit  *service.Auditor
 	log    *slog.Logger
 }
 
 // NewHandler 构造。
-func NewHandler(st *store.Store, users *service.UserService, clients *service.ClientService, audit *service.Auditor, logger *slog.Logger) *Handler {
-	return &Handler{st: st, users: users, client: clients, audit: audit, log: logger}
+func NewHandler(users *service.UserService, clients *service.ClientService, orgs *service.OrgService, audit *service.Auditor, logger *slog.Logger) *Handler {
+	return &Handler{users: users, client: clients, orgs: orgs, audit: audit, log: logger}
 }
 
 // ListUsers GET /api/v1/admin/users
@@ -56,7 +55,7 @@ func (h *Handler) ListUsers(c *gin.Context) {
 		response.Fail(c, response.ErrValidation)
 		return
 	}
-	f := store.UserFilter{
+	f := service.UserListFilter{
 		Keyword:  c.Query("keyword"),
 		DeptID:   c.Query("deptId"),
 		Page:     page,
@@ -77,7 +76,7 @@ func (h *Handler) ListUsers(c *gin.Context) {
 		}
 		f.Status = &status
 	}
-	list, total, err := h.st.ListUsers(c.Request.Context(), f)
+	list, total, err := h.users.List(c.Request.Context(), f)
 	if err != nil {
 		h.log.Error("list users", "err", err)
 		response.Fail(c, response.ErrInternal)
@@ -227,6 +226,11 @@ func (h *Handler) UpdateUser(c *gin.Context) {
 			response.Fail(c, response.ErrNotFound)
 			return
 		}
+		// deptId 由服务端校验存在性（行为修正：过去静默写入不存在的部门）。
+		if errors.Is(err, service.ErrDeptNotFound) {
+			response.Fail(c, response.ErrValidation.WithMessage("部门不存在"))
+			return
+		}
 		h.log.Error("update user", "err", err)
 		response.Fail(c, response.ErrInternal)
 		return
@@ -236,73 +240,6 @@ func (h *Handler) UpdateUser(c *gin.Context) {
 		IP: c.ClientIP(), UserAgent: c.Request.UserAgent(), Result: "success",
 	})
 	response.Success(c, dto.Admin(u))
-}
-
-// OrgNode 组织树节点。
-type OrgNode struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	ParentID  *string   `json:"parentId"`
-	Path      string    `json:"path"`
-	UserCount int64     `json:"userCount"`
-	Children  []OrgNode `json:"children"`
-}
-
-// OrgTree GET /api/v1/admin/orgs/tree
-//
-// @Summary      查询组织架构树
-// @Description  返回完整组织树（根节点为 parentId=null），每个节点的 userCount 为该部门及其子部门的用户数汇总。
-// @Tags         组织架构
-// @Produce      json
-// @Security     cookieAuth
-// @Success      200  {object}  response.Body{data=[]OrgNode}  "success"
-// @Failure      401  {object}  response.Body  "UNAUTHENTICATED"
-// @Failure      403  {object}  response.Body  "FORBIDDEN"
-// @Failure      500  {object}  response.Body  "INTERNAL_ERROR"
-// @Failure      503  {object}  response.Body  "DEPENDENCY_UNAVAILABLE"
-// @x-auth-level  "admin"
-// @Router       /admin/orgs/tree [get]
-func (h *Handler) OrgTree(c *gin.Context) {
-	orgs, err := h.st.ListOrganizations(c.Request.Context(), "")
-	if err != nil {
-		h.log.Error("list orgs", "err", err)
-		response.Fail(c, response.ErrInternal)
-		return
-	}
-	counts, err := h.st.CountUsersByDept(c.Request.Context())
-	if err != nil {
-		h.log.Error("count users by dept", "err", err)
-		response.Fail(c, response.ErrInternal)
-		return
-	}
-	response.Success(c, buildTree(orgs, counts))
-}
-
-func buildTree(orgs []model.Organization, counts map[string]int64) []OrgNode {
-	children := make(map[string][]model.Organization)
-	for _, o := range orgs {
-		if o.ParentID != nil {
-			children[*o.ParentID] = append(children[*o.ParentID], o)
-		}
-	}
-	var walk func(o model.Organization) OrgNode
-	walk = func(o model.Organization) OrgNode {
-		n := OrgNode{
-			ID: o.ID, Name: o.Name, ParentID: o.ParentID, Path: o.Path,
-			UserCount: counts[o.ID], Children: []OrgNode{},
-		}
-		for _, ch := range children[o.ID] {
-			n.Children = append(n.Children, walk(ch))
-		}
-		return n
-	}
-	roots := make([]OrgNode, 0)
-	for _, o := range orgs {
-		if o.ParentID == nil {
-			roots = append(roots, walk(o))
-		}
-	}
-	return roots
 }
 
 func pagination(c *gin.Context) (int, int, error) {
@@ -323,5 +260,3 @@ func defaultStr(v, def string) string {
 	}
 	return v
 }
-
-var _ = http.StatusOK
