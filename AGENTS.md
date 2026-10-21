@@ -526,9 +526,21 @@ omino-sso/
 | `POST /api/v1/admin/orgs` | `parentId`(可空=根级), `name`(1–64，同级唯一), `sort`(可选，默认0) | `201` + `{id,parentId,name,path,sort,tenantId,userCount,createdAt}` |
 | `PATCH /api/v1/admin/orgs/:id` | `name` / `sort`（缺失=不变）、`parentId`（三态：缺失=不变 / `null`=移到根级 / 值=移到该节点下）；移动整棵子树，`sort` 不被改写 | `{id,parentId,name,path,sort,tenantId,userCount,createdAt}`，`userCount` 为子树汇总 |
 | `DELETE /api/v1/admin/orgs/:id` | — | `data: null` |
-| `GET /api/v1/admin/clients` | `keyword`,`page`,`pageSize` | `{list:[{clientId,clientName,isPublic,redirectUris,grantTypes,scopes,createdAt}],total,page,pageSize}` |
+| `GET /api/v1/admin/clients` | `keyword`,`page`,`pageSize`,`hasMembers`(`true`/`false`) | `{list:[{clientId,clientName,isPublic,redirectUris,grantTypes,scopes,createdAt,memberCount}],total,page,pageSize}` |
 | `POST /api/v1/admin/clients` | `clientName`,`redirectUris[]`,`grantTypes[]`,`scopes[]`,`isPublic` | `{clientId,clientSecret}`（secret **仅此一次返回**，不落日志） |
 | `POST /api/v1/admin/clients/:id/secret` | `gracePeriodSeconds`(默认0) | `{clientId,clientSecret,expiresAt}` |
+| `GET /api/v1/admin/clients/:id` | — | `{clientId,clientName,description,logoUrl,redirectUris,postLogoutUris,grantTypes,scopes,isPublic,accessTokenTtl,refreshTokenTtl,status,memberCount,createdAt,updatedAt}`；**不含密钥** |
+| `PATCH /api/v1/admin/clients/:id` | 8 个可编辑字段（缺失=不变）+ `updatedAt`(可选版本) | 同 `GET /api/v1/admin/clients/:id`；版本不符 `409 APP_RESOURCE_STALE` |
+| `GET /api/v1/admin/clients/:id/members` | `keyword`,`deptId`,`page`,`pageSize`(默认20,最大200),`all` | `{list:[{userId,username,displayName,deptId,deptName,status,joinedAt,roleCount}],total,page,pageSize}`；`all=true` 返回 `{userIds[]}`，上限 5000 |
+| `POST /api/v1/admin/clients/:id/members` | `userIds[]`(1–500) **或** `deptId`+`includeSubDepts` | `{added,skipped}` 或 `{added,existing,disabled}` |
+| `POST /api/v1/admin/clients/:id/members/remove` | `userIds[]`(1–500) | `{removed,roleBindingsRemoved,notMember}` |
+| `GET /api/v1/admin/clients/:id/members/candidates` | `keyword`,`deptId`,`page`,`pageSize`(最大50),`all` | `{list:[{userId,username,displayName,deptId,deptName}],total}` |
+| `GET/POST /api/v1/admin/clients/:id/roles` | `name`(`^[A-Za-z0-9]{1,32}$`)、`description`(≤100) | `{list:[{id,clientId,name,description,permissionCount,memberCount,createdAt,updatedAt}],total}` / `201` |
+| `GET/PATCH/DELETE /api/v1/admin/clients/:id/roles/:rid` | `name`/`description`/`updatedAt` | `{id,clientId,name,description,permissionIds[],memberIds[],createdAt,updatedAt}` |
+| `PUT /api/v1/admin/clients/:id/roles/:rid/permissions` | `permissionIds[]`(≤1000)、`updatedAt` | `{permissionIds[],added,removed}` |
+| `PUT /api/v1/admin/clients/:id/roles/:rid/members` | `userIds[]`(≤5000)、`updatedAt` | `{memberIds[],added,removed,autoJoinedMembers}` |
+| `GET/POST /api/v1/admin/clients/:id/permissions` | `code`(`^[A-Za-z0-9_.:-]{1,64}$`)、`name`(1–64)、`parentId`、`sort` | `{list:[{id,parentId,code,name,description,sort,childCount,roleCount,createdAt,updatedAt}],total}` / `201` |
+| `PATCH/DELETE /api/v1/admin/clients/:id/permissions/:pid` | `code`/`name`/`description`/`parentId`/`sort`/`updatedAt` | 同上；含子权限删除 `409 APP_PERMISSION_HAS_CHILDREN` |
 | `GET /api/v1/admin/audit-logs` | `userId`,`clientId`,`eventType`,`from`,`to`,`result`,`page`,`pageSize` | `{list:[{id,eventType,userId,username,clientId,ip,userAgent,result,detail,createdAt}],total}` |
 
 **分页参数统一**：`page` 从 1 开始，`pageSize` 最大 100，超出则 `VALIDATION_FAILED`。
@@ -600,6 +612,11 @@ omino-sso/
 | 409 | `ORG_HAS_CHILDREN` | 部门下仍有子部门，不允许删除 |
 | 409 | `ORG_HAS_USERS` | 部门下仍有账号归属，不允许删除 |
 | 400 | `ORG_INVALID_PARENT` | 上级部门不存在 / 为自身或自身后代 / 跨租户 |
+| 409 | `APP_ROLE_NAME_EXISTS` | 同一应用内已存在同名角色（区分大小写） |
+| 409 | `APP_PERMISSION_CODE_EXISTS` | 同一应用内已存在同名权限编码（区分大小写） |
+| 409 | `APP_PERMISSION_HAS_CHILDREN` | 权限下仍有子权限，不允许删除 |
+| 400 | `APP_PERMISSION_INVALID_PARENT` | 上级权限不存在 / 为自身或自身后代 / 跨应用 |
+| 409 | `APP_RESOURCE_STALE` | 写请求携带的 `updatedAt` 与服务端不一致（并发编辑） |
 | 429 | `RATE_LIMITED` | 触发限流 |
 | 500 | `INTERNAL_ERROR` | 未预期错误（日志记录完整堆栈，响应不含） |
 | 503 | `DEPENDENCY_UNAVAILABLE` | MySQL/Redis 不可用 |
@@ -746,7 +763,9 @@ omino-sso/
 | `trace_id` | VARCHAR(32) | NULL | |
 | `created_at` | BIGINT | NOT NULL, INDEX | |
 
-`event_type` 枚举（新增需登记）：`login_success`、`login_failure`、`mfa_success`、`mfa_failure`、`logout`、`password_changed`、`token_issued`、`token_revoked`、`code_reused`、`refresh_reused`、`user_created`、`user_updated`、`client_created`、`client_secret_rotated`、`org_created`、`org_updated`、`org_deleted`。
+`event_type` 枚举（新增需登记）：`login_success`、`login_failure`、`mfa_success`、`mfa_failure`、`logout`、`password_changed`、`token_issued`、`token_revoked`、`code_reused`、`refresh_reused`、`user_created`、`user_updated`、`client_created`、`client_secret_rotated`、`org_created`、`org_updated`、`org_deleted`、`client_updated`、`app_member_added`、`app_member_removed`、`app_role_created`、`app_role_updated`、`app_role_deleted`、`app_permission_created`、`app_permission_updated`、`app_permission_deleted`、`app_grant_updated`。
+
+`detail` 详略规则（003 起）：一般只记字段名列表与数量；**地址类字段（`redirectUris` / `postLogoutUris`）记变更前后的完整数组**；删除角色/权限记被解除绑定的 ID 快照（超过 20 项记数量 + 前 20 项）。
 
 > 组织写操作的审计划分以条件为准而非 HTTP 状态码：同级重名、存在子部门、存在账号、目标不存在、非法上级、层级超过 10 级都写 `failure`；JSON 绑定失败、名称/排序值等输入格式错误、401、403 只在应用日志留痕。
 
@@ -761,6 +780,19 @@ omino-sso/
 | `updated_at` | BIGINT | NOT NULL | |
 
 > 所有建表语句写在 `migrations/0001_init.up.sql`，**禁止使用 `gorm.AutoMigrate`**。
+
+### 6.9 应用内授权（003，`migrations/0003_app_auth.up.sql`）
+
+| 表 | 关键列 | 约束 |
+|---|---|---|
+| `client_members` | `client_id`(64, as_cs)、`user_id`(26)、`added_by`(26)、`joined_at` | PK(client_id,user_id)；KEY idx_client_members_user(user_id,client_id) |
+| `client_roles` | `id`(26)、`client_id`(64, as_cs)、`name`(32, as_cs)、`description`(100)、`created_at`、`updated_at` | PK(id)；UNIQUE uk_client_roles_name(client_id,name)；KEY idx_client_roles_client(client_id,created_at) |
+| `client_permissions` | `id`(26)、`client_id`(64, as_cs)、`parent_id`(26)、`code`(64, as_cs)、`name`(64)、`description`(255)、`sort` | PK(id)；UNIQUE uk_client_permissions_code(client_id,code)；KEY idx_client_permissions_parent(client_id,parent_id,sort) |
+| `client_role_permissions` | `role_id`(26)、`permission_id`(26)、`client_id` | PK(role_id,permission_id)；KEY idx_role_permissions_perm(permission_id) |
+| `client_role_members` | `role_id`(26)、`user_id`(26)、`client_id` | PK(role_id,user_id)；KEY idx_role_members_user(user_id) |
+| `access_tokens` | `token_id`(128, as_cs)、`sub`(26)、`client_id`(64)、`expires_at` | PK(token_id)；KEY idx_access_tokens_exp(expires_at) |
+
+> 不变量：角色绑定的成员必然是 `client_members` 成员（授权写入时自动补成员）；删除成员级联解除 `client_role_members`；`access_tokens` 写入失败即签发失败，不降级。
 
 ---
 
