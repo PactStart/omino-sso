@@ -131,7 +131,7 @@ func (h *Handler) SetUserAvatar(c *gin.Context) {
 // ListFiles 分页查询文件记录。
 //
 // @Summary      分页查询上传文件记录
-// @Description  按 scene/status/keyword 筛选，返回分页结果。
+// @Description  按 scene/status/creatorId/keyword 筛选，返回分页结果。
 // @Tags         文件
 // @Produce      json
 // @Security     cookieAuth
@@ -139,6 +139,7 @@ func (h *Handler) SetUserAvatar(c *gin.Context) {
 // @Param        pageSize  query  int     false  "每页条数，默认 20，上限 100"
 // @Param        scene     query  string  false  "场景"  Enums(app_logo, user_avatar)
 // @Param        status    query  string  false  "状态"  Enums(active, disabled, deleted)
+// @Param        creatorId query  string  false  "创建人用户 ID"
 // @Param        keyword   query  string  false  "url 或对象键关键字"
 // @Success      200       {object}  response.Body{data=response.Page{list=[]dto.FileItem,total=int64,page=int,pageSize=int}}  "success"
 // @Failure      400       {object}  response.Body  "VALIDATION_FAILED"
@@ -165,11 +166,12 @@ func (h *Handler) ListFiles(c *gin.Context) {
 		return
 	}
 	list, total, err := h.files.ListFiles(c.Request.Context(), store.FileFilter{
-		Scene:    scene,
-		Status:   status,
-		Keyword:  c.Query("keyword"),
-		Page:     page,
-		PageSize: pageSize,
+		Scene:     scene,
+		Status:    status,
+		CreatorID: c.Query("creatorId"),
+		Keyword:   c.Query("keyword"),
+		Page:      page,
+		PageSize:  pageSize,
 	})
 	if err != nil {
 		h.log.Error("list files", "err", err)
@@ -178,7 +180,7 @@ func (h *Handler) ListFiles(c *gin.Context) {
 	}
 	out := make([]dto.FileItem, 0, len(list))
 	for i := range list {
-		out = append(out, dto.FromFile(&list[i]))
+		out = append(out, dto.FromFileWithCreator(&list[i].File, list[i].CreatorName))
 	}
 	response.Success(c, response.Page{List: out, Total: total, Page: page, PageSize: pageSize})
 }

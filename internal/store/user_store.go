@@ -36,6 +36,22 @@ func (s *Store) GetUserByUsername(ctx context.Context, username string) (*model.
 	return &u, nil
 }
 
+// GetUsernamesByIDs 批量查询用户 id -> username（文件记录创建人等展示场景）。
+func (s *Store) GetUsernamesByIDs(ctx context.Context, ids []string) (map[string]string, error) {
+	if len(ids) == 0 {
+		return map[string]string{}, nil
+	}
+	var users []model.User
+	if err := s.DB(ctx).Where("id IN ?", ids).Find(&users).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(users))
+	for _, u := range users {
+		out[u.ID] = u.Username
+	}
+	return out, nil
+}
+
 // CreateUser 插入用户。
 func (s *Store) CreateUser(ctx context.Context, u *model.User) error {
 	return s.DB(ctx).Create(u).Error

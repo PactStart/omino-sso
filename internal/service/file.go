@@ -127,9 +127,31 @@ func (s *FileService) ConfirmUpload(ctx context.Context, in ConfirmUploadInput) 
 	return f, nil
 }
 
-// ListFiles 分页查询文件记录。
-func (s *FileService) ListFiles(ctx context.Context, f store.FileFilter) ([]model.File, int64, error) {
-	return s.st.ListFiles(ctx, f)
+// FileListItem 文件记录 + 创建人用户名（管理页展示）。
+type FileListItem struct {
+	model.File
+	CreatorName string
+}
+
+// ListFiles 分页查询文件记录，并将创建人 ID 解析为用户名。
+func (s *FileService) ListFiles(ctx context.Context, f store.FileFilter) ([]FileListItem, int64, error) {
+	list, total, err := s.st.ListFiles(ctx, f)
+	if err != nil {
+		return nil, 0, err
+	}
+	ids := make([]string, 0, len(list))
+	for i := range list {
+		ids = append(ids, list[i].Creator)
+	}
+	names, err := s.st.GetUsernamesByIDs(ctx, ids)
+	if err != nil {
+		return nil, 0, err
+	}
+	out := make([]FileListItem, 0, len(list))
+	for i := range list {
+		out = append(out, FileListItem{File: list[i], CreatorName: names[list[i].Creator]})
+	}
+	return out, total, nil
 }
 
 // UpdateFileStatus 更新状态：disabled 清空业务字段保留对象；deleted 清空字段并删对象；active 恢复写回。

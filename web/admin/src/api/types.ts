@@ -352,6 +352,8 @@ export interface FileRow {
   url: string
   status: 'active' | 'disabled' | 'deleted'
   creator: string
+  /** 创建人用户名（后端解析，列表展示用） */
+  creatorName: string
   createdAt: string
 }
 
@@ -359,6 +361,8 @@ export interface FileQuery {
   scene?: string
   status?: string
   keyword?: string
+  /** 创建人用户 ID */
+  creatorId?: string
   page?: number
   pageSize?: number
 }

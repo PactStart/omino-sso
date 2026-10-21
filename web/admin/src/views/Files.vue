@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminLayout from '@/layouts/AdminLayout.vue'
-import { listFiles, updateFileStatus } from '@/api'
+import { listFiles, listUsers, updateFileStatus } from '@/api'
 import { errorMessage } from '@/api/client'
-import type { FileRow } from '@/api/types'
+import type { FileRow, UserRow } from '@/api/types'
 import { formatTime } from '@/utils/format'
 
 const SCENE_LABEL: Record<string, string> = {
@@ -39,13 +39,42 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`
 }
 
-const filters = reactive({ scene: '', status: '', keyword: '' })
+const filters = reactive({ scene: '', status: '', creatorId: '' })
 const rows = ref<FileRow[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
 const loading = ref(true)
 const error = ref('')
+
+// 创建人远程搜索（用户名/姓名），防抖后调用用户列表接口。
+const userOptions = ref<UserRow[]>([])
+const userLoading = ref(false)
+let userSearchTimer: number | undefined
+
+function searchUsers(query: string) {
+  if (userSearchTimer) window.clearTimeout(userSearchTimer)
+  userSearchTimer = window.setTimeout(() => {
+    void fetchUsers(query)
+  }, 300)
+}
+
+async function fetchUsers(query: string) {
+  const kw = query.trim()
+  if (!kw) {
+    userOptions.value = []
+    return
+  }
+  userLoading.value = true
+  try {
+    const data = await listUsers({ keyword: kw, page: 1, pageSize: 20 })
+    userOptions.value = data.list
+  } catch {
+    userOptions.value = []
+  } finally {
+    userLoading.value = false
+  }
+}
 
 async function loadFiles() {
   loading.value = true
@@ -54,7 +83,7 @@ async function loadFiles() {
     const data = await listFiles({
       scene: filters.scene || undefined,
       status: filters.status || undefined,
-      keyword: filters.keyword.trim() || undefined,
+      creatorId: filters.creatorId || undefined,
       page: page.value,
       pageSize: pageSize.value,
     })
@@ -75,7 +104,7 @@ function onSearch() {
 function onReset() {
   filters.scene = ''
   filters.status = ''
-  filters.keyword = ''
+  filters.creatorId = ''
   page.value = 1
   void loadFiles()
 }
@@ -113,6 +142,9 @@ async function setStatus(row: FileRow, status: 'active' | 'disabled' | 'deleted'
 }
 
 onMounted(loadFiles)
+onBeforeUnmount(() => {
+  if (userSearchTimer) window.clearTimeout(userSearchTimer)
+})
 </script>
 
 <template>
@@ -135,14 +167,24 @@ onMounted(loadFiles)
           <el-option label="禁用" value="disabled" />
           <el-option label="已删除" value="deleted" />
         </el-select>
-        <el-input
-          v-model="filters.keyword"
-          placeholder="搜索创建人"
+        <el-select
+          v-model="filters.creatorId"
+          filterable
+          remote
           clearable
-          style="width: 220px"
-          @keyup.enter="onSearch"
-          @clear="onSearch"
-        />
+          :remote-method="searchUsers"
+          :loading="userLoading"
+          placeholder="搜索创建人（用户名/姓名）"
+          style="width: 240px"
+          @change="onSearch"
+        >
+          <el-option
+            v-for="u in userOptions"
+            :key="u.id"
+            :label="`${u.displayName}（${u.username}）`"
+            :value="u.id"
+          />
+        </el-select>
         <el-button type="primary" @click="onSearch">查询</el-button>
         <el-button @click="onReset">重置</el-button>
       </div>
@@ -199,7 +241,7 @@ onMounted(loadFiles)
           </template>
         </el-table-column>
         <el-table-column label="创建人" width="140">
-          <template #default="{ row }">{{ row.creator || '-' }}</template>
+          <template #default="{ row }">{{ row.creatorName || row.creator || '-' }}</template>
         </el-table-column>
         <el-table-column label="创建时间" width="160">
           <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>

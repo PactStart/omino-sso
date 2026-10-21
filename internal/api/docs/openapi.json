@@ -901,6 +901,10 @@
             "example": "01J9ZJ8Q2M4N6P8R0T2V4X6Z8A",
             "type": "string"
           },
+          "creatorName": {
+            "example": "zhangsan",
+            "type": "string"
+          },
           "format": {
             "example": "png",
             "type": "string"
@@ -4177,7 +4181,7 @@
     },
     "/api/v1/admin/files": {
       "get": {
-        "description": "按 scene/status/keyword 筛选，返回分页结果。",
+        "description": "按 scene/status/creatorId/keyword 筛选，返回分页结果。",
         "parameters": [
           {
             "description": "页码，默认 1",
@@ -4217,6 +4221,14 @@
                 "disabled",
                 "deleted"
               ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "创建人用户 ID",
+            "in": "query",
+            "name": "creatorId",
+            "schema": {
               "type": "string"
             }
           },

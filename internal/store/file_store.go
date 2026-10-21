@@ -9,11 +9,12 @@ import (
 
 // FileFilter 文件记录筛选条件。
 type FileFilter struct {
-	Scene    string
-	Status   string
-	Keyword  string
-	Page     int
-	PageSize int
+	Scene     string
+	Status    string
+	Keyword   string
+	CreatorID string // 创建人用户 ID（精确匹配）
+	Page      int
+	PageSize  int
 }
 
 // CreateFile 插入文件记录。
@@ -53,6 +54,9 @@ func (s *Store) ListFiles(ctx context.Context, f FileFilter) ([]model.File, int6
 	if f.Keyword != "" {
 		like := "%" + f.Keyword + "%"
 		q = q.Where("url LIKE ? OR object_key LIKE ?", like, like)
+	}
+	if f.CreatorID != "" {
+		q = q.Where("creator = ?", f.CreatorID)
 	}
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
