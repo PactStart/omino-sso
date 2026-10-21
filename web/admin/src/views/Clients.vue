@@ -3,9 +3,10 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import AdminLayout from '@/layouts/AdminLayout.vue'
-import { createClient, listClients, rotateClientSecret } from '@/api'
+import { confirmUpload, createClient, listClients, rotateClientSecret } from '@/api'
 import { errorMessage } from '@/api/client'
 import type { ClientRow } from '@/api/types'
+import ImageUpload from '@/components/ImageUpload.vue'
 import { formatTime, orDash } from '@/utils/format'
 
 const router = useRouter()
@@ -85,11 +86,12 @@ const formRef = ref<FormInstance>()
 const form = reactive({
   clientName: '',
   description: '',
-  logoUrl: '',
   isPublic: true,
   redirectUris: [''],
   grantTypes: ['authorization_code', 'refresh_token'] as string[],
   scopes: ['openid', 'profile', 'email'] as string[],
+  logoFileId: '',
+  logoPreview: '',
 })
 
 function validateRedirectUris(_rule: unknown, value: string[], callback: (e?: Error) => void) {
@@ -112,18 +114,18 @@ const rules: FormRules = {
     { max: 128, message: '应用名称最长 128 个字符', trigger: 'blur' },
   ],
   description: [{ max: 255, message: '描述最长 255 个字符', trigger: 'blur' }],
-  logoUrl: [{ type: 'url', message: '请输入合法的 URL', trigger: 'blur' }],
   redirectUris: [{ validator: validateRedirectUris, trigger: 'blur' }],
 }
 
 function resetForm() {
   form.clientName = ''
   form.description = ''
-  form.logoUrl = ''
   form.isPublic = true
   form.redirectUris = ['']
   form.grantTypes = ['authorization_code', 'refresh_token']
   form.scopes = ['openid', 'profile', 'email']
+  form.logoFileId = ''
+  form.logoPreview = ''
   formError.value = ''
   formRef.value?.clearValidate()
 }
@@ -143,6 +145,31 @@ function removeRedirectUri(index: number) {
     return
   }
   form.redirectUris.splice(index, 1)
+}
+
+/* ---------------- Logo 上传（先存文件、创建成功后绑定） ---------------- */
+
+const logoBroken = ref(false)
+
+async function confirmLogo(key: string, format: string, size: number) {
+  const file = await confirmUpload({ scene: 'app_logo', key, format, size })
+  return { url: file.url, id: file.id }
+}
+
+function onLogoFile(url: string, fileId?: string) {
+  form.logoFileId = fileId ?? ''
+  form.logoPreview = url
+  logoBroken.value = false
+}
+
+function onLogoError(message: string) {
+  ElMessage.error(message)
+}
+
+function removeLogo() {
+  form.logoFileId = ''
+  form.logoPreview = ''
+  logoBroken.value = false
 }
 
 /* ---------------- 密钥一次性弹窗 ---------------- */
@@ -187,11 +214,11 @@ async function submitRegister() {
     const res = await createClient({
       clientName: form.clientName.trim(),
       description: form.description.trim() || undefined,
-      logoUrl: form.logoUrl.trim() || undefined,
       redirectUris: form.redirectUris.map((item) => item.trim()).filter(Boolean),
       grantTypes: form.grantTypes,
       scopes: form.scopes,
       isPublic: form.isPublic,
+      fileId: form.logoFileId || undefined,
     })
 
     registerOpen.value = false
@@ -400,8 +427,28 @@ onMounted(loadClients)
           />
         </el-form-item>
 
-        <el-form-item label="图标地址" prop="logoUrl">
-          <el-input v-model="form.logoUrl" placeholder="选填，https://..." maxlength="512" />
+        <el-form-item label="Logo">
+          <div class="logo-field">
+            <div class="logo-upload-row">
+              <img
+                v-if="form.logoPreview && !logoBroken"
+                :src="form.logoPreview"
+                class="logo-preview"
+                alt="应用 Logo"
+                @error="logoBroken = true"
+              />
+              <div class="logo-upload-actions">
+                <ImageUpload
+                  scene="app_logo"
+                  :confirm="confirmLogo"
+                  @success-file="onLogoFile"
+                  @error="onLogoError"
+                />
+                <el-button v-if="form.logoFileId" link type="danger" @click="removeLogo">移除</el-button>
+              </div>
+            </div>
+            <p class="field-hint">上传后先暂存文件，创建应用成功后自动绑定到该应用</p>
+          </div>
         </el-form-item>
 
         <el-form-item label="类型">
@@ -580,6 +627,30 @@ onMounted(loadClients)
   font-size: 12px;
   color: var(--app-text-secondary);
   line-height: 1.5;
+}
+
+.logo-field {
+  width: 100%;
+}
+
+.logo-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo-preview {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid var(--app-border);
+}
+
+.logo-upload-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .uri-block {

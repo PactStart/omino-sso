@@ -642,7 +642,7 @@ func TestUpdateUserRejectsMissingDept(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	audit := service.NewAuditor(env.st, 1, env.log)
-	h := admin.NewHandler(env.users, service.NewClientService(env.st), env.orgs, service.NewAppAuthService(env.st), audit, env.log)
+	h := admin.NewHandler(env.users, service.NewClientService(env.st), env.orgs, service.NewAppAuthService(env.st), service.NewFileService(env.st, store.NewNoopFileStore(), audit), audit, env.log)
 	r := gin.New()
 	r.PATCH("/api/v1/admin/users/:id", h.UpdateUser)
 

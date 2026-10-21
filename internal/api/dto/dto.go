@@ -53,6 +53,7 @@ type UserAdmin struct {
 	ID          string   `json:"id" example:"01J9ZJ8Q2M4N6P8R0T2V4X6Z8A"`
 	Username    string   `json:"username" example:"zhangsan"`
 	DisplayName string   `json:"displayName" example:"张三"`
+	AvatarURL   *string  `json:"avatarUrl" example:"https://cdn.example.com/avatar/zhangsan.png"`
 	Email       *string  `json:"email" example:"zhangsan@example.com"`
 	Phone       *string  `json:"phone" example:"13800000000"`
 	DeptID      string   `json:"deptId" example:"01J9ZJ7A1B2C3D4E5F6G7H8J9K"`
@@ -94,6 +95,7 @@ func Admin(u *model.User) UserAdmin {
 		ID:          u.ID,
 		Username:    u.Username,
 		DisplayName: u.DisplayName,
+		AvatarURL:   u.AvatarURL,
 		Email:       u.Email,
 		Phone:       u.Phone,
 		DeptID:      u.DeptID,
@@ -397,4 +399,53 @@ type AuditItem struct {
 	Result    string  `json:"result" example:"success"`
 	Detail    *string `json:"detail"`
 	CreatedAt string  `json:"createdAt" example:"2026-10-20T10:12:33Z"`
+}
+
+// ---- 文件上传（004-object-storage-upload）----
+
+// UploadCredential 预签名直传凭证（POST /files/upload-credential 响应）。
+type UploadCredential struct {
+	Key           string `json:"key" example:"user_avatar/01J9ZK9M1N3P5Q7R9S1T3V5W7X.png"`
+	UploadURL     string `json:"uploadUrl" example:"https://bucket.oss-cn-hangzhou.aliyuncs.com"`
+	AccessKeyID   string `json:"accessKeyId" example:"STS.xxxx"`
+	SecurityToken string `json:"securityToken" example:"<STS security token>"`
+	Policy        string `json:"policy" example:"<base64 policy>"`
+	Signature     string `json:"signature" example:"<hmac-sha1>"`
+	ExpiresAt     string `json:"expiresAt" example:"2026-10-21T10:05:00Z"`
+}
+
+// FileItem 文件记录（GET /admin/files 元素与确认/状态更新响应）。
+type FileItem struct {
+	ID          string `json:"id" example:"01J9ZK9M1N3P5Q7R9S1T3V5W7X"`
+	Provider    string `json:"provider" example:"aliyun_oss"`
+	Scene       string `json:"scene" example:"app_logo"`
+	Format      string `json:"format" example:"png"`
+	Size        int64  `json:"size" example:"245760"`
+	URL         string `json:"url" example:"https://cdn.example.com/logo/portal.png"`
+	Status      string `json:"status" example:"active"`
+	Creator     string `json:"creator" example:"01J9ZJ8Q2M4N6P8R0T2V4X6Z8A"`
+	CreatorName string `json:"creatorName" example:"zhangsan"`
+	CreatedAt   string `json:"createdAt" example:"2026-10-21T10:04:00Z"`
+}
+
+// FromFile 构造文件记录视图（CreatorName 为空，仅确认/状态更新响应使用）。
+func FromFile(f *model.File) FileItem {
+	return FileItem{
+		ID:        f.ID,
+		Provider:  f.Provider,
+		Scene:     f.Scene,
+		Format:    f.Format,
+		Size:      f.Size,
+		URL:       f.URL,
+		Status:    f.Status,
+		Creator:   f.Creator,
+		CreatedAt: Time(f.CreatedAt),
+	}
+}
+
+// FromFileWithCreator 构造带创建人用户名的文件记录视图（列表展示）。
+func FromFileWithCreator(f *model.File, creatorName string) FileItem {
+	it := FromFile(f)
+	it.CreatorName = creatorName
+	return it
 }

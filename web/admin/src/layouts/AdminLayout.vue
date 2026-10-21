@@ -13,6 +13,7 @@ const activeMenu = computed(() =>
 )
 const displayName = computed(() => session.user?.displayName ?? '-')
 const initial = computed(() => (displayName.value || '?').slice(0, 1))
+const avatarUrl = computed(() => session.user?.avatarUrl ?? '')
 
 // 管理后台最小宽度 1280（PRD §4 A1）
 const windowWidth = ref(window.innerWidth)
@@ -53,13 +54,15 @@ async function handleCommand(command: string) {
         <el-menu-item index="/admin/users">用户管理</el-menu-item>
         <el-menu-item index="/admin/clients">应用管理</el-menu-item>
         <el-menu-item index="/admin/audit">审计日志</el-menu-item>
+        <el-menu-item index="/admin/files">文件管理</el-menu-item>
       </el-menu>
 
       <div class="header-right">
         <el-button link type="primary" @click="handleCommand('portal')">返回门户</el-button>
         <el-dropdown trigger="click" @command="handleCommand">
           <span class="user-trigger">
-            <span class="avatar">{{ initial }}</span>
+            <img v-if="avatarUrl" :src="avatarUrl" class="avatar avatar-img" alt="头像" />
+            <span v-else class="avatar">{{ initial }}</span>
             <span class="user-name">{{ displayName }}</span>
           </span>
           <template #dropdown>
@@ -164,6 +167,10 @@ async function handleCommand(command: string) {
   color: var(--el-color-primary);
   font-size: 12px;
   font-weight: 600;
+}
+
+.avatar-img {
+  object-fit: cover;
 }
 
 .user-name {

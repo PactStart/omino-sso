@@ -2,9 +2,10 @@
 import { computed, inject, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { getClient, updateClient } from '@/api'
+import { clearClientLogo, getClient, setClientLogo, updateClient } from '@/api'
 import { errorCode, errorMessage } from '@/api/client'
 import type { ClientDetail } from '@/api/types'
+import ImageUpload from '@/components/ImageUpload.vue'
 import { formatTime } from '@/utils/format'
 import { reloadClientSummaryKey } from './detail-context'
 
@@ -31,6 +32,7 @@ const form = reactive({
 const formRef = ref<FormInstance>()
 const saving = ref(false)
 const formError = ref('')
+const logoBroken = ref(false)
 
 /** 首页地址：由首个回调地址的 origin 推导（门户"我的应用"入口使用） */
 const homeUrl = computed(() => {
@@ -205,6 +207,33 @@ async function save() {
   }
 }
 
+async function confirmLogo(key: string, format: string, size: number) {
+  const file = await setClientLogo(clientId.value, { key, format, size })
+  return { url: file.url }
+}
+
+function onLogoSuccess(url: string) {
+  form.logoUrl = url
+  logoBroken.value = false
+  ElMessage.success('Logo 已更新')
+}
+
+function onLogoError(message: string) {
+  ElMessage.error(message)
+}
+
+async function clearLogo() {
+  try {
+    await clearClientLogo(clientId.value)
+    form.logoUrl = ''
+    logoBroken.value = false
+    ElMessage.success('Logo 已清除')
+    await reloadSummary()
+  } catch (e) {
+    ElMessage.error(errorMessage(e))
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -306,8 +335,27 @@ onMounted(load)
             />
           </el-form-item>
 
-          <el-form-item label="Logo 地址" prop="logoUrl">
-            <el-input v-model="form.logoUrl" maxlength="512" placeholder="选填，https://…" />
+          <el-form-item label="Logo" prop="logoUrl">
+            <div class="logo-editor">
+              <img
+                v-if="form.logoUrl && !logoBroken"
+                :src="form.logoUrl"
+                class="logo-preview"
+                alt="应用 Logo"
+                @error="logoBroken = true"
+              />
+              <div class="logo-actions">
+                <ImageUpload
+                  scene="app_logo"
+                  :confirm="confirmLogo"
+                  @success="onLogoSuccess"
+                  @error="onLogoError"
+                />
+                <el-button v-if="form.logoUrl" link type="danger" @click="clearLogo">清除</el-button>
+              </div>
+              <el-input v-model="form.logoUrl" maxlength="512" placeholder="或填写外部 https://… 地址" />
+              <p class="field-hint">上传后立即生效并回填地址；也可保留外部 URL</p>
+            </div>
           </el-form-item>
 
           <el-form-item label="回调地址" prop="redirectUris">
@@ -427,6 +475,27 @@ onMounted(load)
 
 .field-hint.inline {
   margin: 0 0 0 12px;
+}
+
+.logo-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.logo-preview {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid var(--app-border);
+}
+
+.logo-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .unit {

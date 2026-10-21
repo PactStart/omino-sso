@@ -46,6 +46,7 @@
 | 文档 UI 资源 | `github.com/swaggo/files` | `v1.0.1` | 内嵌 swagger-ui 静态资源（`/docs/*`），不依赖 CDN（§2.4） |
 | 测试 | `github.com/stretchr/testify` | `v1.10.0` | |
 | 日志 | `log/slog` | 标准库 | JSON handler |
+| 对象存储 | `github.com/aliyun/aliyun-oss-go-sdk/oss` | `v2.2.9` | 图片直传（PostObject 预签名）；2026-10-21 新增（004-object-storage-upload），另带间接依赖 `golang.org/x/time v0.16.0` |
 
 ### 2.2 前端
 
@@ -67,6 +68,7 @@
 |---|---|---|
 | MySQL | `8.4` LTS | 字符集 `utf8mb4`，排序规则按 §6 规定 |
 | Redis | `7.4` | 单实例 + AOF，不使用 Cluster |
+| 阿里云 OSS | — | 图片对象存储（logo/头像直传）；provider 驱动配置，未配置则不启用 |
 | Docker / Compose | `27.x` / `v2` | 本地与 MVP 部署 |
 
 ### 2.4 接口文档生成链（构建期依赖）
@@ -763,7 +765,7 @@ omino-sso/
 | `trace_id` | VARCHAR(32) | NULL | |
 | `created_at` | BIGINT | NOT NULL, INDEX | |
 
-`event_type` 枚举（新增需登记）：`login_success`、`login_failure`、`mfa_success`、`mfa_failure`、`logout`、`password_changed`、`token_issued`、`token_revoked`、`code_reused`、`refresh_reused`、`user_created`、`user_updated`、`client_created`、`client_secret_rotated`、`org_created`、`org_updated`、`org_deleted`、`client_updated`、`app_member_added`、`app_member_removed`、`app_role_created`、`app_role_updated`、`app_role_deleted`、`app_permission_created`、`app_permission_updated`、`app_permission_deleted`、`app_grant_updated`。
+`event_type` 枚举（新增需登记）：`login_success`、`login_failure`、`mfa_success`、`mfa_failure`、`logout`、`password_changed`、`token_issued`、`token_revoked`、`code_reused`、`refresh_reused`、`user_created`、`user_updated`、`client_created`、`client_secret_rotated`、`org_created`、`org_updated`、`org_deleted`、`client_updated`、`app_member_added`、`app_member_removed`、`app_role_created`、`app_role_updated`、`app_role_deleted`、`app_permission_created`、`app_permission_updated`、`app_permission_deleted`、`app_grant_updated`、`file_uploaded`、`file_status_updated`。
 
 `detail` 详略规则（003 起）：一般只记字段名列表与数量；**地址类字段（`redirectUris` / `postLogoutUris`）记变更前后的完整数组**；删除角色/权限记被解除绑定的 ID 快照（超过 20 项记数量 + 前 20 项）。
 
@@ -793,6 +795,27 @@ omino-sso/
 | `access_tokens` | `token_id`(128, as_cs)、`sub`(26)、`client_id`(64)、`expires_at` | PK(token_id)；KEY idx_access_tokens_exp(expires_at) |
 
 > 不变量：角色绑定的成员必然是 `client_members` 成员（授权写入时自动补成员）；删除成员级联解除 `client_role_members`；`access_tokens` 写入失败即签发失败，不降级。
+
+### 6.10 `files`（004，`migrations/0004_files.up.sql`）
+
+上传文件元数据（对象本体在 OSS）。
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `id` | CHAR(26) | PK | ULID |
+| `provider` | VARCHAR(32) | NOT NULL | 恒为 `aliyun_oss` |
+| `scene` | VARCHAR(32) | NOT NULL, INDEX | `app_logo` / `user_avatar` |
+| `target_id` | VARCHAR(64) | NOT NULL, INDEX | app_logo=client_id；user_avatar=user_id |
+| `format` | VARCHAR(16) | NOT NULL | `jpg` / `png` / `webp` |
+| `size` | BIGINT | NOT NULL | 字节数 |
+| `url` | VARCHAR(512) | NOT NULL | 公开访问地址 |
+| `object_key` | VARCHAR(512) | NOT NULL | OSS 对象键 |
+| `status` | VARCHAR(16) | NOT NULL, INDEX | `active` / `disabled` / `deleted` |
+| `creator` | CHAR(26) | NOT NULL | 上传者 user_id |
+| `created_at` | BIGINT | NOT NULL | |
+| `updated_at` | BIGINT | NOT NULL | |
+
+索引：`idx_files_scene_created(scene, created_at)`、`idx_files_status(status)`、`idx_files_target(scene, target_id)`。
 
 ---
 
@@ -842,6 +865,13 @@ omino-sso/
 - 不生成 `README`、演示脚本、示例数据种子文件，除非任务明确要求。
 - 遇到规范未覆盖的情况：选择改动最小、最保守的实现，并在回复中显式说明该决策点。
 
+### 7.3 过程文档与验证轻量化（001-api-docs 复盘）
+
+- **不复述既有规范**：`spec` 不重复 `AGENTS.md` 已锁定的版本 / 端口 / 错误码；`plan` 不复述架构。重复内容信息量为零，只会让文档翻倍。
+- **账本交给 git**：`tasks.md` 只留一句结论 + 勾选，不逐条回写「实测偏离」；`git log` / `git blame` 才是会被追溯的地方。
+- **验证用测试表达**：一条命令 / 一个测试能证明的结论（如「逐端点错误码已登记」）写成一个测试，不写进 checklist。
+- **扩展按事件触发**：`api-evolve` 等扩展只在有契约变更时产出内容，零变更特性不跑空仪式（空 diff 视为无效）。
+
 ---
 
 ## 8. 启动命令
@@ -882,6 +912,8 @@ make test-integration         # 依赖容器内 MySQL/Redis
 make lint                     # golangci-lint + eslint
 make build-web                # 两个前端产物 -> web/dist
 ```
+
+> **改动自测纪律（强制）**：任何改动在提交前必须主动执行 `make test` 与 `make lint`，不得依赖 pre-commit 兜底。新增/修改业务逻辑、端点或数据访问层时，必须同步新增或更新对应单元测试。新增/删除路由或改动 DTO 字段后，必须执行 `make docs` 重新生成 `openapi.json`，并全局搜索、同步更新依赖 operation 数 / 字段结构的硬编码测试断言（如 `internal/api/docs/docs_test.go`、`internal/api/router_test.go`）。改动前端后执行 `npm run typecheck`（`web/admin` 与 `web/portal`）。
 
 ### 8.5 合规验收（门禁，不可跳过）
 
@@ -944,6 +976,18 @@ docker compose up -d --build   # mysql + redis + sso + nginx(静态托管两套�
 | `RATE_LIMIT_LOGIN_PER_MIN` | 否 | `10` | 按 `username+IP` |
 | `RATE_LIMIT_API_PER_MIN` | 否 | `300` | 按 `sid` 或 IP |
 | `AUDIT_ASYNC_BUFFER` | 否 | `1024` | 审计异步队列长度 |
+| `OSS_PROVIDER` | 否 | 空 | 对象存储供应商；空=不启用上传，`aliyun_oss`=阿里云 OSS |
+| `OSS_ENDPOINT` | 条件 | — | provider 为 aliyun_oss 时必填，例 `oss-cn-shenzhen.aliyuncs.com` |
+| `OSS_BUCKET` | 条件 | — | 同上 |
+| `OSS_ACCESS_KEY` | 条件 | — | 调用 STS AssumeRole 的 RAM 用户 AccessKeyId |
+| `OSS_SECRET_KEY` | 条件 | — | 对应 AccessKeySecret，服务端专用、不出服务端 |
+| `OSS_ROLE_ARN` | 条件 | — | 被扮演角色 ARN（`acs:ram::<accountId>:role/ramossrole`），provider 为 aliyun_oss 时必填 |
+| `OSS_ROLE_SESSION_NAME` | 否 | `omino-sso` | AssumeRole 会话名 |
+| `OSS_STS_ENDPOINT` | 否 | `sts.aliyuncs.com` | STS 端点 |
+| `OSS_STS_DURATION_SECONDS` | 否 | `3600` | AssumeRole 临时凭证有效期（秒，900–43200） |
+| `OSS_BASE_PATH` | 否 | 空 | 对象键前缀，例 `sso` |
+| `OSS_CUSTOM_DOMAIN` | 否 | `https://<bucket>.<endpoint>` | 公开访问域名 |
+| `OSS_CREDENTIAL_TTL` | 否 | `300` | 直传凭证有效期（秒） |
 | `ADMIN_BOOTSTRAP_USERNAME` | 是（首次） | — | 初始化管理员，仅在 `users` 为空时生效 |
 | `ADMIN_BOOTSTRAP_PASSWORD` | 是（首次） | — | 初始化后必须立即修改，并在生产环境删除该变量 |
 
@@ -961,3 +1005,6 @@ docker compose up -d --build   # mysql + redis + sso + nginx(静态托管两套�
 - [ ] 未引入 §7.2 非目标中的任何能力
 - [ ] 未新增未登记的错误码与 `event_type`
 - [ ] 日志与响应中无 token / 密码 / client_secret
+- [ ] 改动已伴随/更新单元测试，且已主动执行 `make test` / `make lint`（未依赖 pre-commit 兜底）
+- [ ] 新增/删除路由或改动 DTO 后已执行 `make docs`，并同步更新 operation 数等硬编码测试断言
+- [ ] 新增带鉴权的端点前已界定访问者与可写范围（防越权）；前端筛选/搜索控件与后端实际过滤字段一致

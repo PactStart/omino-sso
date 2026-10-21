@@ -6,6 +6,9 @@ bin/
 # 文档生成中间产物（swag 的 Swagger 2.0 输出）
 .tmp/
 
+# Spec Kit 机器本地评估产物（not meant to be shared）
+.specify/assessments
+
 # 前端
 web/*/node_modules/
 web/*/dist/

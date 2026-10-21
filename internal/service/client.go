@@ -46,6 +46,8 @@ type CreateClientInput struct {
 	GrantTypes   []string
 	Scopes       []string
 	IsPublic     bool
+	// FileID 为已上传（target_id 为空）的 logo 文件记录 ID；非空时在创建应用后回填 target_id 并写回 logo_url。
+	FileID string
 }
 
 // Create 注册应用，返回客户端明文密钥（仅此一次）。
@@ -83,10 +85,39 @@ func (s *ClientService) Create(ctx context.Context, in CreateClientInput) (*mode
 		secret = crypto.RandomToken(32)
 		c.ClientSecretHash = crypto.SHA256(secret)
 	}
-	if err := s.st.CreateClient(ctx, c); err != nil {
+	if err := s.st.Transaction(ctx, func(ctx context.Context) error {
+		if err := s.st.CreateClient(ctx, c); err != nil {
+			return err
+		}
+		if in.FileID != "" {
+			return s.bindLogo(ctx, c.ClientID, in.FileID)
+		}
+		return nil
+	}); err != nil {
 		return nil, "", err
 	}
 	return c, secret, nil
+}
+
+// bindLogo 把已上传的 logo 文件记录绑定到新建应用：回填 target_id 并写回 clients.logo_url。
+func (s *ClientService) bindLogo(ctx context.Context, clientID, fileID string) error {
+	f, err := s.st.GetFileByID(ctx, fileID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrFileNotFound
+		}
+		return err
+	}
+	if f.Scene != model.FileSceneAppLogo {
+		return ErrFileValidation
+	}
+	if err := s.st.UpdateFileTargetID(ctx, fileID, clientID); err != nil {
+		return err
+	}
+	if err := s.st.UpdateClientFields(ctx, clientID, map[string]any{"logo_url": f.URL}, nil, nowMillis()); err != nil {
+		return err
+	}
+	return nil
 }
 
 // RotateSecret 轮换密钥，返回新明文。

@@ -31,6 +31,11 @@
             "maxLength": 255,
             "type": "string"
           },
+          "fileId": {
+            "description": "FileID 为已上传（target_id 为空）的 logo 文件记录 ID；创建成功后回填 target_id 并写回 logo_url。",
+            "example": "01J9ZK9M1N3P5Q7R9S1T3V5W7X",
+            "type": "string"
+          },
           "grantTypes": {
             "example": [
               "authorization_code",
@@ -159,6 +164,29 @@
           "displayName",
           "password",
           "username"
+        ],
+        "type": "object"
+      },
+      "admin.FileUploadRequest": {
+        "properties": {
+          "format": {
+            "example": "png",
+            "type": "string"
+          },
+          "key": {
+            "example": "app_logo/01J9ZK9M1N3P5Q7R9S1T3V5W7X.png",
+            "type": "string"
+          },
+          "size": {
+            "example": 245760,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "format",
+          "key",
+          "size"
         ],
         "type": "object"
       },
@@ -353,6 +381,18 @@
             "type": "integer"
           }
         },
+        "type": "object"
+      },
+      "admin.UpdateFileStatusRequest": {
+        "properties": {
+          "status": {
+            "example": "disabled",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
         "type": "object"
       },
       "admin.UpdateOrgRequest": {
@@ -851,6 +891,51 @@
         },
         "type": "object"
       },
+      "dto.FileItem": {
+        "properties": {
+          "createdAt": {
+            "example": "2026-10-21T10:04:00Z",
+            "type": "string"
+          },
+          "creator": {
+            "example": "01J9ZJ8Q2M4N6P8R0T2V4X6Z8A",
+            "type": "string"
+          },
+          "creatorName": {
+            "example": "zhangsan",
+            "type": "string"
+          },
+          "format": {
+            "example": "png",
+            "type": "string"
+          },
+          "id": {
+            "example": "01J9ZK9M1N3P5Q7R9S1T3V5W7X",
+            "type": "string"
+          },
+          "provider": {
+            "example": "aliyun_oss",
+            "type": "string"
+          },
+          "scene": {
+            "example": "app_logo",
+            "type": "string"
+          },
+          "size": {
+            "example": 245760,
+            "type": "integer"
+          },
+          "status": {
+            "example": "active",
+            "type": "string"
+          },
+          "url": {
+            "example": "https://cdn.example.com/logo/portal.png",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "dto.LoginMfaChallenge": {
         "properties": {
           "expiresIn": {
@@ -1066,8 +1151,45 @@
         },
         "type": "object"
       },
+      "dto.UploadCredential": {
+        "properties": {
+          "accessKeyId": {
+            "example": "STS.xxxx",
+            "type": "string"
+          },
+          "expiresAt": {
+            "example": "2026-10-21T10:05:00Z",
+            "type": "string"
+          },
+          "key": {
+            "example": "user_avatar/01J9ZK9M1N3P5Q7R9S1T3V5W7X.png",
+            "type": "string"
+          },
+          "policy": {
+            "example": "\u003cbase64 policy\u003e",
+            "type": "string"
+          },
+          "securityToken": {
+            "example": "\u003cSTS security token\u003e",
+            "type": "string"
+          },
+          "signature": {
+            "example": "\u003chmac-sha1\u003e",
+            "type": "string"
+          },
+          "uploadUrl": {
+            "example": "https://bucket.oss-cn-hangzhou.aliyuncs.com",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "dto.UserAdmin": {
         "properties": {
+          "avatarUrl": {
+            "example": "https://cdn.example.com/avatar/zhangsan.png",
+            "type": "string"
+          },
           "createdAt": {
             "example": "2026-01-08T03:20:11Z",
             "type": "string"
@@ -1215,6 +1337,84 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "files.ConfirmUploadRequest": {
+        "properties": {
+          "format": {
+            "example": "png",
+            "type": "string"
+          },
+          "key": {
+            "example": "app_logo/01J9ZK9M1N3P5Q7R9S1T3V5W7X.png",
+            "type": "string"
+          },
+          "scene": {
+            "example": "app_logo",
+            "type": "string"
+          },
+          "size": {
+            "example": 245760,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "targetId": {
+            "example": "01J9ZK9M1N3P5Q7R9S1T3V5W7X",
+            "type": "string"
+          }
+        },
+        "required": [
+          "format",
+          "key",
+          "scene",
+          "size"
+        ],
+        "type": "object"
+      },
+      "files.UploadCredentialRequest": {
+        "properties": {
+          "format": {
+            "example": "png",
+            "type": "string"
+          },
+          "scene": {
+            "example": "user_avatar",
+            "type": "string"
+          },
+          "size": {
+            "example": 245760,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "format",
+          "scene",
+          "size"
+        ],
+        "type": "object"
+      },
+      "me.AvatarRequest": {
+        "properties": {
+          "format": {
+            "example": "png",
+            "type": "string"
+          },
+          "key": {
+            "example": "user_avatar/01J9ZK9M1N3P5Q7R9S1T3V5W7X.png",
+            "type": "string"
+          },
+          "size": {
+            "example": 245760,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "format",
+          "key",
+          "size"
+        ],
         "type": "object"
       },
       "me.PasswordRequest": {
@@ -1935,6 +2135,204 @@
           }
         ],
         "summary": "更新应用详情",
+        "tags": [
+          "应用管理"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
+    "/api/v1/admin/clients/{id}/logo": {
+      "delete": {
+        "description": "删除 logo 对象并清空业务字段，展示回退为名称首字占位（FR-002/FR-008）。",
+        "parameters": [
+          {
+            "description": "应用 ID（client_id）",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "success"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "清除应用 logo",
+        "tags": [
+          "应用管理"
+        ],
+        "x-auth-level": "admin"
+      },
+      "post": {
+        "description": "直传完成后调用，写入文件记录并回写 clients.logo_url。",
+        "parameters": [
+          {
+            "description": "应用 ID（client_id）",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/admin.FileUploadRequest"
+              }
+            }
+          },
+          "description": "logo 确认请求体",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.FileItem"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "设置应用 logo",
         "tags": [
           "应用管理"
         ],
@@ -3861,6 +4259,301 @@
         "x-auth-level": "admin"
       }
     },
+    "/api/v1/admin/files": {
+      "get": {
+        "description": "按 scene/status/creatorId/keyword 筛选，返回分页结果。",
+        "parameters": [
+          {
+            "description": "页码，默认 1",
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "每页条数，默认 20，上限 100",
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "场景",
+            "in": "query",
+            "name": "scene",
+            "schema": {
+              "enum": [
+                "app_logo",
+                "user_avatar"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "状态",
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "enum": [
+                "active",
+                "disabled",
+                "deleted"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "创建人用户 ID",
+            "in": "query",
+            "name": "creatorId",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "url 或对象键关键字",
+            "in": "query",
+            "name": "keyword",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "allOf": [
+                            {
+                              "$ref": "#/components/schemas/response.Page"
+                            },
+                            {
+                              "properties": {
+                                "list": {
+                                  "items": {
+                                    "$ref": "#/components/schemas/dto.FileItem"
+                                  },
+                                  "type": "array"
+                                },
+                                "page": {
+                                  "type": "integer"
+                                },
+                                "pageSize": {
+                                  "type": "integer"
+                                },
+                                "total": {
+                                  "format": "int64",
+                                  "type": "integer"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "分页查询上传文件记录",
+        "tags": [
+          "文件"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
+    "/api/v1/admin/files/{id}": {
+      "patch": {
+        "description": "disabled 清空业务字段保留对象；deleted 清空字段并删除对象；active 恢复写回。",
+        "parameters": [
+          {
+            "description": "文件记录 ID（ULID）",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/admin.UpdateFileStatusRequest"
+              }
+            }
+          },
+          "description": "状态请求体",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.FileItem"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "更新文件记录状态",
+        "tags": [
+          "文件"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
     "/api/v1/admin/orgs": {
       "post": {
         "description": "在指定上级部门下（parentId 缺失或 null 表示根级）创建部门；名称去首尾空白后 1–64 字符且同级唯一（区分大小写），层级最多 10 级。租户由父链派生（根级为 default），请求中的 tenantId 被忽略。成功写入 org_created 审计事件。",
@@ -4674,6 +5367,204 @@
         "x-auth-level": "admin"
       }
     },
+    "/api/v1/admin/users/{id}/avatar": {
+      "delete": {
+        "description": "删除头像对象并清空业务字段，展示回退为姓名首字占位（FR-011）。",
+        "parameters": [
+          {
+            "description": "用户 ID（ULID）",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "success"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "清除用户头像（管理员代管）",
+        "tags": [
+          "用户管理"
+        ],
+        "x-auth-level": "admin"
+      },
+      "post": {
+        "description": "直传完成后调用，写入文件记录并回写目标用户 users.avatar_url。",
+        "parameters": [
+          {
+            "description": "用户 ID（ULID）",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/admin.FileUploadRequest"
+              }
+            }
+          },
+          "description": "头像确认请求体",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.FileItem"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "设置用户头像（管理员代管）",
+        "tags": [
+          "用户管理"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
         "description": "校验账号密码。账号启用 MFA 时不下发会话，改返回 mfaTicket（300 秒内有效，需再调用 /auth/mfa/verify）；连续失败 5 次锁定 15 分钟。成功时通过 Set-Cookie 下发 HttpOnly 的 sid，响应体不含任何令牌。\n响应 data 有两种形状：需 MFA 时为 dto.LoginMfaChallenge（mfaRequired/mfaTicket/expiresIn），登录完成时为 dto.LoginResult（含 redirectTo 与 user）；文档只保留后者的 schema。",
@@ -4940,6 +5831,216 @@
         ]
       }
     },
+    "/api/v1/files/confirm": {
+      "post": {
+        "description": "直传完成后调用，写入 files 记录（仅 app_logo）；targetId 为空时仅落记录，创建应用成功后回填绑定。需 admin。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/files.ConfirmUploadRequest"
+              }
+            }
+          },
+          "description": "确认请求体",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.FileItem"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "确认上传",
+        "tags": [
+          "文件"
+        ]
+      }
+    },
+    "/api/v1/files/upload-credential": {
+      "post": {
+        "description": "返回预签名直传凭证，前端据此直传对象存储；scene=app_logo 需 admin。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/files.UploadCredentialRequest"
+              }
+            }
+          },
+          "description": "凭证请求体",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.UploadCredential"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "签发上传直传凭证",
+        "tags": [
+          "文件"
+        ]
+      }
+    },
     "/api/v1/me": {
       "get": {
         "description": "返回会话所属用户的完整资料，含部门路径、角色与 MFA 状态。",
@@ -5074,6 +6175,160 @@
           }
         ],
         "summary": "查询我可访问的应用",
+        "tags": [
+          "我的"
+        ]
+      }
+    },
+    "/api/v1/me/avatar": {
+      "delete": {
+        "description": "删除头像对象并清空业务字段，展示回退为姓名首字占位（FR-004）。",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "success"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "清除本人头像",
+        "tags": [
+          "我的"
+        ]
+      },
+      "post": {
+        "description": "直传完成后调用，写入文件记录并回写 users.avatar_url。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/me.AvatarRequest"
+              }
+            }
+          },
+          "description": "头像确认请求体",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.FileItem"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "更新本人头像",
         "tags": [
           "我的"
         ]

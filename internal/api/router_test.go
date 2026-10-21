@@ -48,7 +48,8 @@ func newTestRouter(t *testing.T, env string) *gin.Engine {
 	clients := service.NewClientService(st)
 	orgs := service.NewOrgService(st, logger)
 	appAuth := service.NewAppAuthService(st)
-	return NewRouter(cfg, st, users, sessions, clients, orgs, appAuth, audit, logger)
+	fileSvc := service.NewFileService(st, store.NewNoopFileStore(), audit)
+	return NewRouter(cfg, st, users, sessions, clients, orgs, appAuth, fileSvc, audit, logger)
 }
 
 // TestOrgRoutesRegistered 固化组织架构的 4 条路由，并验证三条写路由在无
@@ -155,8 +156,8 @@ func TestDocsServedWithoutRedis(t *testing.T) {
 	for _, item := range doc.Paths {
 		ops += len(item)
 	}
-	if ops != 36 {
-		t.Fatalf("(method,path) 组合数为 %d, 期望 36", ops)
+	if ops != 46 {
+		t.Fatalf("(method,path) 组合数为 %d, 期望 46", ops)
 	}
 	if !strings.Contains(doc.Info.Description, "环境：test") {
 		t.Fatalf("info.description 未注入环境: %q", doc.Info.Description)

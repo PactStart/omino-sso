@@ -64,6 +64,8 @@ func main() {
 			service.NewClientService,
 			service.NewOrgService,
 			service.NewAppAuthService,
+			newFileStore,
+			service.NewFileService,
 			newKeyManager,
 			oidc.NewStorage,
 			oidc.NewProvider,
@@ -89,6 +91,14 @@ func newRedis(cfg *config.Config) (*redis.Client, error) {
 
 func newKeyManager(cfg *config.Config) (*oidc.KeyManager, error) {
 	return oidc.LoadKeyManager(cfg.SigningKeyPath, cfg.SigningKeyID)
+}
+
+// newFileStore 按 provider 构造对象存储实现；未配置时返回 Noop（上传返回未配置错误）。
+func newFileStore(cfg *config.Config) (store.FileStore, error) {
+	if cfg.OSS.Provider == "" {
+		return store.NewNoopFileStore(), nil
+	}
+	return store.NewOSSFileStore(&cfg.OSS)
 }
 
 // runAuditor 启动审计消费者。
@@ -119,11 +129,12 @@ func runServers(
 	clients *service.ClientService,
 	orgs *service.OrgService,
 	appAuth *service.AppAuthService,
+	fileSvc *service.FileService,
 	audit *service.Auditor,
 ) {
 	oidc.NewServer(lc, cfg, provider, oidcStorage, st, users, sessions, clients, audit, logger)
 
-	router := api.NewRouter(cfg, st, users, sessions, clients, orgs, appAuth, audit, logger)
+	router := api.NewRouter(cfg, st, users, sessions, clients, orgs, appAuth, fileSvc, audit, logger)
 	api.NewServer(lc, cfg, router, logger)
 }
 

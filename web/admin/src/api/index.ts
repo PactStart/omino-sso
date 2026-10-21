@@ -15,6 +15,10 @@ import type {
   CreateRolePayload,
   CreatedClient,
   CreateUserPayload,
+  FileConfirmPayload,
+  FileQuery,
+  FileRow,
+  FileUploadPayload,
   MemberGrantResult,
   MemberQuery,
   Me,
@@ -30,6 +34,7 @@ import type {
   UpdatePermissionPayload,
   UpdateRolePayload,
   UpdateUserPayload,
+  UploadCredential,
   UserIdSet,
   UserRow,
 } from './types'
@@ -284,5 +289,58 @@ export function putRoleMembers(
     url: `${clientBase(clientId)}/roles/${encodeURIComponent(roleId)}/members`,
     method: 'PUT',
     data: payload,
+  })
+}
+
+/* ---------------- 004 文件上传 ---------------- */
+
+export function getUploadCredential(payload: { scene: string; format: string; size: number }) {
+  return request<UploadCredential>({ url: '/files/upload-credential', method: 'POST', data: payload })
+}
+
+/** 通用上传确认；targetId 为空时仅落文件记录（如注册应用前上传 logo） */
+export function confirmUpload(payload: FileConfirmPayload) {
+  return request<FileRow>({ url: '/files/confirm', method: 'POST', data: payload })
+}
+
+export function setClientLogo(clientId: string, payload: FileUploadPayload) {
+  return request<FileRow>({
+    url: `/admin/clients/${encodeURIComponent(clientId)}/logo`,
+    method: 'POST',
+    data: payload,
+  })
+}
+
+export function setUserAvatar(userId: string, payload: FileUploadPayload) {
+  return request<FileRow>({
+    url: `/admin/users/${encodeURIComponent(userId)}/avatar`,
+    method: 'POST',
+    data: payload,
+  })
+}
+
+export function clearClientLogo(clientId: string) {
+  return request<null>({
+    url: `/admin/clients/${encodeURIComponent(clientId)}/logo`,
+    method: 'DELETE',
+  })
+}
+
+export function clearUserAvatar(userId: string) {
+  return request<null>({
+    url: `/admin/users/${encodeURIComponent(userId)}/avatar`,
+    method: 'DELETE',
+  })
+}
+
+export function listFiles(query: FileQuery) {
+  return request<Paged<FileRow>>({ url: '/admin/files', method: 'GET', params: query })
+}
+
+export function updateFileStatus(id: string, status: 'active' | 'disabled' | 'deleted') {
+  return request<FileRow>({
+    url: `/admin/files/${encodeURIComponent(id)}`,
+    method: 'PATCH',
+    data: { status },
   })
 }

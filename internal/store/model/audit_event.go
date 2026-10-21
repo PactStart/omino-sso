@@ -48,4 +48,8 @@ const (
 	EventAppPermissionUpdated = "app_permission_updated"
 	EventAppPermissionDeleted = "app_permission_deleted"
 	EventAppGrantUpdated      = "app_grant_updated"
+
+	// 图片上传（004-object-storage-upload，AGENTS.md §6.7）。
+	EventFileUploaded      = "file_uploaded"
+	EventFileStatusUpdated = "file_status_updated"
 )

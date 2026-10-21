@@ -30,6 +30,7 @@ export interface UserRow {
   id: string
   username: string
   displayName: string
+  avatarUrl: string | null
   email: string | null
   phone: string | null
   deptId: string
@@ -290,6 +291,8 @@ export interface CreateClientPayload {
   grantTypes: string[]
   scopes: string[]
   isPublic: boolean
+  /** 已上传（target_id 为空）的 logo 文件记录 ID；创建成功后由服务端回填绑定 */
+  fileId?: string
 }
 
 export interface CreatedClient {
@@ -326,4 +329,56 @@ export interface AuditQuery {
   to?: string
   page?: number
   pageSize?: number
+}
+
+/* ---------------- 004 文件上传 ---------------- */
+
+/** 预签名直传凭证（POST /files/upload-credential 响应） */
+export interface UploadCredential {
+  key: string
+  uploadUrl: string
+  accessKeyId: string
+  securityToken: string
+  policy: string
+  signature: string
+  expiresAt: string
+}
+
+export interface FileRow {
+  id: string
+  provider: string
+  scene: 'app_logo' | 'user_avatar'
+  format: string
+  size: number
+  url: string
+  status: 'active' | 'disabled' | 'deleted'
+  creator: string
+  /** 创建人用户名（后端解析，列表展示用） */
+  creatorName: string
+  createdAt: string
+}
+
+export interface FileQuery {
+  scene?: string
+  status?: string
+  keyword?: string
+  /** 创建人用户 ID */
+  creatorId?: string
+  page?: number
+  pageSize?: number
+}
+
+export interface FileUploadPayload {
+  key: string
+  format: string
+  size: number
+}
+
+/** 通用上传确认（POST /files/confirm）；targetId 为空表示先落文件、后绑定 */
+export interface FileConfirmPayload {
+  scene: 'app_logo' | 'user_avatar'
+  key: string
+  format: string
+  size: number
+  targetId?: string
 }

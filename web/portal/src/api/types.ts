@@ -71,3 +71,27 @@ export interface ChangePasswordPayload {
   oldPassword: string
   newPassword: string
 }
+
+/** 预签名直传凭证（POST /files/upload-credential 响应） */
+export interface UploadCredential {
+  key: string
+  uploadUrl: string
+  accessKeyId: string
+  securityToken: string
+  policy: string
+  signature: string
+  expiresAt: string
+}
+
+/** 上传确认后的文件记录 */
+export interface FileRow {
+  id: string
+  provider: string
+  scene: 'app_logo' | 'user_avatar'
+  format: string
+  size: number
+  url: string
+  status: 'active' | 'disabled' | 'deleted'
+  creator: string
+  createdAt: string
+}

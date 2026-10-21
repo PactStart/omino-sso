@@ -63,7 +63,14 @@ function goAdmin() {
           </button>
 
           <div class="flex items-center gap-2">
+            <img
+              v-if="user?.avatarUrl"
+              :src="user.avatarUrl"
+              class="h-8 w-8 rounded-full object-cover"
+              alt="头像"
+            />
             <span
+              v-else
               class="flex h-8 w-8 items-center justify-center rounded-full bg-brand-100 text-xs font-semibold text-brand-700"
             >
               {{ initialOf(user?.displayName) }}

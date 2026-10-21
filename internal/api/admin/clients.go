@@ -70,6 +70,8 @@ type CreateClientRequest struct {
 	GrantTypes   []string `json:"grantTypes" example:"authorization_code,refresh_token"`
 	Scopes       []string `json:"scopes" example:"openid,profile,email"`
 	IsPublic     bool     `json:"isPublic" example:"false"`
+	// FileID 为已上传（target_id 为空）的 logo 文件记录 ID；创建成功后回填 target_id 并写回 logo_url。
+	FileID string `json:"fileId" example:"01J9ZK9M1N3P5Q7R9S1T3V5W7X"`
 }
 
 // CreateClient POST /api/v1/admin/clients
@@ -105,10 +107,16 @@ func (h *Handler) CreateClient(c *gin.Context) {
 		GrantTypes:   req.GrantTypes,
 		Scopes:       req.Scopes,
 		IsPublic:     req.IsPublic,
+		FileID:       req.FileID,
 	})
 	if err != nil {
-		h.log.Error("create client", "err", err)
-		response.Fail(c, response.ErrInternal)
+		switch {
+		case errors.Is(err, service.ErrFileNotFound), errors.Is(err, service.ErrFileValidation):
+			response.Fail(c, response.ErrValidation)
+		default:
+			h.log.Error("create client", "err", err)
+			response.Fail(c, response.ErrInternal)
+		}
 		return
 	}
 	h.audit.Emit(c.Request.Context(), service.Event{
