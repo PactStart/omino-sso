@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"regexp"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/omino/omino-sso/internal/pkg/clock"
 	"github.com/omino/omino-sso/internal/pkg/crypto"
 	"github.com/omino/omino-sso/internal/pkg/id"
+	"github.com/omino/omino-sso/internal/service/notification"
 	"github.com/omino/omino-sso/internal/store"
 	"github.com/omino/omino-sso/internal/store/model"
 )
@@ -27,7 +29,36 @@ var (
 	ErrWeakPassword       = errors.New("weak password")
 	ErrDeptNotFound       = errors.New("department not found")
 	ErrSamePassword       = errors.New("new password equals old password")
+
+	// 联系方式与验证码（005-verification-code-auth）。
+	ErrTargetInUse    = errors.New("contact already in use")
+	ErrTargetNotBound = errors.New("contact not bound")
+	ErrInvalidTarget  = errors.New("invalid contact format")
+	ErrCodeInvalid    = notification.ErrCodeInvalid
 )
+
+// 账号标识类型（FR-005：按输入格式自动识别）。
+type IdentifierKind int
+
+const (
+	IdentifierUsername IdentifierKind = iota
+	IdentifierEmail
+	IdentifierPhone
+)
+
+var identifierPhonePattern = regexp.MustCompile(`^1\d{10}$`)
+
+// DetectIdentifier 按正则识别账号标识：11 位手机号 / 含 @ 的邮箱 / 其余按用户名。
+func DetectIdentifier(raw string) (IdentifierKind, string) {
+	v := strings.TrimSpace(raw)
+	if identifierPhonePattern.MatchString(v) {
+		return IdentifierPhone, v
+	}
+	if strings.Contains(v, "@") {
+		return IdentifierEmail, strings.ToLower(v)
+	}
+	return IdentifierUsername, v
+}
 
 var dummyHash string
 
@@ -37,6 +68,13 @@ type UserService struct {
 	cfg   *config.Config
 	audit *Auditor
 	log   *slog.Logger
+	notif *notification.Service
+}
+
+// SetNotification 注入验证码服务（联系方式绑定 / 验证码登录 / 重置密码使用）。
+// 独立 setter 而非构造参数，避免既有调用点与测试被迫改动。
+func (s *UserService) SetNotification(n *notification.Service) {
+	s.notif = n
 }
 
 // NewUserService 构造。
@@ -94,14 +132,43 @@ type Meta struct {
 }
 
 // Authenticate 校验用户名密码。
-// 返回 (user, needMFA, error)。账号不存在时也执行一次哈希比较，避免时间侧信道。
+// 账号不存在时也执行一次哈希比较，避免时间侧信道。
 func (s *UserService) Authenticate(ctx context.Context, username, password string, meta Meta) (*model.User, error) {
-	u, err := s.st.GetUserByUsername(ctx, username)
+	return s.authenticate(ctx, username, func(ctx context.Context) (*model.User, error) {
+		return s.st.GetUserByUsername(ctx, username)
+	}, password, meta)
+}
+
+// AuthenticateByIdentifier 按标识符（用户名/邮箱/手机号）校验密码（FR-005）。
+// 三种标识符各自命中唯一索引，识别逻辑由 DetectIdentifier 统一完成。
+func (s *UserService) AuthenticateByIdentifier(ctx context.Context, identifier, password string, meta Meta) (*model.User, error) {
+	kind, value := DetectIdentifier(identifier)
+	return s.authenticate(ctx, value, func(ctx context.Context) (*model.User, error) {
+		switch kind {
+		case IdentifierPhone:
+			return s.st.GetUserByPhone(ctx, value)
+		case IdentifierEmail:
+			return s.st.GetUserByEmail(ctx, value)
+		default:
+			return s.st.GetUserByUsername(ctx, value)
+		}
+	}, password, meta)
+}
+
+// authenticate 是密码登录的共用实现：lookup 负责按标识符取用户。
+func (s *UserService) authenticate(
+	ctx context.Context,
+	label string,
+	lookup func(context.Context) (*model.User, error),
+	password string,
+	meta Meta,
+) (*model.User, error) {
+	u, err := lookup(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			_ = crypto.VerifyPassword(password, dummyHash)
 			s.audit.Emit(ctx, Event{
-				Type: model.EventLoginFailure, Username: username,
+				Type: model.EventLoginFailure, Username: label,
 				IP: meta.IP, UserAgent: meta.UserAgent, Result: "failure",
 				Detail: "user not found",
 			})
@@ -340,6 +407,232 @@ func (s *UserService) DecryptMFASecret(u *model.User) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(b)), nil
+}
+
+// UserByContact 按渠道查询绑定该联系方式的用户。
+func (s *UserService) UserByContact(ctx context.Context, channel, target string) (*model.User, error) {
+	switch channel {
+	case notification.ChannelSMS:
+		return s.st.GetUserByPhone(ctx, target)
+	case notification.ChannelEmail:
+		return s.st.GetUserByEmail(ctx, target)
+	default:
+		return nil, gorm.ErrRecordNotFound
+	}
+}
+
+// ContactOwner 返回占用该联系方式的用户；未被占用时返回 (nil, nil)。
+// 供 API 层判断占用与存在性，避免 api 直接依赖 gorm。
+func (s *UserService) ContactOwner(ctx context.Context, channel, target string) (*model.User, error) {
+	u, err := s.UserByContact(ctx, channel, target)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+// BindPhone 绑定/修改手机号：验证码验证归属 + 唯一性校验（FR-001/003/004）。
+// 返回脱敏后的手机号。
+func (s *UserService) BindPhone(ctx context.Context, userID, phone, code string, meta Meta) (string, error) {
+	return s.bindContact(ctx, userID, notification.ChannelSMS, notification.SceneBindPhone, phone, code, meta)
+}
+
+// BindEmail 绑定/修改邮箱（FR-002/003/004）。返回脱敏后的邮箱。
+func (s *UserService) BindEmail(ctx context.Context, userID, email, code string, meta Meta) (string, error) {
+	return s.bindContact(ctx, userID, notification.ChannelEmail, notification.SceneBindEmail, email, code, meta)
+}
+
+func (s *UserService) bindContact(ctx context.Context, userID, channel, scene, target, code string, meta Meta) (string, error) {
+	if s.notif == nil {
+		return "", notification.ErrChannelDisabled
+	}
+	normalized, err := notification.NormalizeTarget(channel, target)
+	if err != nil {
+		return "", ErrInvalidTarget
+	}
+	// 唯一性校验放在验证码消费之前，冲突时不让用户白白消耗验证码。
+	if u, err := s.UserByContact(ctx, channel, normalized); err == nil && u.ID != userID {
+		return "", ErrTargetInUse
+	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", err
+	}
+	if err := s.notif.Verify(ctx, channel, scene, normalized, code); err != nil {
+		return "", err
+	}
+
+	switch channel {
+	case notification.ChannelSMS:
+		err = s.st.UpdatePhone(ctx, userID, normalized)
+	default:
+		err = s.st.UpdateEmail(ctx, userID, normalized)
+	}
+	if err != nil {
+		// 并发绑定同一联系方式时由唯一索引兜底。
+		if errors.Is(err, store.ErrDuplicateKey) {
+			return "", ErrTargetInUse
+		}
+		return "", err
+	}
+
+	eventType := model.EventPhoneBound
+	if channel == notification.ChannelEmail {
+		eventType = model.EventEmailBound
+	}
+	masked := notification.MaskTarget(channel, normalized)
+	username := ""
+	if u, err := s.st.GetUserByID(ctx, userID); err == nil {
+		username = u.Username
+	}
+	s.audit.Emit(ctx, Event{
+		Type: eventType, UserID: userID, Username: username,
+		IP: meta.IP, UserAgent: meta.UserAgent, Result: "success",
+		Fields: map[string]any{"channel": channel, "target": masked},
+	})
+	return masked, nil
+}
+
+// AuthenticateByCode 验证码登录（FR-006/007）。验证码已证明渠道归属，调用方不得再要求 TOTP。
+func (s *UserService) AuthenticateByCode(ctx context.Context, channel, target, code string, meta Meta) (*model.User, error) {
+	if s.notif == nil {
+		return nil, notification.ErrChannelDisabled
+	}
+	normalized, err := notification.NormalizeTarget(channel, target)
+	if err != nil {
+		return nil, ErrInvalidCredentials
+	}
+	if err := s.notif.Verify(ctx, channel, notification.SceneLogin, normalized, code); err != nil {
+		s.audit.Emit(ctx, Event{
+			Type: model.EventLoginFailure, Username: notification.MaskTarget(channel, normalized),
+			IP: meta.IP, UserAgent: meta.UserAgent, Result: "failure", Detail: "verification code invalid",
+		})
+		return nil, err
+	}
+	u, err := s.UserByContact(ctx, channel, normalized)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			s.audit.Emit(ctx, Event{
+				Type: model.EventLoginFailure, Username: notification.MaskTarget(channel, normalized),
+				IP: meta.IP, UserAgent: meta.UserAgent, Result: "failure", Detail: "user not found",
+			})
+			return nil, ErrInvalidCredentials
+		}
+		return nil, err
+	}
+	if u.Status == model.UserStatusDisabled {
+		return nil, ErrAccountDisabled
+	}
+	now := nowMillis()
+	if u.LockedUntil != nil && *u.LockedUntil > now {
+		return nil, ErrAccountLocked
+	}
+	if err := s.st.ResetFailedAttempts(ctx, u.ID, now); err != nil {
+		s.log.Error("reset failed attempts", "err", err)
+	}
+	return u, nil
+}
+
+// ResetPasswordByCode 未登录通过验证码重置密码（FR-009），成功后不自动登录（澄清 Q1）。
+func (s *UserService) ResetPasswordByCode(ctx context.Context, channel, target, code, newPassword string, meta Meta) error {
+	if s.notif == nil {
+		return notification.ErrChannelDisabled
+	}
+	if !ValidatePassword(newPassword) {
+		return ErrWeakPassword
+	}
+	normalized, err := notification.NormalizeTarget(channel, target)
+	if err != nil {
+		return ErrInvalidTarget
+	}
+	// 先消费验证码，目标不存在时统一返回验证码错误，避免泄露账号存在性。
+	if err := s.notif.Verify(ctx, channel, notification.SceneFindPassword, normalized, code); err != nil {
+		return err
+	}
+	u, err := s.UserByContact(ctx, channel, normalized)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrCodeInvalid
+		}
+		return err
+	}
+	if u.Status == model.UserStatusDisabled {
+		return ErrAccountDisabled
+	}
+	if err := s.setPassword(ctx, u.ID, newPassword); err != nil {
+		return err
+	}
+	if err := s.st.DeleteSessionsByUser(ctx, u.ID); err != nil {
+		s.log.Error("revoke sessions after reset", "err", err, "user", u.ID)
+	}
+	s.auditPasswordReset(ctx, u, meta, "by_code_unauth")
+	return nil
+}
+
+// ResetPasswordWithCode 已登录用户通过验证码重置密码（FR-010），保留当前会话、
+// 吊销其他设备会话。
+func (s *UserService) ResetPasswordWithCode(ctx context.Context, u *model.User, channel, code, newPassword, currentSID string, meta Meta) error {
+	if s.notif == nil {
+		return notification.ErrChannelDisabled
+	}
+	if !ValidatePassword(newPassword) {
+		return ErrWeakPassword
+	}
+	var target string
+	switch channel {
+	case notification.ChannelSMS:
+		if u.Phone == nil || *u.Phone == "" {
+			return ErrTargetNotBound
+		}
+		target = *u.Phone
+	case notification.ChannelEmail:
+		if u.Email == nil || *u.Email == "" {
+			return ErrTargetNotBound
+		}
+		target = *u.Email
+	default:
+		return ErrInvalidTarget
+	}
+	if err := s.notif.Verify(ctx, channel, notification.SceneFindPassword, target, code); err != nil {
+		return err
+	}
+	if crypto.VerifyPassword(newPassword, u.PasswordHash) == nil {
+		return ErrSamePassword
+	}
+	if err := s.setPassword(ctx, u.ID, newPassword); err != nil {
+		return err
+	}
+	if currentSID != "" {
+		if err := s.st.DeleteOtherSessions(ctx, u.ID, currentSID); err != nil {
+			s.log.Error("revoke other sessions after reset", "err", err, "user", u.ID)
+		}
+	}
+	s.auditPasswordReset(ctx, u, meta, "by_code_authed")
+	return nil
+}
+
+// setPassword 更新密码哈希并解除锁定计数（不含会话吊销，由调用方决定范围）。
+func (s *UserService) setPassword(ctx context.Context, userID, newPassword string) error {
+	hash, err := crypto.HashPassword(newPassword, argonParams(s.cfg))
+	if err != nil {
+		return err
+	}
+	return s.st.UpdateUserFields(ctx, userID, map[string]any{
+		"password_hash":       hash,
+		"password_updated_at": clock.NowMillis(),
+		"failed_attempts":     0,
+		"locked_until":        nil,
+		"status":              model.UserStatusActive,
+	})
+}
+
+func (s *UserService) auditPasswordReset(ctx context.Context, u *model.User, meta Meta, scene string) {
+	s.audit.Emit(ctx, Event{
+		Type: model.EventPasswordReset, UserID: u.ID, Username: u.Username,
+		IP: meta.IP, UserAgent: meta.UserAgent, Result: "success",
+		Fields: map[string]any{"scene": scene},
+	})
 }
 
 // NormalizeUsername 用户名去空格，保持大小写。

@@ -55,6 +55,7 @@ async function handleCommand(command: string) {
         <el-menu-item index="/admin/clients">应用管理</el-menu-item>
         <el-menu-item index="/admin/audit">审计日志</el-menu-item>
         <el-menu-item index="/admin/files">文件管理</el-menu-item>
+        <el-menu-item index="/admin/send-records">发送记录</el-menu-item>
       </el-menu>
 
       <div class="header-right">

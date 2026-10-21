@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -41,6 +42,9 @@ type Config struct {
 
 	Argon2 Argon2Config
 	OSS    OSSConfig
+	SMS    SmsConfig
+	Mail   MailConfig
+	Verify VerifyConfig
 
 	LoginMaxFailures     int
 	LoginLockDuration    time.Duration
@@ -80,6 +84,36 @@ type Argon2Config struct {
 	MemoryKiB   uint32
 	Iterations  uint32
 	Parallelism uint8
+}
+
+// SmsConfig 短信通道配置（005-verification-code-auth）。
+// Provider 取值：""（未启用）/ mock（模拟发送，验证码固定 888888）/ chuanglan。
+type SmsConfig struct {
+	Provider          string
+	ChuanglanURL      string
+	ChuanglanAccount  string
+	ChuanglanPassword string
+	ChuanglanTemplate string // 短信模板文案，支持 {code} 占位
+}
+
+// MailConfig 邮件通道配置。
+// Provider 取值：""（未启用）/ mock（模拟发送，验证码固定 888888）/ smtp。
+type MailConfig struct {
+	Provider     string
+	SMTPHost     string
+	SMTPPort     int
+	SMTPUsername string
+	SMTPPassword string
+	From         string
+	TemplatePath string // html/template 模板文件路径
+}
+
+// VerifyConfig 验证码策略与发送记录保留期。
+type VerifyConfig struct {
+	CodeTTL             time.Duration
+	ResendInterval      time.Duration
+	MaxAttempts         int
+	RecordRetentionDays int
 }
 
 // OSSConfig 对象存储配置（provider 驱动，004-object-storage-upload）。
@@ -165,6 +199,28 @@ func Load() (*Config, error) {
 			StsDurationSeconds: envInt("OSS_STS_DURATION_SECONDS", 3600),
 			CredentialTTL:      time.Duration(envInt("OSS_CREDENTIAL_TTL", 300)) * time.Second,
 		},
+		SMS: SmsConfig{
+			Provider:          env("SMS_PROVIDER", "mock"),
+			ChuanglanURL:      env("SMS_CHUANGLAN_URL", ""),
+			ChuanglanAccount:  env("SMS_CHUANGLAN_ACCOUNT", ""),
+			ChuanglanPassword: env("SMS_CHUANGLAN_PASSWORD", ""),
+			ChuanglanTemplate: env("SMS_CHUANGLAN_TEMPLATE", ""),
+		},
+		Mail: MailConfig{
+			Provider:     env("MAIL_PROVIDER", "mock"),
+			SMTPHost:     env("MAIL_SMTP_HOST", ""),
+			SMTPPort:     envInt("MAIL_SMTP_PORT", 587),
+			SMTPUsername: env("MAIL_SMTP_USERNAME", ""),
+			SMTPPassword: env("MAIL_SMTP_PASSWORD", ""),
+			From:         env("MAIL_FROM", ""),
+			TemplatePath: env("MAIL_TEMPLATE_PATH", "./configs/verify-mail.tmpl"),
+		},
+		Verify: VerifyConfig{
+			CodeTTL:             time.Duration(envInt("VERIFY_CODE_TTL", 300)) * time.Second,
+			ResendInterval:      time.Duration(envInt("VERIFY_RESEND_INTERVAL", 60)) * time.Second,
+			MaxAttempts:         envInt("VERIFY_MAX_ATTEMPTS", 5),
+			RecordRetentionDays: envInt("VERIFY_RECORD_RETENTION_DAYS", 180),
+		},
 	}
 
 	raw := env("OIDC_CRYPTO_KEY", "")
@@ -230,6 +286,9 @@ func (c *Config) validate() error {
 			return fmt.Errorf("OSS_STS_DURATION_SECONDS must be in [900, 43200]")
 		}
 	}
+	if err := c.validateNotification(); err != nil {
+		return err
+	}
 	if c.AppEnv == "prod" {
 		if !strings.HasPrefix(c.Issuer, "https://") {
 			return errors.New("OIDC_ISSUER must use https in prod")
@@ -237,6 +296,87 @@ func (c *Config) validate() error {
 		if !c.CookieSecure {
 			return errors.New("COOKIE_SECURE must be true in prod")
 		}
+	}
+	return nil
+}
+
+// validateNotification 按 provider 校验短信/邮件通道的必填项，并校验验证码策略。
+// 未配置（provider 为空）表示该通道关闭，不触发校验（与 OSS 一致）。
+func (c *Config) validateNotification() error {
+	switch c.SMS.Provider {
+	case "", "mock":
+	case "chuanglan":
+		var missing []string
+		for name, v := range map[string]string{
+			"SMS_CHUANGLAN_URL":      c.SMS.ChuanglanURL,
+			"SMS_CHUANGLAN_ACCOUNT":  c.SMS.ChuanglanAccount,
+			"SMS_CHUANGLAN_PASSWORD": c.SMS.ChuanglanPassword,
+			"SMS_CHUANGLAN_TEMPLATE": c.SMS.ChuanglanTemplate,
+		} {
+			if strings.TrimSpace(v) == "" {
+				missing = append(missing, name)
+			}
+		}
+		if len(missing) > 0 {
+			sort.Strings(missing)
+			return fmt.Errorf("missing required env for SMS: %s", strings.Join(missing, ", "))
+		}
+	default:
+		return fmt.Errorf("unsupported SMS_PROVIDER: %s", c.SMS.Provider)
+	}
+
+	switch c.Mail.Provider {
+	case "", "mock":
+	case "smtp":
+		var missing []string
+		for name, v := range map[string]string{
+			"MAIL_SMTP_HOST":     c.Mail.SMTPHost,
+			"MAIL_FROM":          c.Mail.From,
+			"MAIL_TEMPLATE_PATH": c.Mail.TemplatePath,
+		} {
+			if strings.TrimSpace(v) == "" {
+				missing = append(missing, name)
+			}
+		}
+		if len(missing) > 0 {
+			sort.Strings(missing)
+			return fmt.Errorf("missing required env for MAIL: %s", strings.Join(missing, ", "))
+		}
+		if c.Mail.SMTPPort <= 0 || c.Mail.SMTPPort > 65535 {
+			return errors.New("MAIL_SMTP_PORT must be in [1, 65535]")
+		}
+		if c.Mail.SMTPUsername != "" && c.Mail.SMTPPassword == "" {
+			return errors.New("MAIL_SMTP_PASSWORD is required when MAIL_SMTP_USERNAME is set")
+		}
+	default:
+		return fmt.Errorf("unsupported MAIL_PROVIDER: %s", c.Mail.Provider)
+	}
+
+	// 生产环境禁止模拟发送（spec Edge Cases：禁止在生成环境误开启模拟发送）。
+	if c.AppEnv == "prod" {
+		if c.SMS.Provider == "mock" {
+			return errors.New("SMS_PROVIDER must not be mock in prod")
+		}
+		if c.Mail.Provider == "mock" {
+			return errors.New("MAIL_PROVIDER must not be mock in prod")
+		}
+	}
+
+	// 零值表示未设置（测试构造的 Config 常见），跳过策略校验；Load 总会填充默认值。
+	if c.Verify.CodeTTL < 0 || c.Verify.CodeTTL > 30*time.Minute {
+		return errors.New("VERIFY_CODE_TTL must be in (0, 30m]")
+	}
+	if c.Verify.ResendInterval < 0 {
+		return errors.New("VERIFY_RESEND_INTERVAL must not be negative")
+	}
+	if c.Verify.CodeTTL > 0 && c.Verify.ResendInterval >= c.Verify.CodeTTL {
+		return errors.New("VERIFY_RESEND_INTERVAL must be less than VERIFY_CODE_TTL")
+	}
+	if c.Verify.MaxAttempts < 0 || c.Verify.MaxAttempts > 10 {
+		return errors.New("VERIFY_MAX_ATTEMPTS must be in [1, 10]")
+	}
+	if c.Verify.RecordRetentionDays < 0 {
+		return errors.New("VERIFY_RECORD_RETENTION_DAYS must not be negative")
 	}
 	return nil
 }

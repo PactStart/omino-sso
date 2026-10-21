@@ -38,6 +38,13 @@ var (
 	ErrAppPermissionInvalidParent = &Error{http.StatusBadRequest, "APP_PERMISSION_INVALID_PARENT", "上级权限不存在或不可作为上级"}
 	ErrAppResourceStale           = &Error{http.StatusConflict, "APP_RESOURCE_STALE", "已被他人修改，请刷新后重试"}
 
+	// 多通道验证与账号安全（005-verification-code-auth，规范 §5.3）。
+	ErrAuthCodeInvalid  = &Error{http.StatusBadRequest, "AUTH_CODE_INVALID", "验证码错误或已过期"}
+	ErrVerifyTargetUsed = &Error{http.StatusConflict, "VERIFY_TARGET_IN_USE", "该手机号或邮箱已被其他账号使用"}
+	ErrVerifySendFailed = &Error{http.StatusBadGateway, "VERIFY_SEND_FAILED", "验证码发送失败，请稍后重试"}
+	ErrMFAAlreadyBound  = &Error{http.StatusConflict, "MFA_ALREADY_BOUND", "已绑定多因素认证"}
+	ErrMFANotBound      = &Error{http.StatusBadRequest, "MFA_NOT_BOUND", "尚未绑定多因素认证"}
+
 	ErrRateLimited    = &Error{http.StatusTooManyRequests, "RATE_LIMITED", "请求过于频繁"}
 	ErrInternal       = &Error{http.StatusInternalServerError, "INTERNAL_ERROR", "服务内部错误"}
 	ErrDependencyDown = &Error{http.StatusServiceUnavailable, "DEPENDENCY_UNAVAILABLE", "依赖服务不可用"}

@@ -41,6 +41,7 @@ import (
 	"github.com/omino/omino-sso/internal/oidc"
 	"github.com/omino/omino-sso/internal/pkg/log"
 	"github.com/omino/omino-sso/internal/service"
+	"github.com/omino/omino-sso/internal/service/notification"
 	"github.com/omino/omino-sso/internal/store"
 )
 
@@ -59,18 +60,22 @@ func main() {
 			newRedis,
 			store.New,
 			newAuditor,
-			service.NewUserService,
+			newNotification,
+			newUserService,
 			service.NewSessionService,
 			service.NewClientService,
 			service.NewOrgService,
 			service.NewAppAuthService,
 			newFileStore,
 			service.NewFileService,
+			service.NewMFAService,
+			service.NewCleanupService,
 			newKeyManager,
 			oidc.NewStorage,
 			oidc.NewProvider,
 		),
 		fx.Invoke(runAuditor),
+		fx.Invoke(runCleanup),
 		fx.Invoke(runServers),
 		fx.Invoke(seedData),
 	)
@@ -79,6 +84,18 @@ func main() {
 
 func newAuditor(st *store.Store, cfg *config.Config, logger *slog.Logger) *service.Auditor {
 	return service.NewAuditor(st, cfg.AuditAsyncBuffer, logger)
+}
+
+// newNotification 按 provider 配置装配短信/邮箱通道（mock 时验证码固定 888888）。
+func newNotification(cfg *config.Config, st *store.Store, audit *service.Auditor, logger *slog.Logger) (*notification.Service, error) {
+	return notification.New(cfg, st, audit, logger)
+}
+
+// newUserService 在既有构造函数上注入验证码服务，保持既有调用点不变。
+func newUserService(st *store.Store, cfg *config.Config, audit *service.Auditor, notif *notification.Service, logger *slog.Logger) *service.UserService {
+	svc := service.NewUserService(st, cfg, audit, logger)
+	svc.SetNotification(notif)
+	return svc
 }
 
 func newDB(cfg *config.Config) (*gorm.DB, error) {
@@ -116,6 +133,21 @@ func runAuditor(lc fx.Lifecycle, a *service.Auditor) {
 	})
 }
 
+// runCleanup 启动内置清理任务（发送记录与审计日志按保留期物理删除）。
+func runCleanup(lc fx.Lifecycle, c *service.CleanupService) {
+	ctx, cancel := context.WithCancel(context.Background())
+	lc.Append(fx.Hook{
+		OnStart: func(context.Context) error {
+			go c.Run(ctx)
+			return nil
+		},
+		OnStop: func(context.Context) error {
+			cancel()
+			return nil
+		},
+	})
+}
+
 // runServers 同时启动协议层（:8080）与管理 API（:8081），两者物理分离。
 func runServers(
 	lc fx.Lifecycle,
@@ -130,11 +162,13 @@ func runServers(
 	orgs *service.OrgService,
 	appAuth *service.AppAuthService,
 	fileSvc *service.FileService,
+	notif *notification.Service,
+	mfaSvc *service.MFAService,
 	audit *service.Auditor,
 ) {
 	oidc.NewServer(lc, cfg, provider, oidcStorage, st, users, sessions, clients, audit, logger)
 
-	router := api.NewRouter(cfg, st, users, sessions, clients, orgs, appAuth, fileSvc, audit, logger)
+	router := api.NewRouter(cfg, st, users, sessions, clients, orgs, appAuth, fileSvc, notif, mfaSvc, audit, logger)
 	api.NewServer(lc, cfg, router, logger)
 }
 

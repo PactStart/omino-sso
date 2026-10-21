@@ -382,3 +382,36 @@ export interface FileConfirmPayload {
   size: number
   targetId?: string
 }
+
+/* ---------------- 005 发送记录 ---------------- */
+
+export interface SendRecordRow {
+  id: string
+  channel: 'sms' | 'email'
+  scene: 'bind_phone' | 'bind_email' | 'login' | 'find_password' | 'mfa_unbind'
+  /** 服务端脱敏后的接收方 */
+  target: string
+  result: 'success' | 'failed'
+  provider: 'chuanglan' | 'smtp' | 'mock'
+  error: string | null
+  /** Unix 毫秒 */
+  createdAt: number
+}
+
+export interface SendRecordQuery {
+  channel?: string
+  scene?: string
+  result?: string
+  startTime?: string
+  endTime?: string
+  page?: number
+  pageSize?: number
+}
+
+/** 发送记录分页载荷（契约 §8：items + total） */
+export interface SendRecordPage {
+  items: SendRecordRow[]
+  total: number
+  page: number
+  pageSize: number
+}

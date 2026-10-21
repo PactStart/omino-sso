@@ -1,4 +1,5 @@
 import axios, { type AxiosRequestConfig } from 'axios'
+import { API_BASE_URL } from '@/config'
 
 /** 统一响应包（AGENTS.md §5） */
 export interface ApiEnvelope<T> {
@@ -37,7 +38,8 @@ const CUSTOM_MESSAGE: Record<string, string> = {
 }
 
 const http = axios.create({
-  baseURL: '/api/v1',
+  // 由 VITE_API_BASE_URL 决定（同源默认 /api/v1；跨域部署可指向独立 API 域名）
+  baseURL: API_BASE_URL,
   withCredentials: true,
   timeout: 15000,
   // 业务语义由 code 判断，HTTP 状态码只用于辅助

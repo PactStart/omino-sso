@@ -18,13 +18,25 @@ type Handler struct {
 	sessions *service.SessionService
 	clients  *service.ClientService
 	files    *service.FileService
+	mfa      *service.MFAService
 	audit    *service.Auditor
 	log      *slog.Logger
 }
 
 // NewHandler 构造。
-func NewHandler(users *service.UserService, sessions *service.SessionService, clients *service.ClientService, files *service.FileService, audit *service.Auditor, logger *slog.Logger) *Handler {
-	return &Handler{users: users, sessions: sessions, clients: clients, files: files, audit: audit, log: logger}
+func NewHandler(
+	users *service.UserService,
+	sessions *service.SessionService,
+	clients *service.ClientService,
+	files *service.FileService,
+	mfaSvc *service.MFAService,
+	audit *service.Auditor,
+	logger *slog.Logger,
+) *Handler {
+	return &Handler{
+		users: users, sessions: sessions, clients: clients,
+		files: files, mfa: mfaSvc, audit: audit, log: logger,
+	}
 }
 
 // Profile GET /api/v1/me

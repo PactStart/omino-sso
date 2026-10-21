@@ -36,6 +36,51 @@ func (s *Store) GetUserByUsername(ctx context.Context, username string) (*model.
 	return &u, nil
 }
 
+// GetUserByEmail 按邮箱查询（邮箱列排序规则为 utf8mb4_0900_ai_ci，大小写不敏感）。
+func (s *Store) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
+	var u model.User
+	if err := s.DB(ctx).Where("email = ?", email).Take(&u).Error; err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
+// GetUserByPhone 按手机号查询（依赖 uk_users_phone 唯一索引）。
+func (s *Store) GetUserByPhone(ctx context.Context, phone string) (*model.User, error) {
+	var u model.User
+	if err := s.DB(ctx).Where("phone = ?", phone).Take(&u).Error; err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
+// UpdatePhone 写入或清空手机号（空串写 NULL，释放唯一索引占用）。
+// 唯一键冲突统一返回 ErrDuplicateKey，供 service 映射为业务错误码。
+func (s *Store) UpdatePhone(ctx context.Context, id, phone string) error {
+	var v any
+	if phone != "" {
+		v = phone
+	}
+	err := s.UpdateUserFields(ctx, id, map[string]any{"phone": v})
+	if isDuplicate(err) {
+		return ErrDuplicateKey
+	}
+	return err
+}
+
+// UpdateEmail 写入或清空邮箱（空串写 NULL）。
+func (s *Store) UpdateEmail(ctx context.Context, id, email string) error {
+	var v any
+	if email != "" {
+		v = email
+	}
+	err := s.UpdateUserFields(ctx, id, map[string]any{"email": v})
+	if isDuplicate(err) {
+		return ErrDuplicateKey
+	}
+	return err
+}
+
 // GetUsernamesByIDs 批量查询用户 id -> username（文件记录创建人等展示场景）。
 func (s *Store) GetUsernamesByIDs(ctx context.Context, ids []string) (map[string]string, error) {
 	if len(ids) == 0 {

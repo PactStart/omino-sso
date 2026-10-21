@@ -61,6 +61,20 @@
 | 样式（portal） | `tailwindcss` | `4.1.0` | 登录页 / 门户 |
 | 组件库（admin） | `element-plus` | `2.9.1` | 表格 / 树 / 表单 |
 | 图表 | `echarts` + `vue-echarts` | `5.5.1` / `7.0.3` | 审计统计 |
+| 二维码 | `qrcode` | `1.5.4` | 两步验证绑定二维码（浏览器 canvas 渲染 `otpauth://`，2026-10-22 新增） |
+
+**前端质量工具（devDependencies，2026-10-22 新增）**
+
+| 组件 | 模块 | 锁定版本 | 用途 |
+|---|---|---|---|
+| Linter | `eslint` | `10.13.0` | 扁平配置 `eslint.config.js`，两套前端各自 `npm run lint` |
+| Vue 规则 | `eslint-plugin-vue` | `10.11.1` | `flat/essential` |
+| TS 规则 | `typescript-eslint` | `8.72.0` | 类型感知关闭，仅语法/未使用变量等硬规则 |
+| Vue+TS 预设 | `@vue/eslint-config-typescript` | `14.9.0` | 组合上述两套 |
+| 全局变量 | `globals` | `17.13.0` | `browser` 全局声明 |
+| 二维码类型 | `@types/qrcode` | `1.5.6` | `qrcode` 的 TS 类型 |
+
+> 上述前端依赖走 `devDependencies`/`dependencies` 的**精确版本**（`npm install --save-exact`），与 §2.1 的锁定策略一致；升级须单独提交。
 
 ### 2.3 基础设施
 
@@ -151,12 +165,21 @@ omino-sso/
 │   │       ├── users.go
 │   │       ├── orgs.go
 │   │       ├── clients.go
-│   │       └── audit.go
+│   │       ├── audit.go
+│   │       └── send_records.go        # 005：发送记录分页查询
 │   ├── service/                       # 业务规则层（不依赖 gin/gorm）
-│   │   ├── user.go
+│   │   ├── user.go                    # 含标识符识别 / 联系方式绑定 / 验证码重置密码
+│   │   ├── mfa.go                     # 005：MFA 绑定与解绑
+│   │   ├── cleanup.go                 # 005：内置定时清理（发送记录 / 审计日志）
 │   │   ├── client.go
 │   │   ├── session.go
-│   │   └── audit.go
+│   │   ├── audit.go                   # 含 notification.AuditSink 实现
+│   │   └── notification/              # 005：验证码与发送通道抽象
+│   │       ├── provider.go            # Provider 接口 / 场景渠道枚举 / 脱敏
+│   │       ├── chuanglan.go           # 创蓝短信（HTTP，3s 超时）
+│   │       ├── smtp.go                # SMTP 邮件（模板文件 + multipart/alternative）
+│   │       ├── mock.go                # 模拟发送（固定 888888）
+│   │       └── service.go             # 签发 / 校验 / 发送记录 / 审计
 │   ├── store/
 │   │   ├── module.go                  # fx.Module("store")，Provide 接口绑定
 │   │   ├── db.go                      # gorm.Open + 连接池 + 健康检查
@@ -169,8 +192,10 @@ omino-sso/
 │   │   │   ├── refresh_token.go
 │   │   │   ├── session.go
 │   │   │   ├── consent.go
+│   │   │   ├── send_record.go         # 005
 │   │   │   └── audit_event.go
 │   │   ├── user_store.go
+│   │   ├── send_record_store.go       # 005：发送记录 CRUD + 分批清理
 │   │   ├── client_store.go
 │   │   ├── code_store.go              # 原子 UPDATE 消费授权码
 │   │   ├── token_store.go             # 刷新轮换 + family 吊销
@@ -187,12 +212,17 @@ omino-sso/
 │       │   └── clock.go               # 接口化，便于测试
 │       └── log/
 │           └── log.go
+├── configs/
+│   ├── dev-signing-key.pem            # 开发用签名私钥（不入仓库）
+│   └── verify-mail.tmpl               # 005：验证码邮件模板（html/template）
 ├── migrations/
 │   ├── 0001_init.up.sql
 │   ├── 0001_init.down.sql
+│   ├── 0005_verification_auth.up.sql  # 005：send_records + uk_users_phone
 │   └── README.md                      # 手写 SQL，禁止 AutoMigrate
 └── web/
     ├── portal/                        # 登录页 + 账号中心（Tailwind）
+    │   ├── eslint.config.js
     │   ├── index.html
     │   ├── vite.config.ts
     │   ├── src/main.ts
@@ -203,6 +233,7 @@ omino-sso/
     │   ├── src/views/Apps.vue
     │   └── src/styles/tokens.css      # 品牌变量（主色 / 圆角 / 字体）
     └── admin/                         # 管理后台（Element Plus）
+        ├── eslint.config.js
         ├── index.html
         ├── vite.config.ts
         ├── src/main.ts
@@ -211,6 +242,7 @@ omino-sso/
         ├── src/views/Users.vue        # 左组织树 + 右用户表
         ├── src/views/Clients.vue
         ├── src/views/AuditLogs.vue
+        ├── src/views/SendRecords.vue  # 005 发送记录
         └── src/views/Settings.vue
 ```
 
@@ -248,12 +280,20 @@ omino-sso/
 | POST | `/oauth2/introspect` | 令牌自省 | client |
 | GET | `/oauth2/end_session` | 登出 | session |
 | GET | `/.well-known/openid-configuration` | 元数据 | 无 |
-| POST | `/api/v1/auth/login` | 账号密码登录 | 无 |
+| POST | `/api/v1/auth/login` | 账号登录（密码 / 邮箱验证码 / 手机验证码） | 无 |
 | POST | `/api/v1/auth/mfa/verify` | MFA 二次校验 | mfaTicket |
+| POST | `/api/v1/auth/code` | 发送短信/邮箱验证码 | 无（bind 类场景需 session） |
+| POST | `/api/v1/auth/password/reset` | 找回（重置）密码 | 无 |
 | POST | `/api/v1/auth/logout` | 登出 | session |
 | GET | `/api/v1/me` | 当前用户 | session |
 | GET | `/api/v1/me/apps` | 我可访问的应用 | session |
 | POST | `/api/v1/me/password` | 修改密码 | session |
+| POST | `/api/v1/me/password/reset` | 验证码重置密码（吊销其他设备会话） | session |
+| POST | `/api/v1/me/phone` | 绑定/修改手机号 | session |
+| POST | `/api/v1/me/email` | 绑定/修改邮箱 | session |
+| POST | `/api/v1/me/mfa/bind` | 启动 MFA 绑定（返回 otpauth URL） | session |
+| POST | `/api/v1/me/mfa/bind/confirm` | 确认 MFA 绑定 | session |
+| POST | `/api/v1/me/mfa/unbind` | 验证码解绑 MFA | session |
 | GET | `/api/v1/me/sessions` | 登录设备列表 | session |
 | DELETE | `/api/v1/me/sessions/:sid` | 撤销会话 | session |
 | GET | `/api/v1/admin/users` | 用户列表 | admin |
@@ -267,6 +307,7 @@ omino-sso/
 | POST | `/api/v1/admin/clients` | 注册应用 | admin |
 | POST | `/api/v1/admin/clients/:id/secret` | 轮换密钥 | admin |
 | GET | `/api/v1/admin/audit-logs` | 审计日志 | admin |
+| GET | `/api/v1/admin/send-records` | 短信/邮箱发送记录 | admin |
 
 > **`PATCH /api/v1/admin/users/:id` 的行为修正**：提交 `deptId` 时，服务端在短事务内锁定目标部门并校验其存在，不存在返回 `400 VALIDATION_FAILED`（过去为静默写入，会与部门删除竞态产生悬空 `dept_id`）。`POST /api/v1/admin/users` 的 `deptId` 校验方式同步调整为同一临界区，对外行为不变。
 >
@@ -357,12 +398,17 @@ omino-sso/
 
 | 字段 | 类型 | 必填 | 约束 |
 |---|---|---|---|
-| `username` | string | 是 | 1–64，trim 后非空，大小写敏感 |
-| `password` | string | 是 | 8–128 |
+| `loginType` | string | 否 | `password`（默认）/ `email_code` / `sms_code` |
+| `identifier` | string | 否 | 用户名 / 邮箱 / 手机号，服务端按正则识别；`password` 方式下与 `username` 二选一 |
+| `username` | string | 否 | 兼容旧调用；`identifier` 为空时使用 |
+| `password` | string | 否 | `loginType=password` 时必填，8–128 |
+| `code` | string | 否 | `loginType=email_code/sms_code` 时必填，6 位 |
 | `captchaId` | string | 否 | 连续失败 ≥ 3 次后必填 |
 | `captchaCode` | string | 否 | 4 位，不区分大小写 |
 | `clientId` | string | 是 | 默认 `portal` |
 | `rememberMe` | bool | 否 | true 时会话 7 天，否则 8 小时 |
+
+> **多方式登录语义**：`password` 方式按 `^1\d{10}$` 判手机号、含 `@` 判邮箱、其余判用户名，各自命中唯一索引后走既有密码校验与账号锁定策略；`email_code` / `sms_code` 方式校验一次性验证码（scene=`login`），成功后**不触发** TOTP 二步（渠道验证已证明归属），`amr` 记 `email_otp` / `sms_otp`。
 
 **响应 200（需二次 MFA）**
 
@@ -619,6 +665,11 @@ omino-sso/
 | 409 | `APP_PERMISSION_HAS_CHILDREN` | 权限下仍有子权限，不允许删除 |
 | 400 | `APP_PERMISSION_INVALID_PARENT` | 上级权限不存在 / 为自身或自身后代 / 跨应用 |
 | 409 | `APP_RESOURCE_STALE` | 写请求携带的 `updatedAt` 与服务端不一致（并发编辑） |
+| 400 | `AUTH_CODE_INVALID` | 短信/邮箱验证码错误、过期、已使用或错误次数超限 |
+| 409 | `VERIFY_TARGET_IN_USE` | 手机号/邮箱已被其他账号占用 |
+| 502 | `VERIFY_SEND_FAILED` | 验证码供应商发送失败或通道未配置 |
+| 409 | `MFA_ALREADY_BOUND` | 当前账号已绑定 MFA |
+| 400 | `MFA_NOT_BOUND` | 当前账号尚未绑定 MFA |
 | 429 | `RATE_LIMITED` | 触发限流 |
 | 500 | `INTERNAL_ERROR` | 未预期错误（日志记录完整堆栈，响应不含） |
 | 503 | `DEPENDENCY_UNAVAILABLE` | MySQL/Redis 不可用 |
@@ -765,7 +816,9 @@ omino-sso/
 | `trace_id` | VARCHAR(32) | NULL | |
 | `created_at` | BIGINT | NOT NULL, INDEX | |
 
-`event_type` 枚举（新增需登记）：`login_success`、`login_failure`、`mfa_success`、`mfa_failure`、`logout`、`password_changed`、`token_issued`、`token_revoked`、`code_reused`、`refresh_reused`、`user_created`、`user_updated`、`client_created`、`client_secret_rotated`、`org_created`、`org_updated`、`org_deleted`、`client_updated`、`app_member_added`、`app_member_removed`、`app_role_created`、`app_role_updated`、`app_role_deleted`、`app_permission_created`、`app_permission_updated`、`app_permission_deleted`、`app_grant_updated`、`file_uploaded`、`file_status_updated`。
+`event_type` 枚举（新增需登记）：`login_success`、`login_failure`、`mfa_success`、`mfa_failure`、`logout`、`password_changed`、`token_issued`、`token_revoked`、`code_reused`、`refresh_reused`、`user_created`、`user_updated`、`client_created`、`client_secret_rotated`、`org_created`、`org_updated`、`org_deleted`、`client_updated`、`app_member_added`、`app_member_removed`、`app_role_created`、`app_role_updated`、`app_role_deleted`、`app_permission_created`、`app_permission_updated`、`app_permission_deleted`、`app_grant_updated`、`file_uploaded`、`file_status_updated`、`verification_code_sent`、`phone_bound`、`email_bound`、`mfa_bound`、`mfa_unbound`、`password_reset`。
+
+> `verification_code_sent` 的 `detail` 记 `{channel,scene,target,provider}`（`target` 已脱敏）；验证码登录成功/失败复用 `login_success`/`login_failure`，MFA 二步复用 `mfa_success`/`mfa_failure`。
 
 `detail` 详略规则（003 起）：一般只记字段名列表与数量；**地址类字段（`redirectUris` / `postLogoutUris`）记变更前后的完整数组**；删除角色/权限记被解除绑定的 ID 快照（超过 20 项记数量 + 前 20 项）。
 
@@ -816,6 +869,25 @@ omino-sso/
 | `updated_at` | BIGINT | NOT NULL | |
 
 索引：`idx_files_scene_created(scene, created_at)`、`idx_files_status(status)`、`idx_files_target(scene, target_id)`。
+
+### 6.11 `send_records`（005，`migrations/0005_verification_auth.up.sql`）
+
+短信/邮箱验证码发送流水（审计型，不使用软删除，按保留期物理清理）。
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `id` | CHAR(26) | PK | ULID |
+| `channel` | VARCHAR(16) | NOT NULL, INDEX | `sms` / `email` |
+| `scene` | VARCHAR(32) | NOT NULL, INDEX | `bind_phone` / `bind_email` / `login` / `find_password` / `mfa_unbind` |
+| `target` | VARCHAR(128) | NOT NULL | **脱敏后**的接收方 |
+| `result` | VARCHAR(16) | NOT NULL, INDEX | `success` / `failed` |
+| `provider` | VARCHAR(32) | NOT NULL | `chuanglan` / `smtp` / `mock` |
+| `error` | VARCHAR(255) | NULL | 失败原因 |
+| `created_at` | BIGINT | NOT NULL, INDEX | 清理依据 |
+
+索引：`idx_send_records_created(created_at)`、`idx_send_records_channel_created(channel, created_at)`、`idx_send_records_scene_created(scene, created_at)`、`idx_send_records_result_created(result, created_at)`。
+
+> 同一迁移为 `users` 新增 `UNIQUE KEY uk_users_phone (phone)`（`uk_users_email` 已在 0001 存在）：手机号全局唯一，唯一索引允许多个 NULL，存量未绑定账号不受影响。发送记录与审计日志保留 180 天（`VERIFY_RECORD_RETENTION_DAYS`），由进程内每日定时任务分批物理删除。
 
 ---
 
@@ -988,6 +1060,22 @@ docker compose up -d --build   # mysql + redis + sso + nginx(静态托管两套�
 | `OSS_BASE_PATH` | 否 | 空 | 对象键前缀，例 `sso` |
 | `OSS_CUSTOM_DOMAIN` | 否 | `https://<bucket>.<endpoint>` | 公开访问域名 |
 | `OSS_CREDENTIAL_TTL` | 否 | `300` | 直传凭证有效期（秒） |
+| `SMS_PROVIDER` | 否 | `mock` | `mock` / `chuanglan` / 空（关闭）；`prod` 下禁止 `mock` |
+| `SMS_CHUANGLAN_URL` | 条件 | — | provider=chuanglan 时必填，创蓝 HTTP 接口地址 |
+| `SMS_CHUANGLAN_ACCOUNT` | 条件 | — | 同上 |
+| `SMS_CHUANGLAN_PASSWORD` | 条件 | — | 同上，服务端专用 |
+| `SMS_CHUANGLAN_TEMPLATE` | 条件 | — | 短信模板文案，`{code}` 替换为验证码 |
+| `MAIL_PROVIDER` | 否 | `mock` | `mock` / `smtp` / 空（关闭）；`prod` 下禁止 `mock` |
+| `MAIL_SMTP_HOST` | 条件 | — | provider=smtp 时必填 |
+| `MAIL_SMTP_PORT` | 否 | `587` | |
+| `MAIL_SMTP_USERNAME` | 否 | 空 | 非空时 `MAIL_SMTP_PASSWORD` 必填 |
+| `MAIL_SMTP_PASSWORD` | 条件 | — | |
+| `MAIL_FROM` | 条件 | — | 发件人，形如 `omino-sso <no-reply@example.com>` |
+| `MAIL_TEMPLATE_PATH` | 否 | `./configs/verify-mail.tmpl` | `html/template` 模板文件 |
+| `VERIFY_CODE_TTL` | 否 | `300` | 秒，验证码有效期上限 30 分钟 |
+| `VERIFY_RESEND_INTERVAL` | 否 | `60` | 秒，必须小于 `VERIFY_CODE_TTL` |
+| `VERIFY_MAX_ATTEMPTS` | 否 | `5` | 单个验证码最大连续错误次数 |
+| `VERIFY_RECORD_RETENTION_DAYS` | 否 | `180` | 发送记录与审计日志保留天数 |
 | `ADMIN_BOOTSTRAP_USERNAME` | 是（首次） | — | 初始化管理员，仅在 `users` 为空时生效 |
 | `ADMIN_BOOTSTRAP_PASSWORD` | 是（首次） | — | 初始化后必须立即修改，并在生产环境删除该变量 |
 

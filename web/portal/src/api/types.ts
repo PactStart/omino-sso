@@ -17,11 +17,54 @@ export interface Me {
   createdAt: string
 }
 
+export type LoginType = 'password' | 'email_code' | 'sms_code'
+export type VerifyChannel = 'sms' | 'email'
+export type VerifyScene = 'bind_phone' | 'bind_email' | 'login' | 'find_password' | 'mfa_unbind'
+
 export interface LoginPayload {
-  username: string
-  password: string
+  loginType?: LoginType
+  identifier?: string
+  username?: string
+  password?: string
+  code?: string
   clientId: string
   rememberMe: boolean
+}
+
+export interface SendCodePayload {
+  scene: VerifyScene
+  channel: VerifyChannel
+  target: string
+}
+
+export interface SendCodeResult {
+  expiresIn: number
+  resendAfter: number
+}
+
+export interface ResetPasswordPayload {
+  channel: VerifyChannel
+  target: string
+  code: string
+  newPassword: string
+}
+
+export interface BindPhoneResult {
+  phone: string
+}
+
+export interface BindEmailResult {
+  email: string
+}
+
+export interface MfaBindStart {
+  otpauthUrl: string
+  mfaSetupTicket: string
+  expiresIn: number
+}
+
+export interface MfaBoundResult {
+  bound: boolean
 }
 
 export interface LoginUserBrief {

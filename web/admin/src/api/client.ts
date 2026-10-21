@@ -1,4 +1,5 @@
 import axios, { type AxiosRequestConfig } from 'axios'
+import { API_BASE_URL } from '@/config'
 
 /** 统一响应包（AGENTS.md §5） */
 export interface ApiEnvelope<T> {
@@ -34,7 +35,8 @@ const CUSTOM_MESSAGE: Record<string, string> = {
 }
 
 const http = axios.create({
-  baseURL: '/api/v1',
+  // 由 VITE_API_BASE_URL 决定（同源默认 /api/v1）
+  baseURL: API_BASE_URL,
   withCredentials: true,
   timeout: 15000,
   validateStatus: () => true,

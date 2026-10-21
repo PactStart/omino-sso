@@ -7,10 +7,11 @@ DOCS_VERSION_PKG := github.com/omino/omino-sso/internal/api/docs
 SWAGGER_JSON := .tmp/swagger/swagger.json
 OPENAPI_JSON := internal/api/docs/openapi.json
 
-.PHONY: help deps keys dev build test lint build-web docs docs-check docs-serve migrate-up migrate-down clean
+.PHONY: help deps keys assets dev build test lint lint-go lint-web build-web docs docs-check docs-serve migrate-up migrate-down clean
 
 help:
 	@echo "deps        下载依赖"
+	@echo "assets      校验运行时资源（邮件验证码模板）存在"
 	@echo "keys        生成开发用 RSA 签名密钥"
 	@echo "dev         启动服务（:8080 协议层 / :8081 管理 API）"
 	@echo "build       漂移检查 + 编译到 $(BIN)"
@@ -18,7 +19,8 @@ help:
 	@echo "docs-check  校验已提交文档与注解是否一致（不一致则非零退出）"
 	@echo "docs-serve  生成文档并启动服务，回显文档地址"
 	@echo "migrate-up  执行数据库迁移"
-	@echo "test        单元测试"
+	@echo "test        单元测试（集成测试需 TEST_MYSQL_DSN / TEST_REDIS_ADDR）"
+	@echo "lint        Go + 两个前端的 lint 门禁"
 	@echo "build-web   构建两个前端产物到 web/dist"
 
 deps:
@@ -30,10 +32,18 @@ keys:
 	@chmod 600 configs/dev-signing-key.pem
 	@echo "signing key ready: configs/dev-signing-key.pem"
 
-dev:
+# 运行时资源（005）：邮件验证码模板随 configs/ 交付，路径由 MAIL_TEMPLATE_PATH 指定；
+# 缺失时启动后首次发信才失败，这里提前到构建/启动前暴露。
+assets:
+	@test -f configs/verify-mail.tmpl || { \
+		echo "缺少运行时资源：configs/verify-mail.tmpl（MAIL_TEMPLATE_PATH 默认指向它）"; \
+		exit 1; \
+	}
+
+dev: assets
 	$(GO) run ./cmd/sso
 
-build: docs-check
+build: docs-check assets
 	@mkdir -p bin
 	$(GO) build -ldflags "-X $(DOCS_VERSION_PKG).Version=$(VERSION)" -o $(BIN) ./cmd/sso
 
@@ -61,13 +71,20 @@ test:
 # lint 是宪法要求的交付检查（「开发工作流与质量门禁」第 1 条），必须能真正失败：
 # 不允许 `|| true` 吞掉问题，也不允许工具缺失时静默通过。
 GOLANGCI ?= golangci-lint
-lint:
+# 前后端聚合门禁：任一失败即非零退出
+lint: lint-go lint-web
+
+lint-go:
 	@command -v $(GOLANGCI) >/dev/null 2>&1 || { \
 		echo "golangci-lint 未安装，无法执行 lint 门禁。安装："; \
 		echo "  go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
 		exit 1; \
 	}
 	$(GOLANGCI) run ./...
+
+lint-web:
+	cd web/portal && npm run lint
+	cd web/admin && npm run lint
 
 # 两个前端产物 -> web/dist/portal、web/dist/admin
 # NPM_INSTALL 可覆盖：流水线保持 `npm ci`（锁文件一致性），本机 npm 的批量删除保护

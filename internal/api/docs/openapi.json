@@ -345,6 +345,66 @@
         },
         "type": "object"
       },
+      "admin.SendRecordItem": {
+        "properties": {
+          "channel": {
+            "example": "sms",
+            "type": "string"
+          },
+          "createdAt": {
+            "example": 1780000000000,
+            "type": "integer"
+          },
+          "error": {
+            "example": "null",
+            "type": "string"
+          },
+          "id": {
+            "example": "01J9ZK2Q3W5X7Y9A1B3C5D7E9F",
+            "type": "string"
+          },
+          "provider": {
+            "example": "chuanglan",
+            "type": "string"
+          },
+          "result": {
+            "example": "success",
+            "type": "string"
+          },
+          "scene": {
+            "example": "login",
+            "type": "string"
+          },
+          "target": {
+            "example": "138****8000",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "admin.SendRecordPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/admin.SendRecordItem"
+            },
+            "type": "array"
+          },
+          "page": {
+            "example": 1,
+            "type": "integer"
+          },
+          "pageSize": {
+            "example": 20,
+            "type": "integer"
+          },
+          "total": {
+            "example": 42,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "admin.UpdateClientRequest": {
         "properties": {
           "accessTokenTtl": {
@@ -465,10 +525,27 @@
             "example": "portal",
             "type": "string"
           },
+          "code": {
+            "example": "123456",
+            "type": "string"
+          },
+          "identifier": {
+            "example": "zhangsan",
+            "maxLength": 128,
+            "type": "string"
+          },
+          "loginType": {
+            "enum": [
+              "password",
+              "email_code",
+              "sms_code"
+            ],
+            "example": "password",
+            "type": "string"
+          },
           "password": {
             "example": "S3cure!pass",
             "maxLength": 128,
-            "minLength": 8,
             "type": "string"
           },
           "rememberMe": {
@@ -478,14 +555,9 @@
           "username": {
             "example": "zhangsan",
             "maxLength": 64,
-            "minLength": 1,
             "type": "string"
           }
         },
-        "required": [
-          "password",
-          "username"
-        ],
         "type": "object"
       },
       "auth.MFAVerifyRequest": {
@@ -503,6 +575,95 @@
           "code",
           "mfaTicket"
         ],
+        "type": "object"
+      },
+      "auth.ResetPasswordRequest": {
+        "properties": {
+          "channel": {
+            "enum": [
+              "sms",
+              "email"
+            ],
+            "example": "email",
+            "type": "string"
+          },
+          "code": {
+            "example": "123456",
+            "type": "string"
+          },
+          "newPassword": {
+            "example": "N3w!pass2026",
+            "maxLength": 128,
+            "minLength": 8,
+            "type": "string"
+          },
+          "target": {
+            "example": "zhangsan@example.com",
+            "maxLength": 128,
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "code",
+          "newPassword",
+          "target"
+        ],
+        "type": "object"
+      },
+      "auth.SendCodeRequest": {
+        "properties": {
+          "captchaCode": {
+            "example": "8f3k",
+            "type": "string"
+          },
+          "captchaId": {
+            "example": "01J9ZK2Q3W5X7Y9A1B3C5D7E9F",
+            "type": "string"
+          },
+          "channel": {
+            "enum": [
+              "sms",
+              "email"
+            ],
+            "example": "sms",
+            "type": "string"
+          },
+          "scene": {
+            "enum": [
+              "bind_phone",
+              "bind_email",
+              "login",
+              "find_password",
+              "mfa_unbind"
+            ],
+            "example": "bind_phone",
+            "type": "string"
+          },
+          "target": {
+            "example": "13800138000",
+            "maxLength": 128,
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "scene",
+          "target"
+        ],
+        "type": "object"
+      },
+      "auth.SendCodeResult": {
+        "properties": {
+          "expiresIn": {
+            "example": 300,
+            "type": "integer"
+          },
+          "resendAfter": {
+            "example": 60,
+            "type": "integer"
+          }
+        },
         "type": "object"
       },
       "dto.AppItem": {
@@ -1417,6 +1578,115 @@
         ],
         "type": "object"
       },
+      "me.BindEmailRequest": {
+        "properties": {
+          "code": {
+            "example": "123456",
+            "type": "string"
+          },
+          "email": {
+            "example": "zhangsan@example.com",
+            "maxLength": 128,
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "email"
+        ],
+        "type": "object"
+      },
+      "me.BindPhoneRequest": {
+        "properties": {
+          "code": {
+            "example": "123456",
+            "type": "string"
+          },
+          "phone": {
+            "example": "13800138000",
+            "maxLength": 20,
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "phone"
+        ],
+        "type": "object"
+      },
+      "me.BoundResult": {
+        "properties": {
+          "bound": {
+            "example": true,
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "me.EmailResult": {
+        "properties": {
+          "email": {
+            "example": "z***@example.com",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "me.MFABindConfirmRequest": {
+        "properties": {
+          "code": {
+            "example": "123456",
+            "type": "string"
+          },
+          "mfaSetupTicket": {
+            "example": "mfs_5c1e9a7b3d2f",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "mfaSetupTicket"
+        ],
+        "type": "object"
+      },
+      "me.MFABindStartResult": {
+        "properties": {
+          "expiresIn": {
+            "example": 600,
+            "type": "integer"
+          },
+          "mfaSetupTicket": {
+            "example": "mfs_5c1e9a7b3d2f",
+            "type": "string"
+          },
+          "otpauthUrl": {
+            "example": "otpauth://totp/omino-sso:zhangsan?secret=JBSWY3DPEHPK3PXP\u0026issuer=omino-sso",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "me.MFAUnbindRequest": {
+        "properties": {
+          "channel": {
+            "enum": [
+              "sms",
+              "email"
+            ],
+            "example": "sms",
+            "type": "string"
+          },
+          "code": {
+            "example": "123456",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "code"
+        ],
+        "type": "object"
+      },
       "me.PasswordRequest": {
         "properties": {
           "newPassword": {
@@ -1435,6 +1705,43 @@
         "required": [
           "newPassword",
           "oldPassword"
+        ],
+        "type": "object"
+      },
+      "me.PhoneResult": {
+        "properties": {
+          "phone": {
+            "example": "138****8000",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "me.ResetPasswordRequest": {
+        "properties": {
+          "channel": {
+            "enum": [
+              "sms",
+              "email"
+            ],
+            "example": "sms",
+            "type": "string"
+          },
+          "code": {
+            "example": "123456",
+            "type": "string"
+          },
+          "newPassword": {
+            "example": "N3w!pass2026",
+            "maxLength": 128,
+            "minLength": 8,
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "code",
+          "newPassword"
         ],
         "type": "object"
       },
@@ -4975,6 +5282,168 @@
         "x-auth-level": "admin"
       }
     },
+    "/api/v1/admin/send-records": {
+      "get": {
+        "description": "按渠道、场景、结果与时间范围筛选验证码发送记录，created_at 倒序。未传 startTime/endTime 时默认最近 30 天（强制带时间范围以命中 created_at 索引）。target 为服务端脱敏后的接收方。",
+        "parameters": [
+          {
+            "description": "页码，默认 1",
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "每页条数，默认 20，上限 100",
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "渠道",
+            "in": "query",
+            "name": "channel",
+            "schema": {
+              "enum": [
+                "sms",
+                "email"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "场景",
+            "in": "query",
+            "name": "scene",
+            "schema": {
+              "enum": [
+                "bind_phone",
+                "bind_email",
+                "login",
+                "find_password",
+                "mfa_unbind"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "结果",
+            "in": "query",
+            "name": "result",
+            "schema": {
+              "enum": [
+                "success",
+                "failed"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "起始时间（Unix 毫秒或 RFC3339）",
+            "in": "query",
+            "name": "startTime",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "结束时间（Unix 毫秒或 RFC3339）",
+            "in": "query",
+            "name": "endTime",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/admin.SendRecordPage"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "分页查询短信/邮箱发送记录",
+        "tags": [
+          "审计"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
     "/api/v1/admin/users": {
       "get": {
         "description": "按关键字、部门与状态筛选用户，返回分页结果；keyword 同时匹配 username 与 displayName。",
@@ -5565,6 +6034,121 @@
         "x-auth-level": "admin"
       }
     },
+    "/api/v1/auth/code": {
+      "post": {
+        "description": "按场景向手机号或邮箱发送 6 位验证码（默认 5 分钟有效，同一目标 60 秒内不可重发）。bind_phone / bind_email 需登录会话且目标已被他人占用时返回 VERIFY_TARGET_IN_USE；login / find_password / mfa_unbind 对未注册或未绑定的目标返回与成功一致的响应但不真实发送（防枚举）。provider=mock 时验证码固定 888888 且不产生真实短信/邮件。\n图形验证码字段（captchaId/captchaCode）为未登录防刷预留，当前与 /auth/login 一致仅做透传。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/auth.SendCodeRequest"
+              }
+            }
+          },
+          "description": "发送验证码请求体",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/auth.SendCodeResult"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "已发送（或按防枚举约定静默成功）"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED（bind 类场景缺少会话）"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VERIFY_TARGET_IN_USE"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "RATE_LIMITED"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VERIFY_SEND_FAILED"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "summary": "发送验证码",
+        "tags": [
+          "认证"
+        ]
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
         "description": "校验账号密码。账号启用 MFA 时不下发会话，改返回 mfaTicket（300 秒内有效，需再调用 /auth/mfa/verify）；连续失败 5 次锁定 15 分钟。成功时通过 Set-Cookie 下发 HttpOnly 的 sid，响应体不含任何令牌。\n响应 data 有两种形状：需 MFA 时为 dto.LoginMfaChallenge（mfaRequired/mfaTicket/expiresIn），登录完成时为 dto.LoginResult（含 redirectTo 与 user）；文档只保留后者的 schema。",
@@ -5826,6 +6410,89 @@
           }
         },
         "summary": "校验 TOTP 动态码",
+        "tags": [
+          "认证"
+        ]
+      }
+    },
+    "/api/v1/auth/password/reset": {
+      "post": {
+        "description": "校验邮箱或手机验证码后设置新密码。成功不自动登录（需用新密码重新登录），并吊销该账号全部会话、写入 password_reset 审计事件。未绑定该联系方式的账号统一返回 AUTH_CODE_INVALID，不泄露账号存在性。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/auth.ResetPasswordRequest"
+              }
+            }
+          },
+          "description": "重置密码请求体",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "已重置"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED / AUTH_CODE_INVALID / WEAK_PASSWORD"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "AUTH_ACCOUNT_DISABLED"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "RATE_LIMITED"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "summary": "找回（重置）密码",
         "tags": [
           "认证"
         ]
@@ -6334,6 +7001,364 @@
         ]
       }
     },
+    "/api/v1/me/email": {
+      "post": {
+        "description": "校验邮箱验证码后写入邮箱（修改时验证码发自新邮箱）。邮箱全局唯一，已被他人占用返回 VERIFY_TARGET_IN_USE。响应返回服务端脱敏后的邮箱。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/me.BindEmailRequest"
+              }
+            }
+          },
+          "description": "绑定邮箱请求体",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/me.EmailResult"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED / AUTH_CODE_INVALID"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VERIFY_TARGET_IN_USE"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "绑定/修改邮箱",
+        "tags": [
+          "我的"
+        ]
+      }
+    },
+    "/api/v1/me/mfa/bind": {
+      "post": {
+        "description": "为当前账号生成 TOTP 密钥（暂存 10 分钟，不落库），返回 otpauth:// URL 供前端渲染二维码，以及一次性 mfaSetupTicket。需再调用 /me/mfa/bind/confirm 提交 6 位动态码后才真正启用。已绑定返回 MFA_ALREADY_BOUND。",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/me.MFABindStartResult"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "MFA_ALREADY_BOUND"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "启动 MFA 绑定",
+        "tags": [
+          "我的"
+        ]
+      }
+    },
+    "/api/v1/me/mfa/bind/confirm": {
+      "post": {
+        "description": "消费 mfaSetupTicket 并校验 6 位 TOTP 动态码，通过后加密保存密钥、置 mfa_enabled=true 并写入 mfa_bound 审计事件。ticket 一次性，过期或重复使用返回 AUTH_MFA_TICKET_EXPIRED。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/me.MFABindConfirmRequest"
+              }
+            }
+          },
+          "description": "确认绑定请求体",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/me.BoundResult"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "已绑定"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED / AUTH_MFA_INVALID / AUTH_MFA_TICKET_EXPIRED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "确认 MFA 绑定",
+        "tags": [
+          "我的"
+        ]
+      }
+    },
+    "/api/v1/me/mfa/unbind": {
+      "post": {
+        "description": "校验发往当前账号已绑定手机号或邮箱的验证码（scene=mfa_unbind）后清空密钥并置 mfa_enabled=false，写入 mfa_unbound 审计事件。未绑定返回 MFA_NOT_BOUND。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/me.MFAUnbindRequest"
+              }
+            }
+          },
+          "description": "解绑请求体",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/me.BoundResult"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "已解绑"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED / AUTH_CODE_INVALID / MFA_NOT_BOUND"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "解绑 MFA",
+        "tags": [
+          "我的"
+        ]
+      }
+    },
     "/api/v1/me/password": {
       "post": {
         "description": "校验原密码后更新为新密码，成功后吊销该用户的全部会话并清除 sid cookie（需重新登录），同时写入 password_changed 审计事件。",
@@ -6407,6 +7432,184 @@
           }
         ],
         "summary": "修改密码",
+        "tags": [
+          "我的"
+        ]
+      }
+    },
+    "/api/v1/me/password/reset": {
+      "post": {
+        "description": "向当前账号已绑定的手机号或邮箱发送验证码（scene=find_password），校验通过后更新密码。成功后保留当前会话、吊销该账号其他设备会话，并写入 password_reset 审计事件。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/me.ResetPasswordRequest"
+              }
+            }
+          },
+          "description": "重置密码请求体",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "已重置"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED / AUTH_CODE_INVALID / WEAK_PASSWORD"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "重置密码（已登录）",
+        "tags": [
+          "我的"
+        ]
+      }
+    },
+    "/api/v1/me/phone": {
+      "post": {
+        "description": "校验短信验证码后写入手机号（修改时验证码发自新号码）。手机号全局唯一，已被他人占用返回 VERIFY_TARGET_IN_USE。响应返回服务端脱敏后的手机号。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/me.BindPhoneRequest"
+              }
+            }
+          },
+          "description": "绑定手机号请求体",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/me.PhoneResult"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED / AUTH_CODE_INVALID"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VERIFY_TARGET_IN_USE"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "绑定/修改手机号",
         "tags": [
           "我的"
         ]

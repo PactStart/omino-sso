@@ -52,4 +52,12 @@ const (
 	// 图片上传（004-object-storage-upload，AGENTS.md §6.7）。
 	EventFileUploaded      = "file_uploaded"
 	EventFileStatusUpdated = "file_status_updated"
+
+	// 多通道验证与账号安全（005-verification-code-auth，AGENTS.md §6.7）。
+	EventVerificationCodeSent = "verification_code_sent"
+	EventPhoneBound           = "phone_bound"
+	EventEmailBound           = "email_bound"
+	EventMFABound             = "mfa_bound"
+	EventMFAUnbound           = "mfa_unbound"
+	EventPasswordReset        = "password_reset"
 )
