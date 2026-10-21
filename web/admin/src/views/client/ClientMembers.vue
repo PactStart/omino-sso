@@ -369,19 +369,6 @@ onMounted(async () => {
         </div>
       </div>
 
-      <el-alert
-        v-if="!loading && total === 0 && !listError"
-        class="empty-hint"
-        type="warning"
-        show-icon
-        :closable="false"
-        title="当前无成员，员工在门户将看不到该应用"
-      >
-        <template #default>
-          <el-button size="small" type="primary" @click="openAdd">立即添加成员</el-button>
-        </template>
-      </el-alert>
-
       <div v-if="selectedCount > 0" class="selection-bar">
         <span>已选择 {{ selectedCount }} 名成员</span>
         <el-button link type="primary" @click="selectAllMembers">

@@ -422,7 +422,9 @@ onMounted(loadClients)
               <el-button link type="danger" @click="removeRedirectUri(index)">删除</el-button>
             </div>
             <el-button link type="primary" @click="addRedirectUri">+ 添加回调地址</el-button>
-            <p class="field-hint">必须与接入方实际回调地址完全一致，不支持通配符</p>
+            <p class="field-hint">
+              登录成功后 IdP 会把用户连同一次性授权码（code）重定向回此地址；必须与接入方配置完全一致，不支持通配符
+            </p>
           </div>
         </el-form-item>
 
@@ -431,6 +433,10 @@ onMounted(loadClients)
             <el-option label="authorization_code" value="authorization_code" />
             <el-option label="refresh_token" value="refresh_token" />
           </el-select>
+          <p class="field-hint">
+            authorization_code=授权码模式：登录后 IdP 把一次性 code 重定向到回调地址，再由后端用 code 换令牌；
+            refresh_token=允许长期续期令牌（需同时勾选 offline_access）
+          </p>
         </el-form-item>
 
         <el-form-item label="scope">
@@ -440,7 +446,10 @@ onMounted(loadClients)
             <el-option label="email" value="email" />
             <el-option label="offline_access" value="offline_access" />
           </el-select>
-          <p class="field-hint">使用 refresh_token 时需同时勾选 offline_access</p>
+          <p class="field-hint">
+            决定本次授权能拿到哪些信息：openid=身份标识，profile=基础资料，email=邮箱，offline_access=允许刷新令牌
+            （勾选 refresh_token 时需同时勾选 offline_access）
+          </p>
         </el-form-item>
       </el-form>
 

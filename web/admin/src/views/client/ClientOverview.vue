@@ -150,14 +150,6 @@ function removeRedirect(index: number) {
   form.redirectUris.splice(index, 1)
 }
 
-function addLogout() {
-  form.postLogoutUris.push('')
-}
-
-function removeLogout(index: number) {
-  form.postLogoutUris.splice(index, 1)
-}
-
 /* ---------------- 停用二次确认（FR-004） ---------------- */
 
 async function beforeStatusChange(): Promise<boolean> {
@@ -191,7 +183,6 @@ async function save() {
       description: form.description.trim(),
       logoUrl: form.logoUrl.trim(),
       redirectUris: form.redirectUris.map((u) => u.trim()).filter(Boolean),
-      postLogoutUris: form.postLogoutUris.map((u) => u.trim()).filter(Boolean),
       accessTokenTtl: form.accessTokenTtl,
       refreshTokenTtl: form.refreshTokenTtl,
       status: form.status,
@@ -337,21 +328,11 @@ onMounted(load)
             </div>
           </el-form-item>
 
-          <el-form-item label="登出地址" prop="postLogoutUris">
+          <el-form-item label="登出地址">
             <div class="uri-list">
-              <div v-for="(_, index) in form.postLogoutUris" :key="index" class="uri-row">
-                <el-input v-model="form.postLogoutUris[index]" placeholder="https://app.example.com/" />
-                <el-button link type="danger" @click="removeLogout(index)">删除</el-button>
-              </div>
-              <el-button
-                v-if="form.postLogoutUris.length < 10"
-                link
-                type="primary"
-                @click="addLogout"
-              >
-                + 添加登出地址
-              </el-button>
-              <p class="field-hint">0–10 条，单点登出后回跳的地址</p>
+              <div v-for="(u, index) in form.postLogoutUris" :key="index" class="uri-row">{{ u }}</div>
+              <span v-if="form.postLogoutUris.length === 0">-</span>
+              <p class="field-hint">仅展示，不可编辑</p>
             </div>
           </el-form-item>
 
