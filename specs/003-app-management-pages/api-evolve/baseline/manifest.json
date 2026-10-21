@@ -1,0 +1,10 @@
+{
+  "captured_at": "2026-10-21T04:33:54Z",
+  "files": [
+    {
+      "path": "internal/api/docs/openapi.json",
+      "format": "openapi-3",
+      "sha256": "2d80e908a86457a1cb6cf0a1485b8d92896174f73e2bee7be00e1a2b71eaee73"
+    }
+  ]
+}

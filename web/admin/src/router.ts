@@ -20,6 +20,61 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '应用管理', requiresAdmin: true },
   },
   {
+    // 应用子页面：左侧五菜单固定，右侧内容区由子路由渲染（FR-001 / FR-002）
+    path: '/admin/clients/:clientId',
+    component: () => import('@/views/client/ClientDetail.vue'),
+    meta: { title: '应用详情', requiresAdmin: true },
+    children: [
+      {
+        path: '',
+        name: 'client-detail',
+        redirect: (to) => ({
+          name: 'client-overview',
+          params: { clientId: String(to.params.clientId) },
+        }),
+      },
+      {
+        path: 'overview',
+        name: 'client-overview',
+        component: () => import('@/views/client/ClientOverview.vue'),
+        meta: { title: '应用详情', requiresAdmin: true },
+      },
+      {
+        path: 'members',
+        name: 'client-members',
+        component: () => import('@/views/client/ClientMembers.vue'),
+        meta: { title: '应用成员', requiresAdmin: true },
+      },
+      {
+        path: 'roles',
+        name: 'client-roles',
+        component: () => import('@/views/client/ClientRoles.vue'),
+        meta: { title: '应用角色', requiresAdmin: true },
+      },
+      {
+        path: 'permissions',
+        name: 'client-permissions',
+        component: () => import('@/views/client/ClientPermissions.vue'),
+        meta: { title: '应用权限', requiresAdmin: true },
+      },
+      {
+        path: 'grants',
+        name: 'client-grants',
+        component: () => import('@/views/client/ClientGrants.vue'),
+        meta: { title: '授权管理', requiresAdmin: true },
+      },
+      {
+        // 非法 tab 一律回到「应用详情」，不落到 404（T015）
+        path: ':tab',
+        name: 'client-tab-fallback',
+        redirect: (to) => ({
+          name: 'client-overview',
+          params: { clientId: String(to.params.clientId) },
+        }),
+      },
+    ],
+  },
+  {
     path: '/admin/audit',
     name: 'audit',
     component: () => import('@/views/Audit.vue'),

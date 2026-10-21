@@ -1,6 +1,23 @@
 {
   "components": {
     "schemas": {
+      "admin.AddMembersRequest": {
+        "properties": {
+          "deptId": {
+            "type": "string"
+          },
+          "includeSubDepts": {
+            "type": "boolean"
+          },
+          "userIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "admin.CreateClientRequest": {
         "properties": {
           "clientName": {
@@ -175,9 +192,164 @@
         },
         "type": "object"
       },
+      "admin.PermissionCreateRequest": {
+        "properties": {
+          "code": {
+            "example": "order:read",
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "example": "订单读取",
+            "type": "string"
+          },
+          "parentId": {
+            "type": "string"
+          },
+          "sort": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "type": "object"
+      },
+      "admin.PermissionUpdateRequest": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "parentId": {
+            "type": "string"
+          },
+          "sort": {
+            "type": "integer"
+          },
+          "updatedAt": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "admin.PutPermissionsRequest": {
+        "properties": {
+          "permissionIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "updatedAt": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "admin.PutRoleMembersRequest": {
+        "properties": {
+          "updatedAt": {
+            "type": "integer"
+          },
+          "userIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "admin.RemoveMembersRequest": {
+        "properties": {
+          "userIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "admin.RoleCreateRequest": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "example": "opsAdmin",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "admin.RoleUpdateRequest": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "admin.RotateSecretRequest": {
         "properties": {
           "gracePeriodSeconds": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "admin.UpdateClientRequest": {
+        "properties": {
+          "accessTokenTtl": {
+            "type": "integer"
+          },
+          "clientName": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "logoUrl": {
+            "type": "string"
+          },
+          "postLogoutUris": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "redirectUris": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "refreshTokenTtl": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "updatedAt": {
             "type": "integer"
           }
         },
@@ -321,6 +493,128 @@
         },
         "type": "object"
       },
+      "dto.AppMemberItem": {
+        "properties": {
+          "deptId": {
+            "example": "01J9ZJ7A1B2C3D4E5F6G7H8J9K",
+            "type": "string"
+          },
+          "deptName": {
+            "example": "技术中心",
+            "type": "string"
+          },
+          "displayName": {
+            "example": "张三",
+            "type": "string"
+          },
+          "joinedAt": {
+            "example": "2026-10-20T10:00:00Z",
+            "type": "string"
+          },
+          "roleCount": {
+            "example": 2,
+            "type": "integer"
+          },
+          "status": {
+            "example": 1,
+            "type": "integer"
+          },
+          "userId": {
+            "example": "01J9ZJ8Q2M4N6P8R0T2V4X6Z8A",
+            "type": "string"
+          },
+          "username": {
+            "example": "zhangsan",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "dto.AppPermissionItem": {
+        "properties": {
+          "childCount": {
+            "example": 0,
+            "type": "integer"
+          },
+          "clientId": {
+            "example": "demo-app",
+            "type": "string"
+          },
+          "code": {
+            "example": "order:read",
+            "type": "string"
+          },
+          "createdAt": {
+            "example": "2026-10-20T10:00:00Z",
+            "type": "string"
+          },
+          "description": {
+            "example": "只读访问订单",
+            "type": "string"
+          },
+          "id": {
+            "example": "01J9ZK9M1N3P5Q7R9S1T3V5W7X",
+            "type": "string"
+          },
+          "name": {
+            "example": "订单读取",
+            "type": "string"
+          },
+          "parentId": {
+            "type": "string"
+          },
+          "roleCount": {
+            "example": 2,
+            "type": "integer"
+          },
+          "sort": {
+            "example": 0,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "example": 1792540000000,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "dto.AppRoleItem": {
+        "properties": {
+          "clientId": {
+            "example": "demo-app",
+            "type": "string"
+          },
+          "createdAt": {
+            "example": "2026-10-20T10:00:00Z",
+            "type": "string"
+          },
+          "description": {
+            "example": "运维管理员",
+            "type": "string"
+          },
+          "id": {
+            "example": "01J9ZK9M1N3P5Q7R9S1T3V5W7X",
+            "type": "string"
+          },
+          "memberCount": {
+            "example": 5,
+            "type": "integer"
+          },
+          "name": {
+            "example": "opsAdmin",
+            "type": "string"
+          },
+          "permissionCount": {
+            "example": 3,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "example": 1792540000000,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "dto.AuditItem": {
         "properties": {
           "clientId": {
@@ -356,6 +650,31 @@
             "type": "string"
           },
           "username": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "dto.CandidateItem": {
+        "properties": {
+          "deptId": {
+            "example": "01J9ZJ7A1B2C3D4E5F6G7H8J9K",
+            "type": "string"
+          },
+          "deptName": {
+            "example": "技术中心",
+            "type": "string"
+          },
+          "displayName": {
+            "example": "李四",
+            "type": "string"
+          },
+          "userId": {
+            "example": "01J9ZJ8Q2M4N6P8R0T2V4X6Z8A",
+            "type": "string"
+          },
+          "username": {
+            "example": "lisi",
             "type": "string"
           }
         },
@@ -397,6 +716,10 @@
             "example": "https://cdn.example.com/logo/portal.png",
             "type": "string"
           },
+          "memberCount": {
+            "example": 12,
+            "type": "integer"
+          },
           "postLogoutUris": {
             "example": [
               "https://portal.example.com/signed-out"
@@ -425,6 +748,93 @@
               "type": "string"
             },
             "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "dto.ClientDetail": {
+        "properties": {
+          "accessTokenTtl": {
+            "example": 900,
+            "type": "integer"
+          },
+          "clientId": {
+            "example": "demo-app",
+            "type": "string"
+          },
+          "clientName": {
+            "example": "验收应用",
+            "type": "string"
+          },
+          "createdAt": {
+            "example": "2026-10-20T10:00:00Z",
+            "type": "string"
+          },
+          "description": {
+            "example": "内部验收用",
+            "type": "string"
+          },
+          "grantTypes": {
+            "example": [
+              "authorization_code",
+              "refresh_token"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "isPublic": {
+            "example": false,
+            "type": "boolean"
+          },
+          "logoUrl": {
+            "example": "https://cdn.example.com/logo/demo.png",
+            "type": "string"
+          },
+          "memberCount": {
+            "example": 12,
+            "type": "integer"
+          },
+          "postLogoutUris": {
+            "example": [
+              "https://demo.example.com/signed-out"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "redirectUris": {
+            "example": [
+              "https://demo.example.com/cb"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "refreshTokenTtl": {
+            "example": 2592000,
+            "type": "integer"
+          },
+          "scopes": {
+            "example": [
+              "openid",
+              "profile"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "status": {
+            "example": 1,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "example": 1792540000000,
+            "type": "integer"
           }
         },
         "type": "object"
@@ -481,6 +891,29 @@
         },
         "type": "object"
       },
+      "dto.MemberGrantResult": {
+        "properties": {
+          "added": {
+            "example": 3,
+            "type": "integer"
+          },
+          "autoJoinedMembers": {
+            "example": 2,
+            "type": "integer"
+          },
+          "memberIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "removed": {
+            "example": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "dto.MfaResult": {
         "properties": {
           "redirectTo": {
@@ -525,6 +958,66 @@
           },
           "userCount": {
             "example": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "dto.PermissionGrantResult": {
+        "properties": {
+          "added": {
+            "example": 2,
+            "type": "integer"
+          },
+          "permissionIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "removed": {
+            "example": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "dto.RoleDetail": {
+        "properties": {
+          "clientId": {
+            "example": "demo-app",
+            "type": "string"
+          },
+          "createdAt": {
+            "example": "2026-10-20T10:00:00Z",
+            "type": "string"
+          },
+          "description": {
+            "example": "运维管理员",
+            "type": "string"
+          },
+          "id": {
+            "example": "01J9ZK9M1N3P5Q7R9S1T3V5W7X",
+            "type": "string"
+          },
+          "memberIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "example": "opsAdmin",
+            "type": "string"
+          },
+          "permissionIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "updatedAt": {
+            "example": 1792540000000,
             "type": "integer"
           }
         },
@@ -1004,6 +1497,18 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "为 false 时只返回无成员的应用",
+            "in": "query",
+            "name": "hasMembers",
+            "schema": {
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1222,6 +1727,2015 @@
         "summary": "注册应用",
         "tags": [
           "应用管理"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
+    "/api/v1/admin/clients/{id}": {
+      "get": {
+        "description": "返回应用的可编辑字段、状态与成员数，供子页面刷新直达与回填；不含任何密钥。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.ClientDetail"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "应用详情",
+        "tags": [
+          "应用管理"
+        ],
+        "x-auth-level": "admin"
+      },
+      "patch": {
+        "description": "就地修改名称、描述、图标、地址、两类 TTL 与启用状态；携带 updatedAt 时做乐观版本校验。写入 client_updated 审计（地址类字段记前后数组）。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/admin.UpdateClientRequest"
+              }
+            }
+          },
+          "description": "可编辑字段（缺失=不变）",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.ClientDetail"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "APP_RESOURCE_STALE"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "更新应用详情",
+        "tags": [
+          "应用管理"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
+    "/api/v1/admin/clients/{id}/members": {
+      "get": {
+        "description": "分页返回成员；all=true 时返回当前筛选下的全部 userId（上限 5000，超出返回 VALIDATION_FAILED）。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "用户名前缀或姓名关键字",
+            "in": "query",
+            "name": "keyword",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "部门 ID（含子部门）",
+            "in": "query",
+            "name": "deptId",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "页码，默认 1",
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "每页条数，默认 20，上限 200",
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "为 true 时返回全部 userId",
+            "in": "query",
+            "name": "all",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "allOf": [
+                            {
+                              "$ref": "#/components/schemas/response.Page"
+                            },
+                            {
+                              "properties": {
+                                "list": {
+                                  "items": {
+                                    "$ref": "#/components/schemas/dto.AppMemberItem"
+                                  },
+                                  "type": "array"
+                                },
+                                "page": {
+                                  "type": "integer"
+                                },
+                                "pageSize": {
+                                  "type": "integer"
+                                },
+                                "total": {
+                                  "format": "int64",
+                                  "type": "integer"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "应用成员列表",
+        "tags": [
+          "应用成员"
+        ],
+        "x-auth-level": "admin"
+      },
+      "post": {
+        "description": "幂等添加；userIds 单次 1–500（超出需分片），deptId 形态按部门整批加入并返回新增/已存在/已停用计数。停用账号跳过。写入 app_member_added 审计。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/admin.AddMembersRequest"
+              }
+            }
+          },
+          "description": "userIds 或 deptId",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "批量添加成员",
+        "tags": [
+          "应用成员"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
+    "/api/v1/admin/clients/{id}/members/candidates": {
+      "get": {
+        "description": "返回尚未加入该应用且未停用的用户；pageSize 上限 50；all=true 返回全部 userId（上限 5000）。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "用户名前缀或姓名关键字",
+            "in": "query",
+            "name": "keyword",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "部门 ID（含子部门）",
+            "in": "query",
+            "name": "deptId",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "页码，默认 1",
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "每页条数，默认 20，上限 50",
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "为 true 时返回全部 userId",
+            "in": "query",
+            "name": "all",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "allOf": [
+                            {
+                              "$ref": "#/components/schemas/response.Page"
+                            },
+                            {
+                              "properties": {
+                                "list": {
+                                  "items": {
+                                    "$ref": "#/components/schemas/dto.CandidateItem"
+                                  },
+                                  "type": "array"
+                                },
+                                "page": {
+                                  "type": "integer"
+                                },
+                                "pageSize": {
+                                  "type": "integer"
+                                },
+                                "total": {
+                                  "format": "int64",
+                                  "type": "integer"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "候选成员",
+        "tags": [
+          "应用成员"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
+    "/api/v1/admin/clients/{id}/members/remove": {
+      "post": {
+        "description": "同一事务内解除角色绑定并删除成员关系；userIds 单次 1–500。写入 app_member_removed 审计。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/admin.RemoveMembersRequest"
+              }
+            }
+          },
+          "description": "待移除 userId 列表",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "批量移除成员",
+        "tags": [
+          "应用成员"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
+    "/api/v1/admin/clients/{id}/permissions": {
+      "get": {
+        "description": "返回扁平权限列表（含 childCount/roleCount，上限 1000），由前端组树。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "allOf": [
+                            {
+                              "$ref": "#/components/schemas/response.Page"
+                            },
+                            {
+                              "properties": {
+                                "list": {
+                                  "items": {
+                                    "$ref": "#/components/schemas/dto.AppPermissionItem"
+                                  },
+                                  "type": "array"
+                                },
+                                "page": {
+                                  "type": "integer"
+                                },
+                                "pageSize": {
+                                  "type": "integer"
+                                },
+                                "total": {
+                                  "format": "int64",
+                                  "type": "integer"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "权限列表",
+        "tags": [
+          "应用权限"
+        ],
+        "x-auth-level": "admin"
+      },
+      "post": {
+        "description": "编码 `^[A-Za-z0-9_.:-]{1,64}$`，应用内唯一且大小写敏感；父级须属于同一应用。写入 app_permission_created 审计。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/admin.PermissionCreateRequest"
+              }
+            }
+          },
+          "description": "权限定义",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.AppPermissionItem"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "APP_PERMISSION_CODE_EXISTS"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "新建权限",
+        "tags": [
+          "应用权限"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
+    "/api/v1/admin/clients/{id}/permissions/{pid}": {
+      "delete": {
+        "description": "有子权限返回 409；被角色引用时在同一事务内解除引用后删除。审计记录被解除的角色快照。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "权限 ID",
+            "in": "path",
+            "name": "pid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "success"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "APP_PERMISSION_HAS_CHILDREN"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "删除权限",
+        "tags": [
+          "应用权限"
+        ],
+        "x-auth-level": "admin"
+      },
+      "patch": {
+        "description": "改名/编码/描述/排序/父级；父级为自身或后代返回 400。携带 updatedAt 时做乐观版本校验。写入 app_permission_updated 审计。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "权限 ID",
+            "in": "path",
+            "name": "pid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/admin.PermissionUpdateRequest"
+              }
+            }
+          },
+          "description": "待改字段",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.AppPermissionItem"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "APP_PERMISSION_INVALID_PARENT"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "APP_PERMISSION_CODE_EXISTS"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "修改权限",
+        "tags": [
+          "应用权限"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
+    "/api/v1/admin/clients/{id}/roles": {
+      "get": {
+        "description": "返回应用内角色及其权限数、成员数。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "allOf": [
+                            {
+                              "$ref": "#/components/schemas/response.Page"
+                            },
+                            {
+                              "properties": {
+                                "list": {
+                                  "items": {
+                                    "$ref": "#/components/schemas/dto.AppRoleItem"
+                                  },
+                                  "type": "array"
+                                },
+                                "page": {
+                                  "type": "integer"
+                                },
+                                "pageSize": {
+                                  "type": "integer"
+                                },
+                                "total": {
+                                  "format": "int64",
+                                  "type": "integer"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "角色列表",
+        "tags": [
+          "应用角色"
+        ],
+        "x-auth-level": "admin"
+      },
+      "post": {
+        "description": "角色名 `^[A-Za-z0-9]{1,32}$`，应用内唯一且大小写敏感；描述 ≤100。写入 app_role_created 审计。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/admin.RoleCreateRequest"
+              }
+            }
+          },
+          "description": "角色名与描述",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.AppRoleItem"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "APP_ROLE_NAME_EXISTS"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "新建角色",
+        "tags": [
+          "应用角色"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
+    "/api/v1/admin/clients/{id}/roles/{rid}": {
+      "delete": {
+        "description": "连带解除角色↔权限与角色↔成员绑定（成员本身保留）。审计记录被解除绑定的快照。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "角色 ID",
+            "in": "path",
+            "name": "rid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "success"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "删除角色",
+        "tags": [
+          "应用角色"
+        ],
+        "x-auth-level": "admin"
+      },
+      "get": {
+        "description": "返回角色及其 permissionIds / memberIds。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "角色 ID",
+            "in": "path",
+            "name": "rid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.RoleDetail"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "角色详情",
+        "tags": [
+          "应用角色"
+        ],
+        "x-auth-level": "admin"
+      },
+      "patch": {
+        "description": "改名或改描述；携带 updatedAt 时做乐观版本校验（409 APP_RESOURCE_STALE）。写入 app_role_updated 审计。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "角色 ID",
+            "in": "path",
+            "name": "rid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/admin.RoleUpdateRequest"
+              }
+            }
+          },
+          "description": "待改字段",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.RoleDetail"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "APP_ROLE_NAME_EXISTS"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "修改角色",
+        "tags": [
+          "应用角色"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
+    "/api/v1/admin/clients/{id}/roles/{rid}/members": {
+      "put": {
+        "description": "提交完整 userIds（≤5000，不分片）；缺失的成员自动补入应用。返回新增/移除/自动补入数量。携带 updatedAt 时做乐观版本校验。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "角色 ID",
+            "in": "path",
+            "name": "rid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/admin.PutRoleMembersRequest"
+              }
+            }
+          },
+          "description": "完整成员 ID 集合",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.MemberGrantResult"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "APP_RESOURCE_STALE"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "设置角色成员（覆盖式）",
+        "tags": [
+          "应用授权"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
+    "/api/v1/admin/clients/{id}/roles/{rid}/permissions": {
+      "put": {
+        "description": "提交完整 permissionIds（≤1000，不分片）；返回新增/移除数量。携带 updatedAt 时做乐观版本校验。写入 app_grant_updated 审计。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "角色 ID",
+            "in": "path",
+            "name": "rid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/admin.PutPermissionsRequest"
+              }
+            }
+          },
+          "description": "完整权限 ID 集合",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.PermissionGrantResult"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "APP_RESOURCE_STALE"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "设置角色权限（覆盖式）",
+        "tags": [
+          "应用授权"
         ],
         "x-auth-level": "admin"
       }

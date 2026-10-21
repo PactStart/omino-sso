@@ -17,16 +17,17 @@ import (
 // Handler 处理 /api/v1/admin/*。
 // 只依赖 service，不持有 store：读路径同样经 service（宪法原则 III）。
 type Handler struct {
-	users  *service.UserService
-	client *service.ClientService
-	orgs   *service.OrgService
-	audit  *service.Auditor
-	log    *slog.Logger
+	users   *service.UserService
+	client  *service.ClientService
+	orgs    *service.OrgService
+	appAuth *service.AppAuthService
+	audit   *service.Auditor
+	log     *slog.Logger
 }
 
 // NewHandler 构造。
-func NewHandler(users *service.UserService, clients *service.ClientService, orgs *service.OrgService, audit *service.Auditor, logger *slog.Logger) *Handler {
-	return &Handler{users: users, client: clients, orgs: orgs, audit: audit, log: logger}
+func NewHandler(users *service.UserService, clients *service.ClientService, orgs *service.OrgService, appAuth *service.AppAuthService, audit *service.Auditor, logger *slog.Logger) *Handler {
+	return &Handler{users: users, client: clients, orgs: orgs, appAuth: appAuth, audit: audit, log: logger}
 }
 
 // ListUsers GET /api/v1/admin/users

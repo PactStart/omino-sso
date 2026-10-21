@@ -37,6 +37,23 @@ func (s *Store) ListClients(ctx context.Context, keyword string, page, pageSize 
 	return list, total, err
 }
 
+// UpdateClientFields 在事务内校验版本并更新应用字段（expected 为 nil 时不校验）。
+// 版本不一致返回 ErrStaleResource；应用不存在返回 gorm.ErrRecordNotFound。
+func (s *Store) UpdateClientFields(ctx context.Context, clientID string, updates map[string]any, expected *int64, now int64) error {
+	return s.Transaction(ctx, func(ctx context.Context) error {
+		db := s.DB(ctx)
+		var cur model.Client
+		if err := db.Clauses(lockUpdate()).Where("client_id = ?", clientID).Take(&cur).Error; err != nil {
+			return err
+		}
+		if expected != nil && cur.UpdatedAt != *expected {
+			return ErrStaleResource
+		}
+		updates["updated_at"] = now
+		return db.Model(&model.Client{}).Where("client_id = ?", clientID).Updates(updates).Error
+	})
+}
+
 // UpdateClientSecret 轮换密钥（只更新哈希）。
 func (s *Store) UpdateClientSecret(ctx context.Context, clientID string, hash []byte, now int64) error {
 	return s.DB(ctx).Model(&model.Client{}).Where("client_id = ?", clientID).

@@ -2,6 +2,7 @@ package admin
 
 import (
 	"errors"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -21,6 +22,7 @@ import (
 // @Param        page      query  int     false  "页码，默认 1"
 // @Param        pageSize  query  int     false  "每页条数，默认 20，上限 100"
 // @Param        keyword   query  string  false  "应用标识或名称关键字"
+// @Param        hasMembers query  string  false  "为 false 时只返回无成员的应用"  Enums(true, false)
 // @Success      200       {object}  response.Body{data=response.Page{list=[]dto.Client,total=int64,page=int,pageSize=int}}  "success"
 // @Failure      400       {object}  response.Body  "VALIDATION_FAILED"
 // @Failure      401       {object}  response.Body  "UNAUTHENTICATED"
@@ -35,7 +37,16 @@ func (h *Handler) ListClients(c *gin.Context) {
 		response.Fail(c, response.ErrValidation)
 		return
 	}
-	list, total, err := h.client.List(c.Request.Context(), c.Query("keyword"), page, pageSize)
+	var hasMembers *bool
+	if v := c.Query("hasMembers"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			response.Fail(c, response.ErrValidation)
+			return
+		}
+		hasMembers = &b
+	}
+	list, total, err := h.client.List(c.Request.Context(), c.Query("keyword"), hasMembers, page, pageSize)
 	if err != nil {
 		h.log.Error("list clients", "err", err)
 		response.Fail(c, response.ErrInternal)
@@ -43,7 +54,9 @@ func (h *Handler) ListClients(c *gin.Context) {
 	}
 	out := make([]dto.Client, 0, len(list))
 	for i := range list {
-		out = append(out, dto.FromClient(&list[i]))
+		item := dto.FromClient(&list[i].Client)
+		item.MemberCount = list[i].MemberCount
+		out = append(out, item)
 	}
 	response.Success(c, response.Page{List: out, Total: total, Page: page, PageSize: pageSize})
 }

@@ -173,6 +173,7 @@ type Client struct {
 	Scopes         []string `json:"scopes" example:"openid,profile,email"`
 	PostLogoutURIs []string `json:"postLogoutUris" example:"https://portal.example.com/signed-out"`
 	CreatedAt      string   `json:"createdAt" example:"2026-01-08T03:20:11Z"`
+	MemberCount    int64    `json:"memberCount" example:"12"`
 }
 
 // FromClient 构造应用视图。
@@ -264,6 +265,124 @@ type RotatedSecret struct {
 	ClientID     string  `json:"clientId" example:"portal"`
 	ClientSecret string  `json:"clientSecret"`
 	ExpiresAt    *string `json:"expiresAt"`
+}
+
+// ---- 应用详情 / 成员 / 角色 / 权限 / 授权（003-app-management-pages）----
+
+// ClientDetail 应用详情（GET 与 PATCH /admin/clients/:id 共用）。
+// updatedAt 为 Unix 毫秒，兼作乐观版本校验的版本值（FR-034）；不含任何密钥字段。
+type ClientDetail struct {
+	ClientID        string   `json:"clientId" example:"demo-app"`
+	ClientName      string   `json:"clientName" example:"验收应用"`
+	Description     string   `json:"description" example:"内部验收用"`
+	LogoURL         string   `json:"logoUrl" example:"https://cdn.example.com/logo/demo.png"`
+	RedirectURIs    []string `json:"redirectUris" example:"https://demo.example.com/cb"`
+	PostLogoutURIs  []string `json:"postLogoutUris" example:"https://demo.example.com/signed-out"`
+	GrantTypes      []string `json:"grantTypes" example:"authorization_code,refresh_token"`
+	Scopes          []string `json:"scopes" example:"openid,profile"`
+	IsPublic        bool     `json:"isPublic" example:"false"`
+	AccessTokenTTL  int      `json:"accessTokenTtl" example:"900"`
+	RefreshTokenTTL int      `json:"refreshTokenTtl" example:"2592000"`
+	Status          int8     `json:"status" example:"1"`
+	CreatedAt       string   `json:"createdAt" example:"2026-10-20T10:00:00Z"`
+	UpdatedAt       int64    `json:"updatedAt" example:"1792540000000"`
+	MemberCount     int64    `json:"memberCount" example:"12"`
+}
+
+// FromClientDetail 构造应用详情。
+func FromClientDetail(c *model.Client, memberCount int64) ClientDetail {
+	return ClientDetail{
+		ClientID:        c.ClientID,
+		ClientName:      c.ClientName,
+		Description:     deref(c.Description),
+		LogoURL:         deref(c.LogoURL),
+		RedirectURIs:    emptyIfNil(c.RedirectURIs),
+		PostLogoutURIs:  emptyIfNil(c.PostLogoutURIs),
+		GrantTypes:      emptyIfNil(c.GrantTypes),
+		Scopes:          emptyIfNil(c.Scopes),
+		IsPublic:        c.IsPublic,
+		AccessTokenTTL:  c.AccessTokenTTL,
+		RefreshTokenTTL: c.RefreshTokenTTL,
+		Status:          c.Status,
+		CreatedAt:       Time(c.CreatedAt),
+		UpdatedAt:       c.UpdatedAt,
+		MemberCount:     memberCount,
+	}
+}
+
+// AppMemberItem 应用成员（GET /admin/clients/:id/members 的元素）。
+type AppMemberItem struct {
+	UserID      string `json:"userId" example:"01J9ZJ8Q2M4N6P8R0T2V4X6Z8A"`
+	Username    string `json:"username" example:"zhangsan"`
+	DisplayName string `json:"displayName" example:"张三"`
+	DeptID      string `json:"deptId" example:"01J9ZJ7A1B2C3D4E5F6G7H8J9K"`
+	DeptName    string `json:"deptName" example:"技术中心"`
+	Status      int8   `json:"status" example:"1"`
+	JoinedAt    string `json:"joinedAt" example:"2026-10-20T10:00:00Z"`
+	RoleCount   int64  `json:"roleCount" example:"2"`
+}
+
+// CandidateItem 候选成员（GET /admin/clients/:id/members/candidates 的元素）。
+type CandidateItem struct {
+	UserID      string `json:"userId" example:"01J9ZJ8Q2M4N6P8R0T2V4X6Z8A"`
+	Username    string `json:"username" example:"lisi"`
+	DisplayName string `json:"displayName" example:"李四"`
+	DeptID      string `json:"deptId" example:"01J9ZJ7A1B2C3D4E5F6G7H8J9K"`
+	DeptName    string `json:"deptName" example:"技术中心"`
+}
+
+// AppRoleItem 角色列表项（含聚合计数）。
+type AppRoleItem struct {
+	ID              string `json:"id" example:"01J9ZK9M1N3P5Q7R9S1T3V5W7X"`
+	ClientID        string `json:"clientId" example:"demo-app"`
+	Name            string `json:"name" example:"opsAdmin"`
+	Description     string `json:"description" example:"运维管理员"`
+	PermissionCount int64  `json:"permissionCount" example:"3"`
+	MemberCount     int64  `json:"memberCount" example:"5"`
+	CreatedAt       string `json:"createdAt" example:"2026-10-20T10:00:00Z"`
+	UpdatedAt       int64  `json:"updatedAt" example:"1792540000000"`
+}
+
+// RoleDetail 角色详情（含两类绑定的 ID 集合）。
+type RoleDetail struct {
+	ID            string   `json:"id" example:"01J9ZK9M1N3P5Q7R9S1T3V5W7X"`
+	ClientID      string   `json:"clientId" example:"demo-app"`
+	Name          string   `json:"name" example:"opsAdmin"`
+	Description   string   `json:"description" example:"运维管理员"`
+	PermissionIDs []string `json:"permissionIds"`
+	MemberIDs     []string `json:"memberIds"`
+	CreatedAt     string   `json:"createdAt" example:"2026-10-20T10:00:00Z"`
+	UpdatedAt     int64    `json:"updatedAt" example:"1792540000000"`
+}
+
+// AppPermissionItem 权限项（扁平列表，前端自行组树）。
+type AppPermissionItem struct {
+	ID          string  `json:"id" example:"01J9ZK9M1N3P5Q7R9S1T3V5W7X"`
+	ClientID    string  `json:"clientId" example:"demo-app"`
+	ParentID    *string `json:"parentId"`
+	Code        string  `json:"code" example:"order:read"`
+	Name        string  `json:"name" example:"订单读取"`
+	Description string  `json:"description" example:"只读访问订单"`
+	Sort        int     `json:"sort" example:"0"`
+	ChildCount  int64   `json:"childCount" example:"0"`
+	RoleCount   int64   `json:"roleCount" example:"2"`
+	CreatedAt   string  `json:"createdAt" example:"2026-10-20T10:00:00Z"`
+	UpdatedAt   int64   `json:"updatedAt" example:"1792540000000"`
+}
+
+// PermissionGrantResult 覆盖式设置角色权限的结果。
+type PermissionGrantResult struct {
+	PermissionIDs []string `json:"permissionIds"`
+	Added         int      `json:"added" example:"2"`
+	Removed       int      `json:"removed" example:"1"`
+}
+
+// MemberGrantResult 覆盖式设置角色成员的结果；autoJoinedMembers 为顺带补入应用的成员数。
+type MemberGrantResult struct {
+	MemberIDs         []string `json:"memberIds"`
+	Added             int      `json:"added" example:"3"`
+	Removed           int      `json:"removed" example:"1"`
+	AutoJoinedMembers int      `json:"autoJoinedMembers" example:"2"`
 }
 
 // AuditItem 审计事件（GET /api/v1/admin/audit-logs 的元素）。

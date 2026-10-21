@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import AdminLayout from '@/layouts/AdminLayout.vue'
 import { createClient, listClients, rotateClientSecret } from '@/api'
@@ -7,12 +8,16 @@ import { errorMessage } from '@/api/client'
 import type { ClientRow } from '@/api/types'
 import { formatTime, orDash } from '@/utils/format'
 
+const router = useRouter()
+
 /* ---------------- 列表 ---------------- */
 const clients = ref<ClientRow[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
 const keyword = ref('')
+/** FR-032：仅看无成员应用，便于上线前定位待补员应用 */
+const onlyNoMembers = ref(false)
 const loading = ref(true)
 const error = ref('')
 
@@ -24,6 +29,7 @@ async function loadClients() {
       keyword: keyword.value.trim() || undefined,
       page: page.value,
       pageSize: pageSize.value,
+      hasMembers: onlyNoMembers.value ? 'false' : undefined,
     })
     clients.value = data.list
     total.value = data.total
@@ -35,6 +41,11 @@ async function loadClients() {
 }
 
 function onSearch() {
+  page.value = 1
+  void loadClients()
+}
+
+function onToggleOnlyNoMembers() {
   page.value = 1
   void loadClients()
 }
@@ -233,11 +244,9 @@ async function rotate(row: ClientRow) {
   }
 }
 
-/* ---------------- 详情抽屉 ---------------- */
-const detailRow = ref<ClientRow | null>(null)
-
+/* ---------------- 详情子页面（FR-001） ---------------- */
 function openDetail(row: ClientRow) {
-  detailRow.value = row
+  void router.push({ name: 'client-overview', params: { clientId: row.clientId } })
 }
 
 onMounted(loadClients)
@@ -261,6 +270,11 @@ onMounted(loadClients)
           @clear="onSearch"
         />
         <el-button @click="onSearch">查询</el-button>
+        <el-switch
+          v-model="onlyNoMembers"
+          active-text="仅看无成员"
+          @change="onToggleOnlyNoMembers"
+        />
         <div class="toolbar-right">
           <el-button type="primary" @click="openRegister">注册应用</el-button>
         </div>
@@ -301,6 +315,16 @@ onMounted(loadClients)
         <el-table-column label="scope" min-width="200">
           <template #default="{ row }">
             <span :title="row.scopes.join(', ')" class="mono">{{ scopeText(row.scopes) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="成员数" width="130">
+          <template #default="{ row }">
+            <el-tag v-if="row.memberCount > 0" size="small" type="success">
+              {{ row.memberCount }} 人
+            </el-tag>
+            <el-tooltip v-else content="非成员员工在门户看不到该应用" placement="top">
+              <el-tag size="small" type="warning">0 人，待补员</el-tag>
+            </el-tooltip>
           </template>
         </el-table-column>
         <el-table-column label="描述" min-width="160" show-overflow-tooltip>
@@ -398,7 +422,9 @@ onMounted(loadClients)
               <el-button link type="danger" @click="removeRedirectUri(index)">删除</el-button>
             </div>
             <el-button link type="primary" @click="addRedirectUri">+ 添加回调地址</el-button>
-            <p class="field-hint">必须与接入方实际回调地址完全一致，不支持通配符</p>
+            <p class="field-hint">
+              登录成功后 IdP 会把用户连同一次性授权码（code）重定向回此地址；必须与接入方配置完全一致，不支持通配符
+            </p>
           </div>
         </el-form-item>
 
@@ -407,6 +433,10 @@ onMounted(loadClients)
             <el-option label="authorization_code" value="authorization_code" />
             <el-option label="refresh_token" value="refresh_token" />
           </el-select>
+          <p class="field-hint">
+            authorization_code=授权码模式：登录后 IdP 把一次性 code 重定向到回调地址，再由后端用 code 换令牌；
+            refresh_token=允许长期续期令牌（需同时勾选 offline_access）
+          </p>
         </el-form-item>
 
         <el-form-item label="scope">
@@ -416,91 +446,16 @@ onMounted(loadClients)
             <el-option label="email" value="email" />
             <el-option label="offline_access" value="offline_access" />
           </el-select>
-          <p class="field-hint">使用 refresh_token 时需同时勾选 offline_access</p>
+          <p class="field-hint">
+            决定本次授权能拿到哪些信息：openid=身份标识，profile=基础资料，email=邮箱，offline_access=允许刷新令牌
+            （勾选 refresh_token 时需同时勾选 offline_access）
+          </p>
         </el-form-item>
       </el-form>
 
       <template #footer>
         <el-button @click="registerOpen = false">取消</el-button>
         <el-button type="primary" :loading="submitting" @click="submitRegister">创建</el-button>
-      </template>
-    </el-drawer>
-
-    <!-- 应用详情 -->
-    <el-drawer
-      :model-value="detailRow !== null"
-      title="应用详情"
-      size="520px"
-      @update:model-value="detailRow = null"
-    >
-      <template v-if="detailRow">
-        <el-descriptions :column="1" border>
-          <el-descriptions-item label="clientId">
-            <span class="mono">{{ detailRow.clientId }}</span>
-            <el-button
-              link
-              type="primary"
-              size="small"
-              @click="copy(detailRow.clientId, 'clientId 已复制')"
-            >
-              复制
-            </el-button>
-          </el-descriptions-item>
-          <el-descriptions-item label="应用名称">
-            {{ orDash(detailRow.clientName) }}
-          </el-descriptions-item>
-          <el-descriptions-item label="描述">
-            {{ orDash(detailRow.description) }}
-          </el-descriptions-item>
-          <el-descriptions-item label="图标">
-            <a
-              v-if="detailRow.logoUrl"
-              :href="detailRow.logoUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="link"
-            >
-              {{ detailRow.logoUrl }}
-            </a>
-            <span v-else>-</span>
-          </el-descriptions-item>
-          <el-descriptions-item label="类型">
-            {{ detailRow.isPublic ? '公共客户端（PKCE）' : '机密客户端' }}
-          </el-descriptions-item>
-          <el-descriptions-item label="回调地址">
-            <div v-if="detailRow.redirectUris.length" class="uri-block">
-              <p v-for="uri in detailRow.redirectUris" :key="uri" class="mono uri-line">{{ uri }}</p>
-            </div>
-            <span v-else>-</span>
-          </el-descriptions-item>
-          <el-descriptions-item label="登出回调">
-            <div v-if="detailRow.postLogoutUris.length" class="uri-block">
-              <p v-for="uri in detailRow.postLogoutUris" :key="uri" class="mono uri-line">{{ uri }}</p>
-            </div>
-            <span v-else>-</span>
-          </el-descriptions-item>
-          <el-descriptions-item label="授权类型">
-            <el-tag v-for="type in detailRow.grantTypes" :key="type" size="small" class="tag-gap">
-              {{ type }}
-            </el-tag>
-            <span v-if="!detailRow.grantTypes.length">-</span>
-          </el-descriptions-item>
-          <el-descriptions-item label="scope">
-            <el-tag
-              v-for="scope in detailRow.scopes"
-              :key="scope"
-              size="small"
-              type="info"
-              class="tag-gap"
-            >
-              {{ scope }}
-            </el-tag>
-            <span v-if="!detailRow.scopes.length">-</span>
-          </el-descriptions-item>
-          <el-descriptions-item label="创建时间">
-            {{ formatTime(detailRow.createdAt) }}
-          </el-descriptions-item>
-        </el-descriptions>
       </template>
     </el-drawer>
 

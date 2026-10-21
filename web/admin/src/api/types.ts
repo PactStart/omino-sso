@@ -111,6 +111,175 @@ export interface ClientRow {
   scopes: string[]
   postLogoutUris: string[]
   createdAt: string
+  /** 该应用的成员总数（003 新增字段） */
+  memberCount: number
+}
+
+/* ---------------- 003 应用子页面：详情 / 成员 / 角色 / 权限 / 授权 ---------------- */
+
+/** 应用详情（GET 与 PATCH /admin/clients/:id 共用，不含任何密钥字段） */
+export interface ClientDetail {
+  clientId: string
+  clientName: string
+  description: string
+  logoUrl: string
+  redirectUris: string[]
+  postLogoutUris: string[]
+  grantTypes: string[]
+  scopes: string[]
+  isPublic: boolean
+  accessTokenTtl: number
+  refreshTokenTtl: number
+  /** 1=启用，0=停用 */
+  status: number
+  createdAt: string
+  /** Unix 毫秒；同时作为乐观锁版本值（FR-034） */
+  updatedAt: number
+  memberCount: number
+}
+
+/** 缺失即不变；description / logoUrl 传空串表示清空 */
+export interface UpdateClientPayload {
+  clientName?: string
+  description?: string
+  logoUrl?: string
+  redirectUris?: string[]
+  postLogoutUris?: string[]
+  accessTokenTtl?: number
+  refreshTokenTtl?: number
+  status?: number
+  updatedAt?: number
+}
+
+export interface AppMember {
+  userId: string
+  username: string
+  displayName: string
+  deptId: string
+  deptName: string
+  /** 1=正常，其他=停用/锁定（成员关系保留，仅标记） */
+  status: number
+  joinedAt: string
+  roleCount: number
+}
+
+export interface AppCandidate {
+  userId: string
+  username: string
+  displayName: string
+  deptId: string
+  deptName: string
+}
+
+export interface MemberQuery {
+  keyword?: string
+  deptId?: string
+  page?: number
+  pageSize?: number
+}
+
+/** all=true 时的响应：当前筛选下的全部 userId（上限 5000） */
+export interface UserIdSet {
+  userIds: string[]
+}
+
+export interface AddMembersByUsersResult {
+  added: number
+  skipped: number
+}
+
+/** 按部门整批加入的三类计数 */
+export interface AddMembersByDeptResult {
+  added: number
+  existing: number
+  disabled: number
+}
+
+export type AddMembersResult = Partial<AddMembersByUsersResult & AddMembersByDeptResult>
+
+export interface RemoveMembersResult {
+  removed: number
+  roleBindingsRemoved: number
+  notMember: number
+}
+
+export interface AppRole {
+  id: string
+  clientId: string
+  name: string
+  description: string
+  permissionCount: number
+  memberCount: number
+  createdAt: string
+  updatedAt: number
+}
+
+export interface RoleDetail {
+  id: string
+  clientId: string
+  name: string
+  description: string
+  permissionIds: string[]
+  memberIds: string[]
+  createdAt: string
+  updatedAt: number
+}
+
+export interface CreateRolePayload {
+  name: string
+  description?: string
+}
+
+export interface UpdateRolePayload {
+  name?: string
+  description?: string
+  updatedAt?: number
+}
+
+export interface AppPermission {
+  id: string
+  clientId: string
+  parentId: string | null
+  code: string
+  name: string
+  description: string
+  sort: number
+  childCount: number
+  roleCount: number
+  createdAt: string
+  updatedAt: number
+}
+
+export interface CreatePermissionPayload {
+  code: string
+  name: string
+  description?: string
+  parentId?: string | null
+  sort?: number
+}
+
+export interface UpdatePermissionPayload {
+  code?: string
+  name?: string
+  description?: string
+  /** null = 移到根级 */
+  parentId?: string | null
+  sort?: number
+  updatedAt?: number
+}
+
+export interface PermissionGrantResult {
+  permissionIds: string[]
+  added: number
+  removed: number
+}
+
+export interface MemberGrantResult {
+  memberIds: string[]
+  added: number
+  removed: number
+  /** 顺带补入应用的成员数（FR-025） */
+  autoJoinedMembers: number
 }
 
 export interface CreateClientPayload {
