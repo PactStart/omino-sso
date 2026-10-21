@@ -865,6 +865,13 @@ omino-sso/
 - 不生成 `README`、演示脚本、示例数据种子文件，除非任务明确要求。
 - 遇到规范未覆盖的情况：选择改动最小、最保守的实现，并在回复中显式说明该决策点。
 
+### 7.3 过程文档与验证轻量化（001-api-docs 复盘）
+
+- **不复述既有规范**：`spec` 不重复 `AGENTS.md` 已锁定的版本 / 端口 / 错误码；`plan` 不复述架构。重复内容信息量为零，只会让文档翻倍。
+- **账本交给 git**：`tasks.md` 只留一句结论 + 勾选，不逐条回写「实测偏离」；`git log` / `git blame` 才是会被追溯的地方。
+- **验证用测试表达**：一条命令 / 一个测试能证明的结论（如「逐端点错误码已登记」）写成一个测试，不写进 checklist。
+- **扩展按事件触发**：`api-evolve` 等扩展只在有契约变更时产出内容，零变更特性不跑空仪式（空 diff 视为无效）。
+
 ---
 
 ## 8. 启动命令
@@ -905,6 +912,8 @@ make test-integration         # 依赖容器内 MySQL/Redis
 make lint                     # golangci-lint + eslint
 make build-web                # 两个前端产物 -> web/dist
 ```
+
+> **改动自测纪律（强制）**：任何改动在提交前必须主动执行 `make test` 与 `make lint`，不得依赖 pre-commit 兜底。新增/修改业务逻辑、端点或数据访问层时，必须同步新增或更新对应单元测试。新增/删除路由或改动 DTO 字段后，必须执行 `make docs` 重新生成 `openapi.json`，并全局搜索、同步更新依赖 operation 数 / 字段结构的硬编码测试断言（如 `internal/api/docs/docs_test.go`、`internal/api/router_test.go`）。改动前端后执行 `npm run typecheck`（`web/admin` 与 `web/portal`）。
 
 ### 8.5 合规验收（门禁，不可跳过）
 
@@ -996,3 +1005,6 @@ docker compose up -d --build   # mysql + redis + sso + nginx(静态托管两套�
 - [ ] 未引入 §7.2 非目标中的任何能力
 - [ ] 未新增未登记的错误码与 `event_type`
 - [ ] 日志与响应中无 token / 密码 / client_secret
+- [ ] 改动已伴随/更新单元测试，且已主动执行 `make test` / `make lint`（未依赖 pre-commit 兜底）
+- [ ] 新增/删除路由或改动 DTO 后已执行 `make docs`，并同步更新 operation 数等硬编码测试断言
+- [ ] 新增带鉴权的端点前已界定访问者与可写范围（防越权）；前端筛选/搜索控件与后端实际过滤字段一致

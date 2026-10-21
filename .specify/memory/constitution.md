@@ -1,29 +1,21 @@
 <!--
 Sync Impact Report
 =================
-Version change: (none) → 1.0.0
-Bump rationale: 首次制定项目宪法（初始版本），无既有条款被移除或重定义，故 MAJOR.MINOR.PATCH 取 1.0.0。
+Version change: 1.0.0 → 1.1.0
+Bump rationale: MINOR —— 在「开发工作流与质量门禁」新增测试与影响分析纪律，未删除或重定义既有原则。
 
-Modified principles: 无（初始版本）
-Added principles:
-  - I. 协议层单一来源
-  - II. 端口与信任边界物理分离
-  - III. 分层与数据一致性
-  - IV. 凭证不出服务端
-  - V. 结构变更只走手写 SQL 迁移
-
-Added sections:
-  - 技术与接口约束（模板 SECTION_2）
-  - 开发工作流与质量门禁（模板 SECTION_3）
-  - Governance
+Modified principles: 无
+Added principles（「开发工作流与质量门禁」小节内）:
+  - 改动必须伴随测试
+  - 影响分析先行
+  - 安全审视先行
 
 Removed sections: 无
 
 Follow-up / Deferred items:
-  - 未纳入"测试先行（TDD）""覆盖率门槛""CI 必过流水线"等条款：AGENTS.md 未采纳这些要求，
-    按"不新增未采纳约定"的指令一律不写入。若团队后续采纳，须先更新 AGENTS.md 再修订本文件。
-  - 未改动任何模板源文件、命令文件或应用代码；模板在运行时读取本文件，无需同步修改。
-  - 本报告为人工评审用的临时材料，可在提交前删除。
+  - 仍不纳入「测试先行（TDD）」「覆盖率门槛」等强约束：仅要求「改动带测试 + 主动自测」，
+    不强制 TDD 顺序或覆盖率数字。
+  - 本次同步更新 AGENTS.md §8.4 与附录「一致性检查清单」（先改 AGENTS.md，再改本文件，符合 Governance）。
 -->
 
 # omino-sso Constitution
@@ -94,7 +86,13 @@ Follow-up / Deferred items:
 
 - 每次交付前必须执行并通过：`make build`、`make test`、`make build-web`；`make lint` 必须执行；
   涉及协议的改动必须通过 `AGENTS.md` §8.5 的 OpenID 一致性套件（全部用例通过方可发布）。
-- 提交前必须逐条自查 `AGENTS.md` 附录「一致性检查清单」的 8 项，任一项不满足不得提交。
+- 提交前必须逐条自查 `AGENTS.md` 附录「一致性检查清单」的各项，任一项不满足不得提交。
+- 改动必须伴随测试：新增或修改业务逻辑、端点、数据访问层时，必须同步新增或更新单元测试；
+  提交前主动执行 `make test` 与 `make lint`，不得依赖 pre-commit 兜底。
+- 影响分析先行：改动路由、DTO 字段或常量前，必须全局搜索引用（含测试中的硬编码断言）并同步更新；
+  新增/删除路由后必须重跑 `make docs` 并核对 operation 数断言。
+- 安全审视先行：新增涉及"按目标对象写回"或鉴权的端点前，必须先界定谁能调用、可写谁的字段，
+  权限校验先于业务实现。
 - 协作纪律：不重构既有目录结构与分层；不"顺手优化"与本任务无关的代码、不批量格式化；
   不生成 `README`、演示脚本或种子数据文件，除非任务明确要求。
 - 规范未覆盖的情况必须选择"改动最小、最保守"的实现，并在回复中显式说明该决策点。
@@ -108,4 +106,4 @@ Follow-up / Deferred items:
   任何偏离原则的方案必须在评审中显式说明理由与替代方案，未说明即视为缺陷。
 - 非目标不得以"顺手实现"的方式进入代码库；确需变更范围时，先改 `AGENTS.md` 再改代码。
 
-**Version**: 1.0.0 | **Ratified**: 2026-10-20 | **Last Amended**: 2026-10-20
+**Version**: 1.1.0 | **Ratified**: 2026-10-20 | **Last Amended**: 2026-10-21
