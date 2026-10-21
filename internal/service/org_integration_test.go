@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,7 +33,7 @@ import (
 
 // 本文件是 DB 行为集成测试，由 TEST_MYSQL_DSN 门控：
 // 未设置时整组跳过，`make test` 不依赖 MySQL（plan.md Testing）。
-// 建库与建表只走 migrations/0001_init.up.sql，禁止 AutoMigrate（migrations/README.md）。
+// 建库与建表只走 migrations/*.up.sql（按文件名升序全量执行），禁止 AutoMigrate（migrations/README.md）。
 
 const testDSNEnv = "TEST_MYSQL_DSN"
 
@@ -84,6 +87,13 @@ func (e *orgEnv) reset(t *testing.T) {
 	}
 }
 
+// schemaOnce 保证整个测试二进制内只重建一次测试库，且迁移只跑一遍：
+// 迁移脚本（0002 起为裸 ALTER）不幂等，重复执行会因列已存在而失败。
+var (
+	schemaOnce sync.Once
+	schemaErr  error
+)
+
 func openTestDB(t *testing.T, dsn string) *gorm.DB {
 	t.Helper()
 	cfg, err := mysqldrv.ParseDSN(dsn)
@@ -93,18 +103,9 @@ func openTestDB(t *testing.T, dsn string) *gorm.DB {
 	if cfg.DBName == "" {
 		t.Fatalf("%s 必须包含库名（形如 user:pass@tcp(127.0.0.1:3307)/omino_sso_test）", testDSNEnv)
 	}
-	adminCfg := *cfg
-	adminCfg.DBName = ""
-	adminDB, err := gorm.Open(mysql.Open(adminCfg.FormatDSN()), &gorm.Config{Logger: gormlogger.Discard})
-	if err != nil {
-		t.Fatalf("连接 MySQL 失败: %v", err)
-	}
-	createDB := "CREATE DATABASE IF NOT EXISTS `" + cfg.DBName + "` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"
-	if err := adminDB.Exec(createDB).Error; err != nil {
-		t.Fatalf("建库失败: %v", err)
-	}
-	if sqlDB, err := adminDB.DB(); err == nil {
-		_ = sqlDB.Close()
+	schemaOnce.Do(func() { schemaErr = rebuildSchema(dsn, cfg) })
+	if schemaErr != nil {
+		t.Fatalf("初始化测试库失败: %v", schemaErr)
 	}
 
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
@@ -114,15 +115,66 @@ func openTestDB(t *testing.T, dsn string) *gorm.DB {
 	if err != nil {
 		t.Fatalf("连接测试库失败: %v", err)
 	}
-	applyMigrations(t, db)
 	return db
 }
 
-func applyMigrations(t *testing.T, db *gorm.DB) {
-	t.Helper()
-	raw, err := os.ReadFile("../../migrations/0001_init.up.sql")
+// rebuildSchema 丢弃并重建测试库，再按文件名升序执行全部 *.up.sql，
+// 使测试 schema 与生产迁移链完全一致（禁止 AutoMigrate）。
+func rebuildSchema(dsn string, cfg *mysqldrv.Config) error {
+	if err := recreateTestDB(cfg); err != nil {
+		return fmt.Errorf("重建测试库失败: %w", err)
+	}
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
+		Logger:                 gormlogger.Discard,
+		SkipDefaultTransaction: true,
+	})
 	if err != nil {
-		t.Fatalf("读取迁移文件失败: %v", err)
+		return fmt.Errorf("连接测试库失败: %w", err)
+	}
+	if sqlDB, dbErr := db.DB(); dbErr == nil {
+		defer func() { _ = sqlDB.Close() }()
+	}
+	return applyMigrations(db)
+}
+
+func recreateTestDB(cfg *mysqldrv.Config) error {
+	adminCfg := *cfg
+	adminCfg.DBName = ""
+	adminDB, err := gorm.Open(mysql.Open(adminCfg.FormatDSN()), &gorm.Config{Logger: gormlogger.Discard})
+	if err != nil {
+		return err
+	}
+	if sqlDB, dbErr := adminDB.DB(); dbErr == nil {
+		defer func() { _ = sqlDB.Close() }()
+	}
+	if err := adminDB.Exec("DROP DATABASE IF EXISTS `" + cfg.DBName + "`").Error; err != nil {
+		return err
+	}
+	createDB := "CREATE DATABASE `" + cfg.DBName + "` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"
+	return adminDB.Exec(createDB).Error
+}
+
+func applyMigrations(db *gorm.DB) error {
+	files, err := filepath.Glob("../../migrations/*.up.sql")
+	if err != nil {
+		return fmt.Errorf("扫描迁移文件失败: %w", err)
+	}
+	if len(files) == 0 {
+		return errors.New("未找到任何 *.up.sql 迁移文件")
+	}
+	sort.Strings(files)
+	for _, file := range files {
+		if err := applyMigrationFile(db, file); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func applyMigrationFile(db *gorm.DB, file string) error {
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		return fmt.Errorf("读取迁移文件失败: %w", err)
 	}
 	for _, stmt := range strings.Split(string(raw), ";") {
 		lines := make([]string, 0, 4)
@@ -137,9 +189,10 @@ func applyMigrations(t *testing.T, db *gorm.DB) {
 			continue
 		}
 		if err := db.Exec(sql).Error; err != nil {
-			t.Fatalf("执行迁移失败: %v\n%s", err, sql)
+			return fmt.Errorf("执行迁移失败（%s）: %w\n%s", file, err, sql)
 		}
 	}
+	return nil
 }
 
 func (e *orgEnv) createOrg(t *testing.T, parentID *string, name string, sort *int) *model.Organization {
@@ -589,7 +642,7 @@ func TestUpdateUserRejectsMissingDept(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	audit := service.NewAuditor(env.st, 1, env.log)
-	h := admin.NewHandler(env.users, service.NewClientService(env.st), env.orgs, audit, env.log)
+	h := admin.NewHandler(env.users, service.NewClientService(env.st), env.orgs, service.NewAppAuthService(env.st), audit, env.log)
 	r := gin.New()
 	r.PATCH("/api/v1/admin/users/:id", h.UpdateUser)
 

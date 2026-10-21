@@ -7,7 +7,10 @@ import { PORTAL_HOME, portalLoginUrl } from '@/config'
 const route = useRoute()
 const session = useSessionStore()
 
-const activeMenu = computed(() => route.path)
+// 应用子页面（/admin/clients/:id/*）仍高亮「应用管理」一级菜单
+const activeMenu = computed(() =>
+  route.path.startsWith('/admin/clients') ? '/admin/clients' : route.path,
+)
 const displayName = computed(() => session.user?.displayName ?? '-')
 const initial = computed(() => (displayName.value || '?').slice(0, 1))
 

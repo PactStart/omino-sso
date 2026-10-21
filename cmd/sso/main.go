@@ -63,6 +63,7 @@ func main() {
 			service.NewSessionService,
 			service.NewClientService,
 			service.NewOrgService,
+			service.NewAppAuthService,
 			newKeyManager,
 			oidc.NewStorage,
 			oidc.NewProvider,
@@ -117,11 +118,12 @@ func runServers(
 	sessions *service.SessionService,
 	clients *service.ClientService,
 	orgs *service.OrgService,
+	appAuth *service.AppAuthService,
 	audit *service.Auditor,
 ) {
 	oidc.NewServer(lc, cfg, provider, oidcStorage, st, users, sessions, clients, audit, logger)
 
-	router := api.NewRouter(cfg, st, users, sessions, clients, orgs, audit, logger)
+	router := api.NewRouter(cfg, st, users, sessions, clients, orgs, appAuth, audit, logger)
 	api.NewServer(lc, cfg, router, logger)
 }
 

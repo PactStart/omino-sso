@@ -31,6 +31,13 @@ var (
 	ErrOrgHasUsers      = &Error{http.StatusConflict, "ORG_HAS_USERS", "部门下仍有账号"}
 	ErrOrgInvalidParent = &Error{http.StatusBadRequest, "ORG_INVALID_PARENT", "上级部门不存在或不可作为上级"}
 
+	// 应用内成员 / 角色 / 权限 / 授权（规范 §5.3）。
+	ErrAppRoleNameExists          = &Error{http.StatusConflict, "APP_ROLE_NAME_EXISTS", "应用内已存在同名角色"}
+	ErrAppPermissionCodeExists    = &Error{http.StatusConflict, "APP_PERMISSION_CODE_EXISTS", "应用内已存在同名权限编码"}
+	ErrAppPermissionHasChildren   = &Error{http.StatusConflict, "APP_PERMISSION_HAS_CHILDREN", "权限下仍有子权限"}
+	ErrAppPermissionInvalidParent = &Error{http.StatusBadRequest, "APP_PERMISSION_INVALID_PARENT", "上级权限不存在或不可作为上级"}
+	ErrAppResourceStale           = &Error{http.StatusConflict, "APP_RESOURCE_STALE", "已被他人修改，请刷新后重试"}
+
 	ErrRateLimited    = &Error{http.StatusTooManyRequests, "RATE_LIMITED", "请求过于频繁"}
 	ErrInternal       = &Error{http.StatusInternalServerError, "INTERNAL_ERROR", "服务内部错误"}
 	ErrDependencyDown = &Error{http.StatusServiceUnavailable, "DEPENDENCY_UNAVAILABLE", "依赖服务不可用"}

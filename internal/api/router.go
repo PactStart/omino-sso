@@ -26,6 +26,7 @@ func NewRouter(
 	sessions *service.SessionService,
 	clients *service.ClientService,
 	orgs *service.OrgService,
+	appAuth *service.AppAuthService,
 	audit *service.Auditor,
 	logger *slog.Logger,
 ) *gin.Engine {
@@ -41,7 +42,7 @@ func NewRouter(
 
 	authH := auth.NewHandler(cfg, users, sessions, audit, logger)
 	meH := me.NewHandler(users, sessions, clients, audit, logger)
-	adminH := admin.NewHandler(users, clients, orgs, audit, logger)
+	adminH := admin.NewHandler(users, clients, orgs, appAuth, audit, logger)
 
 	// 接口文档（规范 §4.0）：仅非 prod 注册，且不套统一响应、不挂限流。
 	// prod 下该分支不执行，请求落入 NoRoute，响应与任意不存在路径完全一致。
@@ -82,6 +83,26 @@ func NewRouter(
 		adminGroup.GET("/clients", adminH.ListClients)
 		adminGroup.POST("/clients", adminH.CreateClient)
 		adminGroup.POST("/clients/:id/secret", adminH.RotateSecret)
+		adminGroup.GET("/clients/:id", adminH.GetClient)
+		adminGroup.PATCH("/clients/:id", adminH.UpdateClient)
+
+		// 应用内成员 / 角色 / 权限 / 授权（003）。
+		adminGroup.GET("/clients/:id/members", adminH.ListMembers)
+		adminGroup.POST("/clients/:id/members", adminH.AddMembers)
+		adminGroup.POST("/clients/:id/members/remove", adminH.RemoveMembers)
+		adminGroup.GET("/clients/:id/members/candidates", adminH.ListCandidates)
+		adminGroup.GET("/clients/:id/roles", adminH.ListRoles)
+		adminGroup.POST("/clients/:id/roles", adminH.CreateRole)
+		adminGroup.GET("/clients/:id/roles/:rid", adminH.GetRole)
+		adminGroup.PATCH("/clients/:id/roles/:rid", adminH.UpdateRole)
+		adminGroup.DELETE("/clients/:id/roles/:rid", adminH.DeleteRole)
+		adminGroup.PUT("/clients/:id/roles/:rid/permissions", adminH.PutRolePermissions)
+		adminGroup.PUT("/clients/:id/roles/:rid/members", adminH.PutRoleMembers)
+		adminGroup.GET("/clients/:id/permissions", adminH.ListPermissions)
+		adminGroup.POST("/clients/:id/permissions", adminH.CreatePermission)
+		adminGroup.PATCH("/clients/:id/permissions/:pid", adminH.UpdatePermission)
+		adminGroup.DELETE("/clients/:id/permissions/:pid", adminH.DeletePermission)
+
 		adminGroup.GET("/audit-logs", adminH.ListAuditLogs)
 	}
 

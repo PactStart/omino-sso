@@ -36,4 +36,16 @@ const (
 	EventOrgCreated          = "org_created"
 	EventOrgUpdated          = "org_updated"
 	EventOrgDeleted          = "org_deleted"
+
+	// 应用内成员 / 角色 / 权限 / 授权（AGENTS.md §6.7，003 特性新增）。
+	EventClientUpdated        = "client_updated"
+	EventAppMemberAdded       = "app_member_added"
+	EventAppMemberRemoved     = "app_member_removed"
+	EventAppRoleCreated       = "app_role_created"
+	EventAppRoleUpdated       = "app_role_updated"
+	EventAppRoleDeleted       = "app_role_deleted"
+	EventAppPermissionCreated = "app_permission_created"
+	EventAppPermissionUpdated = "app_permission_updated"
+	EventAppPermissionDeleted = "app_permission_deleted"
+	EventAppGrantUpdated      = "app_grant_updated"
 )

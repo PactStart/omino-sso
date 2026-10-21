@@ -88,11 +88,22 @@ DB_USER ?= root
 DB_PASSWORD ?= omino_dev_pwd
 DB_NAME ?= omino_sso
 
-migrate-up:
-	mysql -h $(DB_HOST) -P $(DB_PORT) -u $(DB_USER) -p$(DB_PASSWORD) --default-character-set=utf8mb4 $(DB_NAME) < migrations/0001_init.up.sql
+# 按文件名升序执行全部 *.up.sql（0001_init → 0002_clients_meta → 0003_app_auth），
+# 不再硬编码单个文件：新增迁移只加文件，不改 Makefile（quickstart §0）。
+MIGRATIONS_DIR ?= migrations
 
+migrate-up:
+	@for f in $$(ls $(MIGRATIONS_DIR)/*.up.sql | sort); do \
+		echo "applying $$f"; \
+		mysql -h $(DB_HOST) -P $(DB_PORT) -u $(DB_USER) -p$(DB_PASSWORD) --default-character-set=utf8mb4 $(DB_NAME) < $$f || exit 1; \
+	done
+
+# 逆序回退（先 0003 再 0002 再 0001），避免外键/列依赖顺序问题
 migrate-down:
-	mysql -h $(DB_HOST) -P $(DB_PORT) -u $(DB_USER) -p$(DB_PASSWORD) $(DB_NAME) < migrations/0001_init.down.sql
+	@for f in $$(ls $(MIGRATIONS_DIR)/*.down.sql | sort -r); do \
+		echo "reverting $$f"; \
+		mysql -h $(DB_HOST) -P $(DB_PORT) -u $(DB_USER) -p$(DB_PASSWORD) --default-character-set=utf8mb4 $(DB_NAME) < $$f || exit 1; \
+	done
 
 clean:
 	rm -rf bin

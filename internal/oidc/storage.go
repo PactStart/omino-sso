@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strings"
 	"sync"
@@ -38,7 +39,11 @@ type Storage struct {
 	cfg    *config.Config
 	keys   *KeyManager
 	audit  *service.Auditor
+	appCtx appContextSource
 	issuer string
+
+	// accessTokens 记录上次清理过期映射的时间（research R12：限频 ≥1 分钟）。
+	lastTokenCleanup int64
 
 	// 规范 §7.2 非目标 3：MVP 单副本，待认证请求保存在进程内存。
 	pending sync.Map // id -> *pendingRequest
@@ -50,8 +55,12 @@ type pendingRequest struct {
 }
 
 // NewStorage 构造存储适配层。
-func NewStorage(st *store.Store, cfg *config.Config, keys *KeyManager, audit *service.Auditor) *Storage {
-	return &Storage{st: st, cfg: cfg, keys: keys, audit: audit, issuer: strings.TrimSuffix(cfg.Issuer, "/")}
+func NewStorage(st *store.Store, cfg *config.Config, keys *KeyManager, audit *service.Auditor, appAuth *service.AppAuthService) *Storage {
+	return &Storage{
+		st: st, cfg: cfg, keys: keys, audit: audit,
+		appCtx: storeAppContext{st: st, svc: appAuth},
+		issuer: strings.TrimSuffix(cfg.Issuer, "/"),
+	}
 }
 
 // ---------------- op.OPStorage ----------------
@@ -205,7 +214,26 @@ func (s *Storage) CreateAccessToken(ctx context.Context, request op.TokenRequest
 	if c, err := s.st.GetClient(ctx, requestClientID(request)); err == nil && c.AccessTokenTTL > 0 {
 		ttl = time.Duration(c.AccessTokenTTL) * time.Second
 	}
-	return id.New(), time.Now().Add(ttl), nil
+	now := time.Now()
+	tokenID := id.New()
+	// 映射写入失败即签发失败：静默降级会让接入方把 DB 抖动误读为"该用户无任何权限"。
+	if err := s.st.InsertAccessToken(ctx, tokenID, request.GetSubject(), requestClientID(request), now.Add(ttl).UnixMilli(), now.UnixMilli()); err != nil {
+		slog.Error("access token mapping insert failed", "err", err, "client_id", requestClientID(request), "sub", request.GetSubject())
+		return "", time.Time{}, fmt.Errorf("persist access token context: %w", err)
+	}
+	s.cleanupExpiredTokens(ctx, now.UnixMilli())
+	return tokenID, now.Add(ttl), nil
+}
+
+// cleanupExpiredTokens 限量清理过期映射，进程内限频 ≥1 分钟（research R12）。
+func (s *Storage) cleanupExpiredTokens(ctx context.Context, now int64) {
+	if now-s.lastTokenCleanup < int64(time.Minute/time.Millisecond) {
+		return
+	}
+	s.lastTokenCleanup = now
+	if err := s.st.CleanupExpiredAccessTokens(context.WithoutCancel(ctx), now, 500); err != nil {
+		slog.Warn("cleanup expired access tokens failed", "err", err)
+	}
 }
 
 func (s *Storage) CreateAccessAndRefreshTokens(ctx context.Context, request op.TokenRequest, currentRefreshToken string) (string, string, time.Time, error) {
@@ -264,6 +292,12 @@ func (s *Storage) CreateAccessAndRefreshTokens(ctx context.Context, request op.T
 	if next.AuthTime == 0 {
 		next.AuthTime = now.UnixMilli()
 	}
+	// 映射写入失败即签发失败（不降级为"userinfo 返回空数组"）。
+	if err := s.st.InsertAccessToken(ctx, accessID, request.GetSubject(), clientID, now.Add(ttl).UnixMilli(), now.UnixMilli()); err != nil {
+		slog.Error("access token mapping insert failed", "err", err, "client_id", clientID, "sub", request.GetSubject())
+		return "", "", time.Time{}, fmt.Errorf("persist access token context: %w", err)
+	}
+	s.cleanupExpiredTokens(ctx, now.UnixMilli())
 	s.audit.Emit(ctx, service.Event{
 		Type: model.EventTokenIssued, UserID: request.GetSubject(), ClientID: clientID,
 		Result: "success", Detail: "access_token+refresh_token",

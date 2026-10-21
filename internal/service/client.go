@@ -104,9 +104,136 @@ func (s *ClientService) RotateSecret(ctx context.Context, clientID string) (stri
 	return secret, nil
 }
 
-// List 分页列出应用。
-func (s *ClientService) List(ctx context.Context, keyword string, page, pageSize int) ([]model.Client, int64, error) {
-	return s.st.ListClients(ctx, keyword, page, pageSize)
+// List 分页列出应用（含成员数）；hasMembers 为 nil 时不做成员数过滤（FR-032）。
+func (s *ClientService) List(ctx context.Context, keyword string, hasMembers *bool, page, pageSize int) ([]store.ClientWithCount, int64, error) {
+	return s.st.ListClientsWithCount(ctx, keyword, hasMembers, page, pageSize)
+}
+
+// UpdateClientInput 应用详情可编辑字段（指针=三态：缺失表示不变）。
+type UpdateClientInput struct {
+	ClientName      *string
+	Description     *string
+	LogoURL         *string
+	RedirectURIs    *[]string
+	PostLogoutURIs  *[]string
+	AccessTokenTTL  *int
+	RefreshTokenTTL *int
+	Status          *int8
+	// UpdatedAt 为读取时的版本（毫秒），非空时做乐观版本校验（FR-034）。
+	UpdatedAt *int64
+}
+
+// Update 更新应用可编辑字段，返回更新后的 client。
+func (s *ClientService) Update(ctx context.Context, clientID string, in UpdateClientInput) (*model.Client, error) {
+	cur, err := s.st.GetClient(ctx, clientID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrClientNotFound
+		}
+		return nil, err
+	}
+	updates := map[string]any{}
+	if in.ClientName != nil {
+		v := strings.TrimSpace(*in.ClientName)
+		if v == "" || len(v) > 128 {
+			return nil, ErrAppValidation
+		}
+		updates["client_name"] = v
+	}
+	if in.Description != nil {
+		if len(*in.Description) > 255 {
+			return nil, ErrAppValidation
+		}
+		updates["description"] = *in.Description
+	}
+	if in.LogoURL != nil {
+		if err := validateOptionalURL(*in.LogoURL, 512); err != nil {
+			return nil, err
+		}
+		updates["logo_url"] = *in.LogoURL
+	}
+	if in.RedirectURIs != nil {
+		uris, err := validateURIs(*in.RedirectURIs, 1, 10)
+		if err != nil {
+			return nil, err
+		}
+		updates["redirect_uris"] = model.StringList(uris)
+	}
+	if in.PostLogoutURIs != nil {
+		uris, err := validateURIs(*in.PostLogoutURIs, 0, 10)
+		if err != nil {
+			return nil, err
+		}
+		updates["post_logout_uris"] = model.StringList(uris)
+	}
+	if in.AccessTokenTTL != nil {
+		if *in.AccessTokenTTL < 60 || *in.AccessTokenTTL > 86400 {
+			return nil, ErrAppValidation
+		}
+		updates["access_token_ttl"] = *in.AccessTokenTTL
+	}
+	if in.RefreshTokenTTL != nil {
+		if *in.RefreshTokenTTL < 300 || *in.RefreshTokenTTL > 31536000 {
+			return nil, ErrAppValidation
+		}
+		updates["refresh_token_ttl"] = *in.RefreshTokenTTL
+	}
+	if in.Status != nil {
+		if *in.Status != 0 && *in.Status != 1 {
+			return nil, ErrAppValidation
+		}
+		updates["status"] = *in.Status
+	}
+	if len(updates) == 0 {
+		return cur, nil
+	}
+	if err := s.st.UpdateClientFields(ctx, clientID, updates, in.UpdatedAt, nowMillis()); err != nil {
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			return nil, ErrClientNotFound
+		case errors.Is(err, store.ErrStaleResource):
+			return nil, ErrAppResourceStale
+		}
+		return nil, err
+	}
+	return s.st.GetClient(ctx, clientID)
+}
+
+func validateOptionalURL(v string, maxLen int) error {
+	if v == "" {
+		return nil
+	}
+	if len(v) > maxLen {
+		return ErrAppValidation
+	}
+	u, err := url.Parse(v)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return ErrAppValidation
+	}
+	return nil
+}
+
+func validateURIs(in []string, min, max int) ([]string, error) {
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if err := validateOptionalURL(v, 512); err != nil {
+			return nil, err
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	if len(out) < min || len(out) > max {
+		return nil, ErrAppValidation
+	}
+	return out, nil
 }
 
 // Get 查询单个应用。
@@ -114,11 +241,11 @@ func (s *ClientService) Get(ctx context.Context, clientID string) (*model.Client
 	return s.st.GetClient(ctx, clientID)
 }
 
-// ListForUser 返回用户可访问的应用。
-// clients 表没有描述/图标/主页字段（规范 §6.3 未定义），
-// 因此 description/logoUrl 返回空串，homeUrl 取首个 redirect_uri 的 origin。
+// ListForUser 返回用户以成员身份可访问的启用应用（FR-012）。
+// 门户可见性只由 client_members 与 clients.status 决定；不存在 org → 应用的授权模型。
+// homeUrl 取首个 redirect_uri 的 origin。
 func (s *ClientService) ListForUser(ctx context.Context, userID string) ([]AppItem, error) {
-	clients, _, err := s.st.ListClients(ctx, "", 1, 100)
+	clients, err := s.st.ListClientsForMember(ctx, userID)
 	if err != nil {
 		return nil, err
 	}

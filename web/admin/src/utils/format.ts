@@ -57,6 +57,16 @@ export const EVENT_LABEL: Record<string, string> = {
   org_created: '创建组织',
   org_updated: '更新组织',
   org_deleted: '删除组织',
+  client_updated: '更新应用',
+  app_member_added: '添加应用成员',
+  app_member_removed: '移除应用成员',
+  app_role_created: '创建应用角色',
+  app_role_updated: '更新应用角色',
+  app_role_deleted: '删除应用角色',
+  app_permission_created: '创建应用权限',
+  app_permission_updated: '更新应用权限',
+  app_permission_deleted: '删除应用权限',
+  app_grant_updated: '变更应用授权',
 }
 
 export function eventLabel(eventType: string): string {
