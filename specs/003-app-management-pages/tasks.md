@@ -337,3 +337,32 @@ Developer B: T042 → T043 → T044 → T045 → T047
 - **T066（§6–§9 留证）**：接入指南已更新（新增 §6.1 与术语/能力边界/差异点），但 quickstart §6–§9 的 userinfo 三段 curl 尚未逐条留证
 - **T068**：发布前补员流程与回滚口径尚未执行（需真实环境）；开发阶段暂缓
 - **T069**：OIDC conformance-suite 未执行（需 Docker 与外部镜像，属发布前门禁）
+
+---
+
+## Phase 10: Convergence
+
+- [x] T071 补齐 quickstart §6–§9 的 userinfo 三段 curl 端到端留证：非成员时 `app_roles`/`permissions` 为空数组、成员含角色时非空且去重升序、跨应用隔离 per SC-003 (partial)
+- [x] T072 在 200 节点夹具数据下于浏览器实测权限树渲染与树/列表切换耗时（≤1s）并留证 per SC-004 (partial)
+
+### 2026-10-21 收敛验收（T071 / T072）
+
+**T071 —— userinfo 三段 curl（真实 `:8080` + dev 库，临时应用 `conv-a`/`conv-b`、用户 `convtest`）**
+
+| 断言 | 结果 |
+|---|---|
+| 成员含角色（`conv-a`，角色 `rA`，权限 `conv:read`/`conv:write`） | `{"app_roles":["rA"],"permissions":["conv:read","conv:write"],...}` ✓ |
+| 解绑 `rA` 后**同一 access_token** 立即再调 | `app_roles=[]`、`permissions=[]` ✓（无缓存） |
+| 跨应用隔离（`conv-b` 令牌，成员但无角色） | `app_roles=[]`、`permissions=[]` ✓ |
+
+> 流程为授权码 + PKCE + 公共客户端（`isPublic=true`，token 端点仅 `client_id` + `code_verifier`），登录走 `:8080/login` 表单（`sid` cookie 会话）。`roles` 仍返回 `["user"]`，不受应用角色影响。
+
+**T072 —— 权限树 200 节点（`conv-a`，202 节点 / 3 层）浏览器实测**
+
+| 项 | 结果 | 阈值 |
+|---|---|---|
+| 树渲染（列表→树形单方向，数据已在内存，5 次） | 249–343ms，最大 **343ms** | ≤1s ✓ |
+| 树↔列表切换（往返 5 次） | 802–948ms（单方向约 400–475ms） | ≤1s ✓ |
+| 202 节点全量渲染 | 无错位、层级正确 | ✓ |
+
+> 冷加载（含页面导航 + `GET /permissions` 请求 + 树渲染）约 1.18s，含网络往返，不计入 SC-004 的「渲染/切换」口径；纯树渲染与切换均 <1s。
