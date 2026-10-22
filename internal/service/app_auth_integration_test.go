@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -587,5 +588,203 @@ func printable(v any) any {
 		return "NULL"
 	default:
 		return x
+	}
+}
+
+// ---- 006-app-admin-role：应用管理员标记 ----
+
+// 授予/取消的完整生命周期：成员列表回显、判定放行/拒绝、即时生效、移出即失效、重新加入默认普通成员。
+func TestAppMemberAdminLifecycle(t *testing.T) {
+	env, appAuth, clients, clientID := newAppAuthEnv(t)
+	ctx := context.Background()
+	dept := env.createOrg(t, nil, "技术中心", nil)
+	u1 := env.insertUser(t, dept.ID, "admin1")
+	u2 := env.insertUser(t, dept.ID, "member2")
+	outsider := env.insertUser(t, dept.ID, "outsider")
+
+	if _, _, err := appAuth.AddMembers(ctx, clientID, []string{u1, u2}, ""); err != nil {
+		t.Fatalf("添加成员失败: %v", err)
+	}
+
+	// 初始：两人都是普通成员，判定为「非管理员」。
+	if err := appAuth.AuthorizeAppAdmin(ctx, clientID, u1); !errors.Is(err, service.ErrAppNotAdmin) {
+		t.Fatalf("授予前 AuthorizeAppAdmin = %v, 期望 ErrAppNotAdmin", err)
+	}
+
+	before, changed, err := appAuth.SetMemberAdmin(ctx, clientID, u1, true)
+	if err != nil {
+		t.Fatalf("设为管理员失败: %v", err)
+	}
+	if before || !changed {
+		t.Fatalf("首次授予 before=%v changed=%v, 期望 false/true", before, changed)
+	}
+	if err := appAuth.AuthorizeAppAdmin(ctx, clientID, u1); err != nil {
+		t.Fatalf("授予后判定失败: %v", err)
+	}
+
+	// 幂等：同值重复设置不产生变更。
+	before, changed, err = appAuth.SetMemberAdmin(ctx, clientID, u1, true)
+	if err != nil {
+		t.Fatalf("重复授予失败: %v", err)
+	}
+	if !before || changed {
+		t.Fatalf("重复授予 before=%v changed=%v, 期望 true/false", before, changed)
+	}
+
+	// 成员列表回显 isAdmin。
+	items, _, err := appAuth.ListMembers(ctx, clientID, service.MemberFilter{Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatalf("成员列表失败: %v", err)
+	}
+	flags := map[string]bool{}
+	for _, it := range items {
+		flags[it.UserID] = it.IsAdmin
+	}
+	if !flags[u1] || flags[u2] {
+		t.Fatalf("成员列表 isAdmin 不正确: %v", flags)
+	}
+
+	// 门户「我的应用」带出 isAppAdmin，且只对管理员为真。
+	apps, err := clients.ListForUser(ctx, u1)
+	if err != nil {
+		t.Fatalf("ListForUser 失败: %v", err)
+	}
+	if len(apps) != 1 || !apps[0].IsAppAdmin {
+		t.Fatalf("u1 的应用列表 = %+v, 期望 1 项且 isAppAdmin=true", apps)
+	}
+	apps, err = clients.ListForUser(ctx, u2)
+	if err != nil {
+		t.Fatalf("ListForUser(u2) 失败: %v", err)
+	}
+	if len(apps) != 1 || apps[0].IsAppAdmin {
+		t.Fatalf("u2 的应用列表 = %+v, 期望 1 项且 isAppAdmin=false", apps)
+	}
+
+	// 非成员与不存在的应用分别给出可区分的服务端原因（HTTP 层统一 403）。
+	if err := appAuth.AuthorizeAppAdmin(ctx, clientID, outsider); !errors.Is(err, service.ErrAppMemberNotFound) {
+		t.Fatalf("非成员判定 = %v, 期望 ErrAppMemberNotFound", err)
+	}
+	if err := appAuth.AuthorizeAppAdmin(ctx, "no-such-client", u1); !errors.Is(err, service.ErrClientNotFound) {
+		t.Fatalf("不存在的应用判定 = %v, 期望 ErrClientNotFound", err)
+	}
+	if _, _, err := appAuth.SetMemberAdmin(ctx, clientID, outsider, true); !errors.Is(err, service.ErrAppMemberNotFound) {
+		t.Fatalf("把非成员设为管理员 = %v, 期望 ErrAppMemberNotFound", err)
+	}
+
+	// 移出即失去管理员身份；重新加入默认普通成员（FR-008）。
+	if _, _, _, err := appAuth.RemoveMembers(ctx, clientID, []string{u1}); err != nil {
+		t.Fatalf("移除成员失败: %v", err)
+	}
+	if apps, err = clients.ListForUser(ctx, u1); err != nil {
+		t.Fatalf("移除后 ListForUser 失败: %v", err)
+	}
+	if len(apps) != 0 {
+		t.Fatalf("移除后 u1 仍可见应用: %+v", apps)
+	}
+	if _, _, err := appAuth.AddMembers(ctx, clientID, []string{u1}, ""); err != nil {
+		t.Fatalf("重新加入失败: %v", err)
+	}
+	if err := appAuth.AuthorizeAppAdmin(ctx, clientID, u1); !errors.Is(err, service.ErrAppNotAdmin) {
+		t.Fatalf("重新加入后判定 = %v, 期望 ErrAppNotAdmin（默认普通成员）", err)
+	}
+}
+
+// 应用停用后：管理判定被拒，标记本身保留（重新启用即恢复）。
+func TestAuthorizeAppAdminRejectsDisabledClient(t *testing.T) {
+	env, appAuth, clients, clientID := newAppAuthEnv(t)
+	ctx := context.Background()
+	dept := env.createOrg(t, nil, "技术中心", nil)
+	admin := env.insertUser(t, dept.ID, "admin1")
+
+	if _, _, err := appAuth.AddMembers(ctx, clientID, []string{admin}, ""); err != nil {
+		t.Fatalf("添加成员失败: %v", err)
+	}
+	if _, _, err := appAuth.SetMemberAdmin(ctx, clientID, admin, true); err != nil {
+		t.Fatalf("设为管理员失败: %v", err)
+	}
+
+	disabled := int8(0)
+	if _, err := clients.Update(ctx, clientID, service.UpdateClientInput{Status: &disabled}); err != nil {
+		t.Fatalf("停用应用失败: %v", err)
+	}
+	if err := appAuth.AuthorizeAppAdmin(ctx, clientID, admin); !errors.Is(err, service.ErrAppClientDisabled) {
+		t.Fatalf("停用后判定 = %v, 期望 ErrAppClientDisabled", err)
+	}
+
+	enabled := int8(1)
+	if _, err := clients.Update(ctx, clientID, service.UpdateClientInput{Status: &enabled}); err != nil {
+		t.Fatalf("启用应用失败: %v", err)
+	}
+	if err := appAuth.AuthorizeAppAdmin(ctx, clientID, admin); err != nil {
+		t.Fatalf("重新启用后判定失败（标记应保留）: %v", err)
+	}
+}
+
+// 平台 admin 角色不构成门户侧管理权（spec A2 / US4-AC7）：只有 is_admin 才放行。
+func TestAuthorizeAppAdminIgnoresPlatformRole(t *testing.T) {
+	env, appAuth, _, clientID := newAppAuthEnv(t)
+	ctx := context.Background()
+	dept := env.createOrg(t, nil, "技术中心", nil)
+	platformAdmin := env.insertUser(t, dept.ID, "platform-admin")
+
+	if err := env.db.Exec(
+		`UPDATE users SET roles = JSON_ARRAY('user', 'admin') WHERE id = ?`, platformAdmin,
+	).Error; err != nil {
+		t.Fatalf("设置平台管理员角色失败: %v", err)
+	}
+	if _, _, err := appAuth.AddMembers(ctx, clientID, []string{platformAdmin}, ""); err != nil {
+		t.Fatalf("添加成员失败: %v", err)
+	}
+
+	if err := appAuth.AuthorizeAppAdmin(ctx, clientID, platformAdmin); !errors.Is(err, service.ErrAppNotAdmin) {
+		t.Fatalf("平台管理员（非应用管理员）判定 = %v, 期望 ErrAppNotAdmin", err)
+	}
+	if _, _, err := appAuth.SetMemberAdmin(ctx, clientID, platformAdmin, true); err != nil {
+		t.Fatalf("授予应用管理员失败: %v", err)
+	}
+	if err := appAuth.AuthorizeAppAdmin(ctx, clientID, platformAdmin); err != nil {
+		t.Fatalf("兼任应用管理员后判定失败: %v", err)
+	}
+}
+
+// 管理权严格按应用隔离，且取消后同一会话下一次请求即被拒（无缓存，FR-010 / FR-011）。
+func TestAuthorizeAppAdminIsolatedAndImmediate(t *testing.T) {
+	env, appAuth, clients, clientX := newAppAuthEnv(t)
+	ctx := context.Background()
+	dept := env.createOrg(t, nil, "技术中心", nil)
+	operator := env.insertUser(t, dept.ID, "app-admin")
+
+	// 第二个应用：operator 只是普通成员。
+	other, _, err := clients.Create(ctx, service.CreateClientInput{
+		ClientName:   "另一个应用",
+		RedirectURIs: []string{"https://other.example.com/cb"},
+	})
+	if err != nil {
+		t.Fatalf("创建第二个应用失败: %v", err)
+	}
+	if _, _, err := appAuth.AddMembers(ctx, clientX, []string{operator}, ""); err != nil {
+		t.Fatalf("加入应用 X 失败: %v", err)
+	}
+	if _, _, err := appAuth.AddMembers(ctx, other.ClientID, []string{operator}, ""); err != nil {
+		t.Fatalf("加入应用 Y 失败: %v", err)
+	}
+	if _, _, err := appAuth.SetMemberAdmin(ctx, clientX, operator, true); err != nil {
+		t.Fatalf("授予 X 的管理员失败: %v", err)
+	}
+
+	if err := appAuth.AuthorizeAppAdmin(ctx, clientX, operator); err != nil {
+		t.Fatalf("X 的管理员应放行: %v", err)
+	}
+	if err := appAuth.AuthorizeAppAdmin(ctx, other.ClientID, operator); !errors.Is(err, service.ErrAppNotAdmin) {
+		t.Fatalf("对 Y 的判定 = %v, 期望 ErrAppNotAdmin（权限不得外溢）", err)
+	}
+
+	// 取消后同一会话（无重新登录、无缓存）下一次判定即被拒。
+	before, changed, err := appAuth.SetMemberAdmin(ctx, clientX, operator, false)
+	if err != nil || !before || !changed {
+		t.Fatalf("取消管理员失败: before=%v changed=%v err=%v", before, changed, err)
+	}
+	if err := appAuth.AuthorizeAppAdmin(ctx, clientX, operator); !errors.Is(err, service.ErrAppNotAdmin) {
+		t.Fatalf("取消后判定 = %v, 期望 ErrAppNotAdmin（应立即生效）", err)
 	}
 }

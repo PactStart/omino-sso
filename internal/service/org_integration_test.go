@@ -104,6 +104,9 @@ func openTestDB(t *testing.T, dsn string) *gorm.DB {
 	if cfg.DBName == "" {
 		t.Fatalf("%s 必须包含库名（形如 user:pass@tcp(127.0.0.1:3307)/omino_sso_test）", testDSNEnv)
 	}
+	if err := requireTestDatabase(cfg.DBName); err != nil {
+		t.Fatalf("%s: %v", testDSNEnv, err)
+	}
 	schemaOnce.Do(func() { schemaErr = rebuildSchema(dsn, cfg) })
 	if schemaErr != nil {
 		t.Fatalf("初始化测试库失败: %v", schemaErr)
@@ -138,7 +141,27 @@ func rebuildSchema(dsn string, cfg *mysqldrv.Config) error {
 	return applyMigrations(db)
 }
 
+// requireTestDatabase 是集成测试的安全护栏：测试会 `DROP DATABASE` 并重建 schema，
+// 因此库名必须显式以 `_test` 结尾。
+//
+// 由来（2026-10-22）：一次调试把 TEST_MYSQL_DSN 指向了开发库 `omino_sso`，
+// 测试直接把整个开发库 DROP 掉（管理员账号、组织、审计全丢）。此后：
+//   - openTestDB 在首次运行时就报错，而不是"跳过"或"照做"；
+//   - recreateTestDB 自己再校验一次，保证任何调用方都无法 DROP 非测试库。
+func requireTestDatabase(dbName string) error {
+	if !strings.HasSuffix(dbName, "_test") {
+		return fmt.Errorf(
+			"拒绝在非测试库 %q 上运行：集成测试会 DROP DATABASE 并重建 schema，库名必须以 _test 结尾（例如 omino_sso_test）",
+			dbName,
+		)
+	}
+	return nil
+}
+
 func recreateTestDB(cfg *mysqldrv.Config) error {
+	if err := requireTestDatabase(cfg.DBName); err != nil {
+		return err
+	}
 	adminCfg := *cfg
 	adminCfg.DBName = ""
 	adminDB, err := gorm.Open(mysql.Open(adminCfg.FormatDSN()), &gorm.Config{Logger: gormlogger.Discard})

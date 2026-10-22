@@ -19,6 +19,7 @@ import type {
   FileQuery,
   FileRow,
   FileUploadPayload,
+  MemberAdminResult,
   MemberGrantResult,
   MemberQuery,
   Me,
@@ -197,6 +198,18 @@ export function removeAppMembers(clientId: string, userIds: string[]) {
     url: `${clientBase(clientId)}/members/remove`,
     method: 'POST',
     data: { userIds },
+  })
+}
+
+/**
+ * 设置/取消应用管理员（006）。幂等：提交与当前相同的值仍返回 200。
+ * 授予与取消管理员的入口只在 admin 端，门户不提供。
+ */
+export function setAppMemberAdmin(clientId: string, userId: string, isAdmin: boolean) {
+  return request<MemberAdminResult>({
+    url: `${clientBase(clientId)}/members/${encodeURIComponent(userId)}/admin`,
+    method: 'PUT',
+    data: { isAdmin },
   })
 }
 

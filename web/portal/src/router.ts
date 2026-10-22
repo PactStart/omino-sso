@@ -27,6 +27,51 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/Apps.vue'),
     meta: { requiresAuth: true, title: '我的应用' },
   },
+  // 门户应用管理（006）：独立地址、可收藏；子页共用外层壳（摘要 + tab）。
+  // handleForbidden: 'local' 让 403 由页面内提示处理，而不是整页跳 /403。
+  {
+    path: '/account/apps/:clientId/manage',
+    component: () => import('@/views/app-admin/AppAdminLayout.vue'),
+    meta: { requiresAuth: true, handleForbidden: 'local', title: '应用管理' },
+    children: [
+      {
+        path: '',
+        redirect: (to) =>
+          `/account/apps/${encodeURIComponent(String(to.params.clientId ?? ''))}/manage/overview`,
+      },
+      {
+        // 应用信息：参考 admin 端详情，但门户只开放名称/描述/Logo/回调地址（006 口径调整）。
+        path: 'overview',
+        name: 'app-manage-overview',
+        component: () => import('@/views/app-admin/Overview.vue'),
+        meta: { title: '应用信息' },
+      },
+      {
+        path: 'members',
+        name: 'app-manage-members',
+        component: () => import('@/views/app-admin/Members.vue'),
+        meta: { title: '应用成员' },
+      },
+      {
+        path: 'roles',
+        name: 'app-manage-roles',
+        component: () => import('@/views/app-admin/Roles.vue'),
+        meta: { title: '应用角色' },
+      },
+      {
+        path: 'permissions',
+        name: 'app-manage-permissions',
+        component: () => import('@/views/app-admin/Permissions.vue'),
+        meta: { title: '应用权限' },
+      },
+      {
+        path: 'grants',
+        name: 'app-manage-grants',
+        component: () => import('@/views/app-admin/Grants.vue'),
+        meta: { title: '授权管理' },
+      },
+    ],
+  },
   {
     path: '/account/sessions',
     name: 'sessions',

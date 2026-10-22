@@ -244,6 +244,19 @@ type AppItem struct {
 	LogoURL      string  `json:"logoUrl" example:"https://cdn.example.com/logo/portal.png"`
 	HomeURL      string  `json:"homeUrl" example:"https://portal.example.com"`
 	LastAccessAt *string `json:"lastAccessAt"`
+	// IsAppAdmin 为 true 时门户展示「管理」入口；只来自 client_members.is_admin（006）。
+	IsAppAdmin bool `json:"isAppAdmin" example:"false"`
+}
+
+// AppManageContext 门户应用管理页摘要（GET /api/v1/me/apps/:id）。
+// 刻意小于 ClientDetail：不含回调地址、scope、TTL、isPublic 与任何密钥（FR-005）。
+type AppManageContext struct {
+	ClientID    string `json:"clientId" example:"demo-app"`
+	Name        string `json:"name" example:"验收应用"`
+	Description string `json:"description" example:"内部验收用"`
+	LogoURL     string `json:"logoUrl" example:"https://cdn.example.com/logo/demo.png"`
+	Status      int8   `json:"status" example:"1"`
+	MemberCount int64  `json:"memberCount" example:"12"`
 }
 
 // SessionItem 登录设备（GET /api/v1/me/sessions 的元素）。
@@ -322,6 +335,14 @@ type AppMemberItem struct {
 	Status      int8   `json:"status" example:"1"`
 	JoinedAt    string `json:"joinedAt" example:"2026-10-20T10:00:00Z"`
 	RoleCount   int64  `json:"roleCount" example:"2"`
+	// IsAdmin 标记该成员是否为该应用的应用管理员（006）。
+	IsAdmin bool `json:"isAdmin" example:"false"`
+}
+
+// MemberAdminResult 设置/取消应用管理员的结果（006）。
+type MemberAdminResult struct {
+	UserID  string `json:"userId" example:"01J9ZJ8Q2M4N6P8R0T2V4X6Z8A"`
+	IsAdmin bool   `json:"isAdmin" example:"true"`
 }
 
 // CandidateItem 候选成员（GET /admin/clients/:id/members/candidates 的元素）。

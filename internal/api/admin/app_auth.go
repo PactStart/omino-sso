@@ -35,6 +35,8 @@ func (h *Handler) failAppAuth(c *gin.Context, err error) {
 		response.Fail(c, response.ErrAppPermissionInvalidParent)
 	case errors.Is(err, service.ErrAppResourceStale):
 		response.Fail(c, response.ErrAppResourceStale)
+	case errors.Is(err, service.ErrAppMemberNotFound):
+		response.Fail(c, response.ErrAppMemberNotFound)
 	case errors.Is(err, service.ErrAppValidation), errors.Is(err, service.ErrAppDeptNotFound):
 		response.Fail(c, response.ErrValidation)
 	default:
@@ -209,7 +211,7 @@ func (h *Handler) ListMembers(c *gin.Context) {
 		list = append(list, dto.AppMemberItem{
 			UserID: it.UserID, Username: it.Username, DisplayName: it.DisplayName,
 			DeptID: it.DeptID, DeptName: it.DeptName, Status: it.Status,
-			JoinedAt: dto.Time(it.JoinedAt), RoleCount: it.RoleCount,
+			JoinedAt: dto.Time(it.JoinedAt), RoleCount: it.RoleCount, IsAdmin: it.IsAdmin,
 		})
 	}
 	response.Success(c, response.Page{List: list, Total: total, Page: f.Page, PageSize: f.PageSize})
@@ -374,6 +376,68 @@ func (h *Handler) RemoveMembers(c *gin.Context) {
 		Fields: map[string]any{"clientId": clientID, "removed": removed, "roleBindingsRemoved": bindings},
 	})
 	response.Success(c, gin.H{"removed": removed, "roleBindingsRemoved": bindings, "notMember": notMember})
+}
+
+// SetMemberAdminRequest PUT /api/v1/admin/clients/:id/members/:uid/admin
+type SetMemberAdminRequest struct {
+	IsAdmin *bool `json:"isAdmin" binding:"required" example:"true"`
+}
+
+// SetMemberAdmin PUT /api/v1/admin/clients/:id/members/:uid/admin
+//
+// @Summary      设置/取消应用管理员
+// @Description  把该应用的某个成员设为「应用管理员」或取消。幂等：提交与当前相同的值仍返回 200 且不写第二条审计。授予与取消管理员的入口只在 admin 端（门户不提供）。目标用户不是成员时返回 404 APP_MEMBER_NOT_FOUND。写入 app_member_admin_granted / app_member_admin_revoked 审计。
+// @Tags         应用成员
+// @Accept        json
+// @Produce      json
+// @Security     cookieAuth
+// @Param        id    path  string                    true  "应用标识 clientId"
+// @Param        uid   path  string                    true  "目标用户 ID"
+// @Param        body  body  admin.SetMemberAdminRequest true  "是否设为应用管理员"
+// @Success      200   {object}  response.Body{data=dto.MemberAdminResult}  "success"
+// @Failure      400   {object}  response.Body  "VALIDATION_FAILED"
+// @Failure      401   {object}  response.Body  "UNAUTHENTICATED"
+// @Failure      403   {object}  response.Body  "FORBIDDEN"
+// @Failure      404   {object}  response.Body  "APP_MEMBER_NOT_FOUND"
+// @Failure      500   {object}  response.Body  "INTERNAL_ERROR"
+// @x-auth-level  "admin"
+// @Router       /admin/clients/{id}/members/{uid}/admin [put]
+func (h *Handler) SetMemberAdmin(c *gin.Context) {
+	var req SetMemberAdminRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.IsAdmin == nil {
+		response.Fail(c, response.ErrValidation)
+		return
+	}
+	clientID := c.Param("id")
+	userID := c.Param("uid")
+	before, changed, err := h.appAuth.SetMemberAdmin(c.Request.Context(), clientID, userID, *req.IsAdmin)
+	if err != nil {
+		h.failAppAuth(c, err)
+		return
+	}
+	// 只在身份真正发生变化时写审计（幂等提交不产生重复记录，FR-002）。
+	if changed {
+		eventType := model.EventAppMemberAdminRevoked
+		if *req.IsAdmin {
+			eventType = model.EventAppMemberAdminGranted
+		}
+		ev := service.Event{
+			Type: eventType, ClientID: clientID,
+			IP: c.ClientIP(), UserAgent: c.Request.UserAgent(), Result: "success",
+			Fields: map[string]any{
+				"clientId": clientID,
+				"userId":   userID,
+				"isAdmin":  map[string]any{"before": before, "after": *req.IsAdmin},
+			},
+		}
+		// 操作者可追溯（FR-014 / SC-006）。
+		if u, ok := middleware.CurrentUser(c); ok {
+			ev.UserID = u.ID
+			ev.Username = u.Username
+		}
+		h.audit.Emit(c.Request.Context(), ev)
+	}
+	response.Success(c, dto.MemberAdminResult{UserID: userID, IsAdmin: *req.IsAdmin})
 }
 
 // ---------- 角色 ----------

@@ -7,7 +7,7 @@ DOCS_VERSION_PKG := github.com/omino/omino-sso/internal/api/docs
 SWAGGER_JSON := .tmp/swagger/swagger.json
 OPENAPI_JSON := internal/api/docs/openapi.json
 
-.PHONY: help deps keys assets dev build test test-go test-web lint lint-go lint-web check check-registry check-docs-commands ci-local build-web docs docs-check docs-serve migrate-up migrate-down clean
+.PHONY: help deps keys assets dev build test test-go test-web test-integration lint lint-go lint-web check check-registry check-docs-commands ci-local build-web docs docs-check docs-serve migrate-up migrate-down clean
 
 help:
 	@echo "deps        下载依赖"
@@ -69,6 +69,12 @@ test: test-go test-web
 
 test-go:
 	$(GO) test ./...
+
+# 集成测试（需要 MySQL）：会 DROP DATABASE 并重建 schema，
+# 因此 TEST_MYSQL_DSN 的库名必须以 _test 结尾（护栏见 internal/service/org_integration_test.go）。
+test-integration:
+	@test -n "$$TEST_MYSQL_DSN" || { echo "请先导出 TEST_MYSQL_DSN（库名必须以 _test 结尾，例如 .../omino_sso_test）"; exit 1; }
+	TEST_MYSQL_DSN="$$TEST_MYSQL_DSN" $(GO) test ./internal/service/ ./internal/store/ -count=1
 
 # 前端用例走 vitest（登录方式切换、图形验证码、验证码登录失败提示）。
 # node_modules 不入库：干净检出时先按 $(NPM_INSTALL) 安装，已装过则直接跑，保证新克隆可直接 `make test`。

@@ -25,6 +25,9 @@ type AppItem struct {
 	LogoURL      string
 	HomeURL      string
 	LastAccessAt *int64
+	// IsAppAdmin 表示当前用户是「该应用的应用管理员」（门户「管理」按钮的唯一判据）。
+	// 只来自 client_members.is_admin，平台 admin 角色不会置真（spec A2）。
+	IsAppAdmin bool
 }
 
 // ClientService 应用（OAuth client）管理。
@@ -230,6 +233,17 @@ func (s *ClientService) Update(ctx context.Context, clientID string, in UpdateCl
 	return s.st.GetClient(ctx, clientID)
 }
 
+// UpdateBasicInfo 门户应用管理员可改的基础信息：仅名称 / 描述 / Logo / 回调地址。
+// 其余字段（登出地址、两类 TTL、启用状态）在此统一清空，即使调用方误传也不会落库，
+// 保证「可编辑字段白名单」只有 service 一处定义（006 口径）。
+func (s *ClientService) UpdateBasicInfo(ctx context.Context, clientID string, in UpdateClientInput) (*model.Client, error) {
+	in.PostLogoutURIs = nil
+	in.AccessTokenTTL = nil
+	in.RefreshTokenTTL = nil
+	in.Status = nil
+	return s.Update(ctx, clientID, in)
+}
+
 func validateOptionalURL(v string, maxLen int) error {
 	if v == "" {
 		return nil
@@ -285,11 +299,12 @@ func (s *ClientService) ListForUser(ctx context.Context, userID string) ([]AppIt
 		return nil, err
 	}
 	out := make([]AppItem, 0, len(clients))
-	for _, c := range clients {
+	for _, row := range clients {
+		c := row.Client
 		if c.Status != 1 {
 			continue
 		}
-		item := AppItem{ClientID: c.ClientID, Name: c.ClientName}
+		item := AppItem{ClientID: c.ClientID, Name: c.ClientName, IsAppAdmin: row.IsAdmin}
 		if c.Description != nil {
 			item.Description = *c.Description
 		}

@@ -85,6 +85,8 @@ func TestAppItemMatchesLegacyPayload(t *testing.T) {
 			"logoUrl":      "https://cdn.example.com/logo/portal.png",
 			"homeUrl":      "https://portal.example.com",
 			"lastAccessAt": &last,
+			// 006 新增：门户「管理」按钮判据，缺省必须显式为 false。
+			"isAppAdmin": false,
 		},
 		AppItem{
 			ClientID:     "portal",
@@ -93,6 +95,7 @@ func TestAppItemMatchesLegacyPayload(t *testing.T) {
 			LogoURL:      "https://cdn.example.com/logo/portal.png",
 			HomeURL:      "https://portal.example.com",
 			LastAccessAt: &last,
+			IsAppAdmin:   false,
 		},
 	)
 }

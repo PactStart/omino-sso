@@ -114,6 +114,204 @@ export interface AppItem {
   logoUrl: string
   homeUrl: string
   lastAccessAt: string | null
+  /** 是否为该应用的应用管理员（006）：为 true 时「我的应用」出现「管理」入口 */
+  isAppAdmin: boolean
+}
+
+/* ---------------- 门户应用管理（006-app-admin-role） ---------------- */
+
+export interface Paged<T> {
+  list: T[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+/** 只读组织树节点（与 admin 端同构，userCount 为直属人数） */
+export interface OrgNode {
+  id: string
+  name: string
+  parentId: string | null
+  path: string
+  userCount: number
+  children: OrgNode[]
+}
+
+/** 管理页摘要（GET /me/apps/:id）：不含回调地址、scope、TTL 与密钥 */
+export interface AppManageContext {
+  clientId: string
+  name: string
+  description: string
+  logoUrl: string
+  status: number
+  memberCount: number
+}
+
+/**
+ * 应用详情（GET /me/apps/:id/detail）。
+ * 字段与 admin 端 ClientDetail 一致，供门户「应用信息」页展示；
+ * 但门户只有名称 / 描述 / Logo / 回调地址可改，其余均为只读。
+ */
+export interface AppDetail {
+  clientId: string
+  clientName: string
+  description: string
+  logoUrl: string
+  redirectUris: string[]
+  postLogoutUris: string[]
+  grantTypes: string[]
+  scopes: string[]
+  isPublic: boolean
+  accessTokenTtl: number
+  refreshTokenTtl: number
+  /** 1=启用，0=停用（门户只读） */
+  status: number
+  createdAt: string
+  /** Unix 毫秒；同时作为乐观锁版本值 */
+  updatedAt: number
+  memberCount: number
+}
+
+/** 门户可编辑字段白名单：缺失即不变，description / logoUrl 传空串表示清空 */
+export interface UpdateAppBasicInfoPayload {
+  clientName?: string
+  description?: string
+  logoUrl?: string
+  redirectUris?: string[]
+  updatedAt?: number
+}
+
+export interface AppMember {
+  userId: string
+  username: string
+  displayName: string
+  deptId: string
+  deptName: string
+  /** 1=正常，其他=停用/锁定（成员关系保留，仅标记） */
+  status: number
+  joinedAt: string
+  roleCount: number
+  /** 应用管理员身份（门户只读展示，切换入口只在 admin 端） */
+  isAdmin: boolean
+}
+
+export interface AppCandidate {
+  userId: string
+  username: string
+  displayName: string
+  deptId: string
+  deptName: string
+}
+
+export interface MemberQuery {
+  keyword?: string
+  deptId?: string
+  page?: number
+  pageSize?: number
+}
+
+/** all=true 时的响应：当前筛选下的全部 userId（上限 5000） */
+export interface UserIdSet {
+  userIds: string[]
+}
+
+export interface AddMembersByUsersResult {
+  added: number
+  skipped: number
+}
+
+/** 按部门整批加入的三类计数 */
+export interface AddMembersByDeptResult {
+  added: number
+  existing: number
+  disabled: number
+}
+
+export type AddMembersResult = Partial<AddMembersByUsersResult & AddMembersByDeptResult>
+
+export interface RemoveMembersResult {
+  removed: number
+  roleBindingsRemoved: number
+  notMember: number
+}
+
+export interface AppRole {
+  id: string
+  clientId: string
+  name: string
+  description: string
+  permissionCount: number
+  memberCount: number
+  createdAt: string
+  updatedAt: number
+}
+
+export interface RoleDetail {
+  id: string
+  clientId: string
+  name: string
+  description: string
+  permissionIds: string[]
+  memberIds: string[]
+  createdAt: string
+  updatedAt: number
+}
+
+export interface CreateRolePayload {
+  name: string
+  description?: string
+}
+
+export interface UpdateRolePayload {
+  name?: string
+  description?: string
+  updatedAt?: number
+}
+
+export interface AppPermission {
+  id: string
+  clientId: string
+  parentId: string | null
+  code: string
+  name: string
+  description: string
+  sort: number
+  childCount: number
+  roleCount: number
+  createdAt: string
+  updatedAt: number
+}
+
+export interface CreatePermissionPayload {
+  code: string
+  name: string
+  description?: string
+  parentId?: string | null
+  sort?: number
+}
+
+export interface UpdatePermissionPayload {
+  code?: string
+  name?: string
+  description?: string
+  /** null = 移到根级 */
+  parentId?: string | null
+  sort?: number
+  updatedAt?: number
+}
+
+export interface PermissionGrantResult {
+  permissionIds: string[]
+  added: number
+  removed: number
+}
+
+export interface MemberGrantResult {
+  memberIds: string[]
+  added: number
+  removed: number
+  /** 顺带补入应用的成员数（FR-025） */
+  autoJoinedMembers: number
 }
 
 export interface SessionItem {

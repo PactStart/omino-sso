@@ -47,8 +47,9 @@ func NewRouter(
 	r.Use(middleware.RateLimit(st.Redis(), "api", cfg.RateLimitAPIPerMin, time.Minute))
 
 	authH := auth.NewHandler(cfg, users, sessions, notif, captcha, audit, logger)
-	meH := me.NewHandler(users, sessions, clients, fileSvc, mfaSvc, audit, logger)
 	adminH := admin.NewHandler(users, clients, orgs, appAuth, fileSvc, notif, audit, logger)
+	// 门户的成员/角色/权限端点转交给 adminH（业务逻辑单一实现，006-app-admin-role）。
+	meH := me.NewHandler(users, sessions, clients, fileSvc, mfaSvc, appAuth, adminH, audit, logger)
 	filesH := files.NewHandler(fileSvc, logger)
 
 	// 接口文档（规范 §4.0）：仅非 prod 注册，且不套统一响应、不挂限流。
@@ -89,8 +90,43 @@ func NewRouter(
 		authed.DELETE("/me/sessions/:sid", meH.RevokeSession)
 		authed.POST("/me/avatar", meH.UpdateAvatar)
 		authed.DELETE("/me/avatar", meH.ClearAvatar)
+		// 只读组织树：门户应用管理页的部门筛选与「按部门加入」需要（006）。
+		// 组织写操作仍只挂在 adminGroup 下，门户不注册任何写端点。
+		authed.GET("/me/orgs/tree", meH.AppOrgTree)
 		authed.POST("/files/upload-credential", filesH.CreateUploadCredential)
 		authed.POST("/files/confirm", filesH.ConfirmUpload)
+	}
+
+	// 门户应用管理（006）：只认「该应用的应用管理员」，不挂 Admin()。
+	// 平台管理员不因平台身份获得门户侧权限（spec A2），其路径是上面的 adminGroup。
+	// 应用信息只开放「名称 / 描述 / Logo / 回调地址」四个可编辑字段（白名单在
+	// ClientService.UpdateBasicInfo）；密钥、设为管理员、登出地址、TTL、启停仍只在 admin 端，
+	// 未注册的路径（密钥、设为管理员）一律落入 NoRoute。
+	// 摘要与详情端点单独注册（路径不得为空字面量，否则 scripts/check-registry.sh 无法解析）。
+	authed.GET("/me/apps/:id", middleware.AppAdmin(appAuth, logger), meH.AppManageContext)
+	authed.GET("/me/apps/:id/detail", middleware.AppAdmin(appAuth, logger), meH.AppClientDetail)
+	authed.PATCH("/me/apps/:id", middleware.AppAdmin(appAuth, logger), meH.AppUpdateClient)
+
+	appAdminGroup := authed.Group("/me/apps/:id")
+	appAdminGroup.Use(middleware.AppAdmin(appAuth, logger))
+	{
+		appAdminGroup.POST("/logo", meH.AppSetClientLogo)
+		appAdminGroup.DELETE("/logo", meH.AppClearClientLogo)
+		appAdminGroup.GET("/members", meH.AppListMembers)
+		appAdminGroup.GET("/members/candidates", meH.AppListCandidates)
+		appAdminGroup.POST("/members", meH.AppAddMembers)
+		appAdminGroup.POST("/members/remove", meH.AppRemoveMembers)
+		appAdminGroup.GET("/roles", meH.AppListRoles)
+		appAdminGroup.POST("/roles", meH.AppCreateRole)
+		appAdminGroup.GET("/roles/:rid", meH.AppGetRole)
+		appAdminGroup.PATCH("/roles/:rid", meH.AppUpdateRole)
+		appAdminGroup.DELETE("/roles/:rid", meH.AppDeleteRole)
+		appAdminGroup.PUT("/roles/:rid/permissions", meH.AppPutRolePermissions)
+		appAdminGroup.PUT("/roles/:rid/members", meH.AppPutRoleMembers)
+		appAdminGroup.GET("/permissions", meH.AppListPermissions)
+		appAdminGroup.POST("/permissions", meH.AppCreatePermission)
+		appAdminGroup.PATCH("/permissions/:pid", meH.AppUpdatePermission)
+		appAdminGroup.DELETE("/permissions/:pid", meH.AppDeletePermission)
 	}
 
 	// 管理端点
@@ -114,6 +150,8 @@ func NewRouter(
 		adminGroup.GET("/clients/:id/members", adminH.ListMembers)
 		adminGroup.POST("/clients/:id/members", adminH.AddMembers)
 		adminGroup.POST("/clients/:id/members/remove", adminH.RemoveMembers)
+		// 授予/取消应用管理员（006）：入口只在 admin 端，门户不注册该路径。
+		adminGroup.PUT("/clients/:id/members/:uid/admin", adminH.SetMemberAdmin)
 		adminGroup.GET("/clients/:id/members/candidates", adminH.ListCandidates)
 		adminGroup.GET("/clients/:id/roles", adminH.ListRoles)
 		adminGroup.POST("/clients/:id/roles", adminH.CreateRole)
