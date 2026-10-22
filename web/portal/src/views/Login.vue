@@ -16,15 +16,33 @@ const session = useSessionStore()
 const step = ref<Step>('credentials')
 const submitting = ref(false)
 const banner = ref('')
-const notice = ref('')
+/** 轻提示：只停留几秒自动消失，不占据表单版面（常驻提示会挤压表单、加剧滚动与干扰） */
+const toast = ref('')
 const showPassword = ref(false)
 const cooldown = ref(0)
 
 const passwordInput = ref<HTMLInputElement | null>(null)
+const loginCodeInput = ref<HTMLInputElement | null>(null)
 const codeInput = ref<HTMLInputElement | null>(null)
 
 let cooldownTimer: number | undefined
 let codeTimer: number | undefined
+let toastTimer: number | undefined
+
+const TOAST_DURATION = 3200
+
+function showToast(message: string, duration = TOAST_DURATION) {
+  window.clearTimeout(toastTimer)
+  toast.value = message
+  toastTimer = window.setTimeout(() => {
+    toast.value = ''
+  }, duration)
+}
+
+function dismissToast() {
+  window.clearTimeout(toastTimer)
+  toast.value = ''
+}
 
 /** 登录方式：密码 / 邮箱验证码 / 手机验证码（FR-008） */
 const loginType = ref<LoginType>('password')
@@ -76,7 +94,7 @@ const submitLabel = computed(() => {
 
 onMounted(() => {
   if (route.query.reason === 'password-changed') {
-    notice.value = '密码已修改，请使用新密码重新登录'
+    showToast('密码已修改，请使用新密码重新登录')
   }
 })
 
@@ -104,6 +122,7 @@ async function ensureCaptcha() {
 onBeforeUnmount(() => {
   window.clearInterval(cooldownTimer)
   window.clearInterval(codeTimer)
+  window.clearTimeout(toastTimer)
 })
 
 function clearErrors() {
@@ -141,23 +160,95 @@ async function goAfterAuth() {
   await router.replace('/account/profile')
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const MOBILE_RE = /^1\d{10}$/
+
+function isEmail(value: string): boolean {
+  return EMAIL_RE.test(value.trim())
+}
+
+function isMobile(value: string): boolean {
+  return MOBILE_RE.test(value.trim())
+}
+
 function switchMode(mode: LoginType) {
+  if (loginType.value === mode) return
   loginType.value = mode
   banner.value = ''
   clearErrors()
+  dismissToast()
   loginCode.value = ''
   form.password = ''
+  // 账号输入框在不同方式下语义不同：切到邮箱/手机验证码时，若原值不符合该格式
+  // 就清空，避免"用户名 张三"留在邮箱框里被误当成邮箱提交。
+  form.username = keepIfCompatible(mode, form.username)
   if (mode !== 'password') void ensureCaptcha()
+}
+
+/** 切换登录方式时，只保留与新方式格式兼容的已填账号 */
+function keepIfCompatible(mode: LoginType, value: string): string {
+  const v = value.trim()
+  if (!v) return ''
+  if (mode === 'email_code') return isEmail(v) ? v : ''
+  if (mode === 'sms_code') return isMobile(v) ? v : ''
+  return v
+}
+
+/** 联系方式脱敏，用于提示"码发到哪了"，避免用户对着明文号码反复确认 */
+function maskTarget(target: string): string {
+  const v = target.trim()
+  if (!v) return ''
+  if (isEmail(v)) {
+    const [name, domain] = v.split('@')
+    const head = name!.slice(0, 1)
+    return `${head}***@${domain}`
+  }
+  if (isMobile(v)) return `${v.slice(0, 3)}****${v.slice(7)}`
+  return v
+}
+
+/** 用户开始修改某个字段时立即消掉它的旧错误，避免"已改正但红字还在" */
+function clearError(field: keyof typeof errors) {
+  if (errors[field]) errors[field] = ''
+}
+
+/** 账号/密码/验证码输入：纠正输入内容并即时清除对应错误 */
+function onIdentifierInput() {
+  clearError('username')
+  if (banner.value) banner.value = ''
+}
+
+function onPasswordInput() {
+  clearError('password')
+}
+
+function onCaptchaInput(event: Event) {
+  captcha.code = (event.target as HTMLInputElement).value.replace(/[^0-9A-Za-z]/g, '').slice(0, 4)
+  clearError('captcha')
+}
+
+function onLoginCodeInput(event: Event) {
+  loginCode.value = (event.target as HTMLInputElement).value.replace(/\D/g, '').slice(0, 6)
+  clearError('code')
+}
+
+function onForgotCodeInput(event: Event) {
+  forgot.code = (event.target as HTMLInputElement).value.replace(/\D/g, '').slice(0, 6)
+  if (forgotErrors.code) forgotErrors.code = ''
 }
 
 /** 校验登录标识：密码登录允许三种标识，验证码登录要求对应格式 */
 function validateIdentifier(value: string): string {
-  if (!value) return '请输入账号'
+  if (!value) {
+    if (loginType.value === 'email_code') return '请输入邮箱'
+    if (loginType.value === 'sms_code') return '请输入手机号'
+    return '请输入账号'
+  }
   if (loginType.value === 'email_code') {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? '' : '请输入正确的邮箱地址'
+    return isEmail(value) ? '' : '请输入正确的邮箱地址'
   }
   if (loginType.value === 'sms_code') {
-    return /^1\d{10}$/.test(value) ? '' : '请输入 11 位手机号'
+    return isMobile(value) ? '' : '请输入 11 位手机号'
   }
   if (value.length > 128) return '账号长度不能超过 128 个字符'
   return ''
@@ -165,7 +256,7 @@ function validateIdentifier(value: string): string {
 
 async function submitCredentials() {
   banner.value = ''
-  notice.value = ''
+  dismissToast()
   clearErrors()
 
   const identifier = form.username.trim()
@@ -262,12 +353,19 @@ async function sendLoginCode() {
     startCodeCooldown(res.resendAfter || 60)
     // 图形码已在服务端消费，重发前必须先换一张
     void refreshCaptcha()
-    notice.value = `验证码已发送，${Math.ceil((res.expiresIn || 300) / 60)} 分钟内有效`
+    const minutes = Math.ceil((res.expiresIn || 300) / 60)
+    showToast(`验证码已发送至 ${maskTarget(target)}，${minutes} 分钟内有效`)
+    // 发送成功后把焦点送到验证码框，省掉一次点击
+    window.setTimeout(() => loginCodeInput.value?.focus(), 0)
   } catch (e) {
+    // 服务端只要走到图形码校验就会一次性消费它（GetDel），任何失败都必须换一张，
+    // 否则用户重试的第一次请求必然先返回 AUTH_CAPTCHA_INVALID，把真正原因盖掉。
     if (errorCode(e) === 'AUTH_CAPTCHA_INVALID') {
       handleCaptchaError()
       return
     }
+    void refreshCaptcha()
+    // VERIFY_TARGET_NOT_FOUND：该邮箱/手机号未绑定任何账号（服务端文案已含处理建议）。
     banner.value = errorMessage(e)
   } finally {
     sendingCode.value = false
@@ -289,10 +387,12 @@ function setForgotChannel(channel: VerifyChannel) {
 function openForgot() {
   step.value = 'forgot'
   banner.value = ''
-  notice.value = ''
+  dismissToast()
   clearErrors()
   forgot.channel = loginType.value === 'sms_code' ? 'sms' : 'email'
-  forgot.target = loginType.value === 'password' ? '' : form.username.trim()
+  // 只在已填内容与找回渠道匹配时带入，避免把用户名塞进"邮箱"输入框
+  const typed = form.username.trim()
+  forgot.target = loginType.value === 'password' ? '' : keepIfCompatible(loginType.value, typed)
   forgot.code = ''
   forgot.newPassword = ''
   forgot.confirmPassword = ''
@@ -314,9 +414,9 @@ async function sendForgotCode() {
   forgotErrors.target = ''
   const target = forgot.target.trim()
   if (forgot.channel === 'email') {
-    forgotErrors.target = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(target) ? '' : '请输入正确的邮箱地址'
+    forgotErrors.target = isEmail(target) ? '' : '请输入正确的邮箱地址'
   } else {
-    forgotErrors.target = /^1\d{10}$/.test(target) ? '' : '请输入 11 位手机号'
+    forgotErrors.target = isMobile(target) ? '' : '请输入 11 位手机号'
   }
   if (forgotErrors.target) return
   if (!captcha.code.trim()) {
@@ -335,12 +435,13 @@ async function sendForgotCode() {
     })
     startCodeCooldown(res.resendAfter || 60)
     void refreshCaptcha()
-    notice.value = '如该联系方式已绑定账号，验证码将发送到该地址'
+    showToast('如该联系方式已绑定账号，验证码将发送到该地址')
   } catch (e) {
     if (errorCode(e) === 'AUTH_CAPTCHA_INVALID') {
       handleCaptchaError()
       return
     }
+    void refreshCaptcha()
     banner.value = errorMessage(e)
   } finally {
     sendingCode.value = false
@@ -350,13 +451,13 @@ async function sendForgotCode() {
 /** 找回密码：提交新密码（成功后不自动登录，澄清 Q1） */
 async function submitForgot() {
   banner.value = ''
-  notice.value = ''
+  dismissToast()
   clearErrors()
   const target = forgot.target.trim()
   if (forgot.channel === 'email') {
-    forgotErrors.target = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(target) ? '' : '请输入正确的邮箱地址'
+    forgotErrors.target = isEmail(target) ? '' : '请输入正确的邮箱地址'
   } else {
-    forgotErrors.target = /^1\d{10}$/.test(target) ? '' : '请输入 11 位手机号'
+    forgotErrors.target = isMobile(target) ? '' : '请输入 11 位手机号'
   }
   if (!/^\d{6}$/.test(forgot.code)) forgotErrors.code = '请输入 6 位验证码'
   if (forgot.newPassword.length < 8 || forgot.newPassword.length > 128) {
@@ -381,7 +482,7 @@ async function submitForgot() {
       newPassword: forgot.newPassword,
     })
     backToCredentials()
-    notice.value = '密码已重置，请使用新密码登录'
+    showToast('密码已重置，请使用新密码登录')
   } catch (e) {
     if (errorCode(e) === 'AUTH_CODE_INVALID') {
       forgotErrors.code = '验证码错误或已过期'
@@ -538,12 +639,18 @@ function onCodeInput(event: Event) {
             }}
           </p>
 
-          <div
-            v-if="notice"
-            class="mt-5 rounded-lg bg-brand-50 px-3.5 py-2.5 text-sm text-brand-700"
-            role="status"
-          >
-            {{ notice }}
+          <!-- 轻提示：浮在页面顶部，几秒后自动消失，不占表单版面 -->
+          <div class="pointer-events-none fixed inset-x-0 top-6 z-50 flex justify-center px-4">
+            <Transition name="toast">
+              <div
+                v-if="toast"
+                class="rounded-lg bg-ink-800 px-4 py-2.5 text-sm text-white shadow-lg"
+                role="status"
+                aria-live="polite"
+              >
+                {{ toast }}
+              </div>
+            </Transition>
           </div>
 
           <div
@@ -586,6 +693,7 @@ function onCodeInput(event: Event) {
                     ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-100'
                     : 'border-ink-200 focus:border-brand-400 focus:ring-brand-50'
                 "
+                @input="onIdentifierInput"
               />
               <p v-if="errors.username" class="mt-1.5 text-xs text-rose-600">{{ errors.username }}</p>
             </div>
@@ -607,6 +715,7 @@ function onCodeInput(event: Event) {
                       ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-100'
                       : 'border-ink-200 focus:border-brand-400 focus:ring-brand-50'
                   "
+                  @input="onPasswordInput"
                 />
                 <button
                   type="button"
@@ -638,7 +747,7 @@ function onCodeInput(event: Event) {
                         ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-100'
                         : 'border-ink-200 focus:border-brand-400 focus:ring-brand-50'
                     "
-                    @input="captcha.code = captcha.code.replace(/[^0-9A-Za-z]/g, '').slice(0, 4)"
+                    @input="onCaptchaInput"
                   />
                   <button
                     type="button"
@@ -666,6 +775,7 @@ function onCodeInput(event: Event) {
                 <div class="flex gap-2">
                   <input
                     id="login-code"
+                    ref="loginCodeInput"
                     v-model="loginCode"
                     type="text"
                     inputmode="numeric"
@@ -678,7 +788,7 @@ function onCodeInput(event: Event) {
                         ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-100'
                         : 'border-ink-200 focus:border-brand-400 focus:ring-brand-50'
                     "
-                    @input="loginCode = loginCode.replace(/\D/g, '').slice(0, 6)"
+                    @input="onLoginCodeInput"
                   />
                   <button
                     type="button"
@@ -784,7 +894,7 @@ function onCodeInput(event: Event) {
                       ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-100'
                       : 'border-ink-200 focus:border-brand-400 focus:ring-brand-50'
                   "
-                  @input="captcha.code = captcha.code.replace(/[^0-9A-Za-z]/g, '').slice(0, 4)"
+                  @input="onCaptchaInput"
                 />
                 <button
                   type="button"
@@ -823,7 +933,7 @@ function onCodeInput(event: Event) {
                       ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-100'
                       : 'border-ink-200 focus:border-brand-400 focus:ring-brand-50'
                   "
-                  @input="forgot.code = forgot.code.replace(/\D/g, '').slice(0, 6)"
+                  @input="onForgotCodeInput"
                 />
                 <button
                   type="button"
@@ -962,3 +1072,19 @@ function onCodeInput(event: Event) {
     </main>
   </div>
 </template>
+
+<style scoped>
+/* 轻提示的进出场：只做淡入淡出 + 轻微位移，不打断视线 */
+.toast-enter-active,
+.toast-leave-active {
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+</style>

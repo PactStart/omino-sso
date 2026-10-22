@@ -125,6 +125,85 @@ describe('Login 登录方式切换', () => {
   })
 })
 
+describe('Login 交互细节', () => {
+  beforeEach(() => {
+    getCaptchaMock.mockResolvedValue({
+      captchaId: 'cid-3',
+      image: 'data:image/png;base64,iVBORw0KGgo=',
+      expiresIn: 120,
+    })
+    sendCodeMock.mockResolvedValue({ expiresIn: 300, resendAfter: 60 })
+  })
+
+  it('切换到邮箱验证码时清空非邮箱格式的账号', async () => {
+    const wrapper = mount(Login)
+    await wrapper.find('#username').setValue('张三')
+
+    await findButton(wrapper, '邮箱验证码').trigger('click')
+    await flushPromises()
+
+    expect((wrapper.find('#username').element as HTMLInputElement).value).toBe('')
+  })
+
+  it('切换到邮箱验证码时保留已填的邮箱（无需重输）', async () => {
+    const wrapper = mount(Login)
+    await wrapper.find('#username').setValue('alice@example.com')
+
+    await findButton(wrapper, '邮箱验证码').trigger('click')
+    await flushPromises()
+
+    expect((wrapper.find('#username').element as HTMLInputElement).value).toBe('alice@example.com')
+  })
+
+  it('切换到手机验证码时清空邮箱格式的账号', async () => {
+    const wrapper = mount(Login)
+    await findButton(wrapper, '邮箱验证码').trigger('click')
+    await flushPromises()
+    await wrapper.find('#username').setValue('alice@example.com')
+
+    await findButton(wrapper, '手机验证码').trigger('click')
+    await flushPromises()
+
+    expect((wrapper.find('#username').element as HTMLInputElement).value).toBe('')
+  })
+
+  it('重新输入图形验证码后旧错误立即消失', async () => {
+    const wrapper = mount(Login)
+    await findButton(wrapper, '邮箱验证码').trigger('click')
+    await flushPromises()
+    await wrapper.find('#username').setValue('alice@example.com')
+    await wrapper.find('#login-captcha').setValue('zzzz')
+    sendCodeMock.mockRejectedValueOnce(new ApiError('AUTH_CAPTCHA_INVALID', '图形验证码错误或已过期', 400))
+
+    await findButton(wrapper, '获取验证码').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('图形验证码错误或已过期')
+
+    await wrapper.find('#login-captcha').setValue('ab12')
+    expect(wrapper.text()).not.toContain('图形验证码错误或已过期')
+  })
+
+  it('发送成功用轻提示展示，并在数秒后自动消失', async () => {
+    vi.useFakeTimers()
+    try {
+      const wrapper = mount(Login)
+      await findButton(wrapper, '邮箱验证码').trigger('click')
+      await vi.advanceTimersByTimeAsync(0)
+      await wrapper.find('#username').setValue('alice@example.com')
+      await wrapper.find('#login-captcha').setValue('ab12')
+
+      await findButton(wrapper, '获取验证码').trigger('click')
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(wrapper.text()).toContain('验证码已发送至 a***@example.com')
+      await vi.advanceTimersByTimeAsync(3500)
+      expect(wrapper.text()).not.toContain('验证码已发送至')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe('Login 验证码登录失败提示', () => {
   beforeEach(() => {
     getCaptchaMock.mockResolvedValue({

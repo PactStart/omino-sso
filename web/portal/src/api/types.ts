@@ -47,7 +47,7 @@ export interface SendCodePayload {
 
 export interface CaptchaResult {
   captchaId: string
-  /** 可直接用于 <img src> 的 SVG data URL */
+  /** 可直接用于 <img src> 的 PNG data URL（位图，响应不含明文验证码） */
   image: string
   expiresIn: number
 }
