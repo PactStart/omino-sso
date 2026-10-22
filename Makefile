@@ -7,7 +7,7 @@ DOCS_VERSION_PKG := github.com/omino/omino-sso/internal/api/docs
 SWAGGER_JSON := .tmp/swagger/swagger.json
 OPENAPI_JSON := internal/api/docs/openapi.json
 
-.PHONY: help deps keys assets dev build test test-go test-web lint lint-go lint-web build-web docs docs-check docs-serve migrate-up migrate-down clean
+.PHONY: help deps keys assets dev build test test-go test-web lint lint-go lint-web check check-registry check-docs-commands ci-local build-web docs docs-check docs-serve migrate-up migrate-down clean
 
 help:
 	@echo "deps        下载依赖"
@@ -97,6 +97,22 @@ lint-web:
 	cd web/portal && npm run lint
 	@test -d web/admin/node_modules || (cd web/admin && $(NPM_INSTALL))
 	cd web/admin && npm run lint
+
+# 复盘（2026-10-22）：注册表与文档命令都是确定性检查，前移到提交前，
+# 避免再出现「代码改了、AGENTS/契约没跟着改」与「文档教用户跑不存在的目标」。
+# 两者都只读仓库文件，不访问网络、不依赖 node_modules。
+check: check-registry check-docs-commands
+
+check-registry:
+	bash scripts/check-registry.sh
+
+check-docs-commands:
+	bash scripts/check-docs-commands.sh
+
+# 模拟干净检出（CI）：临时 git worktree + 无 node_modules / 无 .env / 无未跟踪文件。
+# 用于发现「本地绿、CI 红」类问题（005 的 lint-web 事故即此类）。
+ci-local:
+	bash scripts/ci-local.sh
 
 # 两个前端产物 -> web/dist/portal、web/dist/admin
 # NPM_INSTALL 可覆盖：流水线保持 `npm ci`（锁文件一致性），本机 npm 的批量删除保护

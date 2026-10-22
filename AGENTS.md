@@ -143,6 +143,10 @@ omino-sso/
 ├── .dockerignore                      # 2026-10-22 新增：构建上下文裁剪（排除 web/、specs/、.env）
 ├── .env.example                       # 环境变量模板（§9）
 ├── .tmp/                              # 文档生成中间产物（gitignore，不入库）
+├── scripts/                           # 交付前自检（§7.4，2026-10-22 新增）
+│   ├── check-registry.sh              # 路由 / 错误码 / 审计事件 / 环境变量 四向一致性
+│   ├── check-docs-commands.sh         # 文档中 `make <target>` 的可执行性
+│   └── ci-local.sh                    # 临时 worktree 复刻干净检出跑全套门禁
 ├── tools/                             # 构建期工具，独立 module（禁止被业务包 import）
 │   ├── go.mod                         # 独立依赖图，隔离到这份，根 go.mod 不受影响
 │   └── openapi3/
@@ -345,6 +349,16 @@ omino-sso/
 | POST | `/api/v1/admin/clients/:id/secret` | 轮换密钥 | admin |
 | GET | `/api/v1/admin/audit-logs` | 审计日志 | admin |
 | GET | `/api/v1/admin/send-records` | 短信/邮箱发送记录 | admin |
+| POST | `/api/v1/me/avatar` | 更新本人头像（004） | session |
+| DELETE | `/api/v1/me/avatar` | 清除本人头像（004） | session |
+| POST | `/api/v1/files/upload-credential` | 获取 OSS 直传凭证（004） | session |
+| POST | `/api/v1/files/confirm` | 确认上传并登记文件（004） | session |
+| POST | `/api/v1/admin/clients/:id/logo` | 设置应用 Logo（004） | admin |
+| DELETE | `/api/v1/admin/clients/:id/logo` | 清除应用 Logo（004） | admin |
+| POST | `/api/v1/admin/users/:id/avatar` | 设置用户头像（004） | admin |
+| DELETE | `/api/v1/admin/users/:id/avatar` | 清除用户头像（004） | admin |
+| GET | `/api/v1/admin/files` | 文件列表（004） | admin |
+| PATCH | `/api/v1/admin/files/:id` | 更新文件状态（004） | admin |
 
 > **`PATCH /api/v1/admin/users/:id` 的行为修正**：提交 `deptId` 时，服务端在短事务内锁定目标部门并校验其存在，不存在返回 `400 VALIDATION_FAILED`（过去为静默写入，会与部门删除竞态产生悬空 `dept_id`）。`POST /api/v1/admin/users` 的 `deptId` 校验方式同步调整为同一临界区，对外行为不变。
 >
@@ -990,6 +1004,32 @@ omino-sso/
 - **验证用测试表达**：一条命令 / 一个测试能证明的结论（如「逐端点错误码已登记」）写成一个测试，不写进 checklist。
 - **扩展按事件触发**：`api-evolve` 等扩展只在有契约变更时产出内容，零变更特性不跑空仪式（空 diff 视为无效）。
 
+### 7.4 任务完成定义与交付前自检（005-verification-code-auth 复盘）
+
+005 共 76 条任务，其中 **27 条（36%）来自 6 轮 `/speckit.converge` 返工**：12 条是「代码改了、AGENTS/契约没同步」，6 条是功能/测试压根没交付，1 条是文档教用户执行不存在的 `make` 目标。这些都是**确定性可检查项**，不应靠事后人工审计发现。
+
+**任务完成定义（DoD）：四件套缺一不可**
+
+1. **代码**：行为符合 `spec.md` 与 `contracts/`，不留 TODO / 空实现；
+2. **测试**：同一次提交内包含对应单测或门控集成用例（宪法「开发工作流与质量门禁」）；
+3. **登记**：新增或变更的路由、错误码、审计事件、环境变量、表结构、依赖版本，在同一次提交内写入本文件 §2 / §4.1·§4.6 / §5.3 / §6.7 / §9；
+4. **门禁**：`make build && make test && make lint && make check` 全绿。
+
+**交付前自检（可脚本化，不依赖人工）**
+
+| 命令 | 覆盖 |
+|---|---|
+| `make build` | 编译 + `docs-check`（OpenAPI 漂移）+ 运行时资源存在性 |
+| `make test` | Go 单测（集成用例默认 `t.Skip`）+ portal vitest |
+| `make lint` | golangci-lint + 两套前端 eslint（缺 `node_modules` 时自动安装） |
+| `make check` | 注册表一致性（路由/错误码/审计事件/环境变量 四向比对）+ 文档命令可执行性 |
+| `make ci-local` | 临时 `git worktree` 复刻干净检出跑上述全套，专治「本地绿、CI 红」 |
+
+**两条硬约束**
+
+- **行为取舍必须落纸**：实现期临时决定的取舍（如 005 把 `login` 场景改成 `404`、而 `find_password` 保持静默）必须在同一提交内写入 `spec.md` Edge Cases + `contracts/` + 本节相关条款，不得留到 converge 阶段再补。
+- **文档里的命令必须可执行**：`specs/**`、`AGENTS.md` 中出现的 `` `make <target>` `` 由 `make check` 逐条用 `make -n` 验证；确需引用历史废弃目标时，在该行加 `docs-commands:ignore` 注释。
+
 ---
 
 ## 8. 启动命令
@@ -1025,9 +1065,10 @@ cd web/admin  && npm ci && npm run dev     # http://localhost:5174
 
 ```bash
 make build                    # 产出 bin/sso
-make test                     # 单元测试
-make test-integration         # 依赖容器内 MySQL/Redis
+make test                     # 单元测试（集成用例默认 t.Skip）
 make lint                     # golangci-lint + eslint
+make check                    # 注册表一致性 + 文档命令可执行性
+make ci-local                 # 临时 worktree 复跑全套（模拟干净检出）
 make build-web                # 两个前端产物 -> web/dist
 ```
 

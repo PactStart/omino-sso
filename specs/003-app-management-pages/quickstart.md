@@ -1,15 +1,15 @@
 # Quickstart: 应用详情子页面与应用内授权体系
 
-**Feature**: `003-app-management-pages` | 适用环境：本地 `docker compose`（MySQL `3307`、Redis `6380`）+ `make run`
+**Feature**: `003-app-management-pages` | 适用环境：本地 `docker compose`（MySQL `3307`、Redis `6380`）+ `make dev`
 
 本指南用于**端到端验收**，不替代 `tasks.md` 与自动化测试。所有 `curl` 均以 `BASE=http://127.0.0.1:8081/api/v1`、`ISSUER=http://127.0.0.1:8080` 为前提。
 
 ## 0. 前置条件
 
 ```bash
-make up            # MySQL + Redis
-make migrate-up    # 应用 migrations/0001_init + 0002_clients_meta + 0003_app_auth
-make run           # :8080（OIDC）+ :8081（管理 API）
+docker compose up -d mysql redis   # MySQL + Redis
+make migrate-up                    # 应用 migrations/0001_init + 0002_clients_meta + 0003_app_auth
+make dev                           # :8080（OIDC）+ :8081（管理 API）
 ```
 
 登录拿管理会话（后续所有管理接口都带 `-b /tmp/sso-cookie.txt`）：

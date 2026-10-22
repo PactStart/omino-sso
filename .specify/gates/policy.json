@@ -3,7 +3,7 @@
   "hooks": {
     "verify-quality": {
       "orchestrator": "custom",
-      "custom_command": "make build && make test && make lint",
+      "custom_command": "make build && make test && make lint && make check",
       "severity": "error"
     }
   },
