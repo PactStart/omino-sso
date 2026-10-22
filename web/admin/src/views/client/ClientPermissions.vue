@@ -105,6 +105,13 @@ const form = reactive({
 })
 
 /** 父级选择器候选：排除自身与全部后代，避免成环（FR-023） */
+/**
+ * el-tree-select 默认按节点的 `label` 字段显示文本；权限节点用的字段是 `name`
+ * （值为「权限名称（权限编码）」）。不显式映射会回落到显示 value（ULID），
+ * 下拉里全是不可读的 ID。
+ */
+const parentSelectProps = { label: 'name', children: 'children' }
+
 const parentOptions = computed<SelectNode[]>(() => {
   const blocked = new Set<string>()
   if (form.id) {
@@ -401,6 +408,7 @@ onMounted(loadPermissions)
           <el-tree-select
             v-model="form.parentId"
             :data="parentOptions"
+            :props="parentSelectProps"
             node-key="id"
             check-strictly
             clearable

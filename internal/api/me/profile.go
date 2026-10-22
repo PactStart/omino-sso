@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/omino/omino-sso/internal/api/admin"
 	"github.com/omino/omino-sso/internal/api/dto"
 	"github.com/omino/omino-sso/internal/api/middleware"
 	"github.com/omino/omino-sso/internal/api/response"
@@ -20,8 +21,12 @@ type Handler struct {
 	clients  *service.ClientService
 	files    *service.FileService
 	mfa      *service.MFAService
-	audit    *service.Auditor
-	log      *slog.Logger
+	// appAuth 供门户应用管理摘要端点使用；appMgmt 是 admin 端 handler，
+	// 门户的成员/角色/权限端点直接转交给它（业务逻辑单一实现，006）。
+	appAuth *service.AppAuthService
+	appMgmt *admin.Handler
+	audit   *service.Auditor
+	log     *slog.Logger
 }
 
 // NewHandler 构造。
@@ -31,12 +36,15 @@ func NewHandler(
 	clients *service.ClientService,
 	files *service.FileService,
 	mfaSvc *service.MFAService,
+	appAuth *service.AppAuthService,
+	appMgmt *admin.Handler,
 	audit *service.Auditor,
 	logger *slog.Logger,
 ) *Handler {
 	return &Handler{
 		users: users, sessions: sessions, clients: clients,
-		files: files, mfa: mfaSvc, audit: audit, log: logger,
+		files: files, mfa: mfaSvc, appAuth: appAuth, appMgmt: appMgmt,
+		audit: audit, log: logger,
 	}
 }
 
@@ -108,6 +116,7 @@ func (h *Handler) Apps(c *gin.Context) {
 			LogoURL:      it.LogoURL,
 			HomeURL:      it.HomeURL,
 			LastAccessAt: dto.TimePtr(it.LastAccessAt),
+			IsAppAdmin:   it.IsAppAdmin,
 		})
 	}
 	response.Success(c, list)

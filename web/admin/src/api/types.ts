@@ -162,6 +162,14 @@ export interface AppMember {
   status: number
   joinedAt: string
   roleCount: number
+  /** 是否为该应用的应用管理员（006）：门户「管理」入口的唯一判据 */
+  isAdmin: boolean
+}
+
+/** 设置/取消应用管理员的结果 */
+export interface MemberAdminResult {
+  userId: string
+  isAdmin: boolean
 }
 
 export interface AppCandidate {

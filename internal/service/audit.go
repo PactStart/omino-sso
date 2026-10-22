@@ -44,8 +44,35 @@ type Event struct {
 	Fields map[string]any
 }
 
+// actorKey 是 context 中操作者的键（006-app-admin-role）。
+type actorKey struct{}
+
+// WithActor 把当前操作者写入 ctx。由认证中间件在解析出会话用户后调用，
+// Auditor.Emit 在事件未显式指定操作者时据此补齐 —— 这样门户侧复用 admin
+// 端 handler 的成员/角色/权限操作也能追溯到「谁做的」（FR-014 / SC-006）。
+func WithActor(ctx context.Context, userID, username string) context.Context {
+	if userID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, actorKey{}, [2]string{userID, username})
+}
+
+// actorFrom 读取 ctx 中的操作者；缺失时返回空串。
+func actorFrom(ctx context.Context) (userID, username string) {
+	if v, ok := ctx.Value(actorKey{}).([2]string); ok {
+		return v[0], v[1]
+	}
+	return "", ""
+}
+
 // Emit 非阻塞投递。
 func (a *Auditor) Emit(ctx context.Context, e Event) {
+	// 事件未指定操作者时，回填认证中间件注入的当前用户（显式值优先）。
+	if e.UserID == "" {
+		if uid, name := actorFrom(ctx); uid != "" {
+			e.UserID, e.Username = uid, name
+		}
+	}
 	ev := &model.AuditEvent{
 		ID:        id.New(),
 		EventType: e.Type,

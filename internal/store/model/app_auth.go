@@ -7,6 +7,9 @@ type ClientMember struct {
 	UserID   string  `gorm:"column:user_id;primaryKey"`
 	AddedBy  *string `gorm:"column:added_by"`
 	JoinedAt int64   `gorm:"column:joined_at"`
+	// IsAdmin 标记该成员是否为该应用的应用管理员（006-app-admin-role）。
+	// 授予与取消只在 admin 端由平台管理员执行；随成员行删除自动失效。
+	IsAdmin bool `gorm:"column:is_admin"`
 }
 
 func (ClientMember) TableName() string { return "client_members" }

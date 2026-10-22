@@ -57,3 +57,29 @@ func TestAddMembersRejectsUserIdAndDeptID(t *testing.T) {
 		t.Fatalf("status = %d, 期望 400", rec.Code)
 	}
 }
+
+// 006：设置应用管理员 —— 请求体非法或缺少 isAdmin 时 400 VALIDATION_FAILED（不触达 service）。
+func TestSetMemberAdminRejectsBadBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := newTestHandler()
+	r := gin.New()
+	r.PUT("/clients/:id/members/:uid/admin", h.SetMemberAdmin)
+
+	for _, body := range []string{`{"isAdmin":`, `{}`, `{"isAdmin":null}`, `{"isAdmin":"yes"}`} {
+		req := httptest.NewRequest(http.MethodPut, "/clients/demo-app/members/u1/admin", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("body %q: status = %d, 期望 400", body, rec.Code)
+		}
+		var resp struct {
+			Code string `json:"code"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		if resp.Code != "VALIDATION_FAILED" {
+			t.Fatalf("body %q: code = %q, 期望 VALIDATION_FAILED", body, resp.Code)
+		}
+	}
+}

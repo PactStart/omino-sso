@@ -12,6 +12,7 @@ import {
   listCandidateIds,
   listMemberCandidates,
   removeAppMembers,
+  setAppMemberAdmin,
 } from '@/api'
 import { errorMessage } from '@/api/client'
 import type { AppCandidate, AppMember, OrgNode } from '@/api/types'
@@ -101,6 +102,44 @@ function mergeSelection(selection: AppMember[]) {
 function clearSelection() {
   selectedIds.value = []
   tableRef.value?.clearSelection()
+}
+
+/* ---------------- 应用管理员身份（006） ---------------- */
+
+const adminSaving = ref('')
+
+/**
+ * 切换成员的应用管理员身份。
+ * 取消最后一名管理员时只做二次确认、不阻止（spec A3）：平台管理员始终可在
+ * admin 端补位，因此不设「至少保留一名」的服务端约束。
+ */
+async function toggleAdmin(row: AppMember) {
+  const next = !row.isAdmin
+  if (!next) {
+    const adminCount = members.value.filter((m) => m.isAdmin).length
+    if (adminCount <= 1) {
+      try {
+        await ElMessageBox.confirm(
+          '取消后该应用将没有应用管理员，门户侧不再显示「管理」入口。平台管理员仍可在 admin 端随时补位。',
+          '取消最后一名应用管理员？',
+          { type: 'warning', confirmButtonText: '仍然取消', cancelButtonText: '返回' },
+        )
+      } catch {
+        return
+      }
+    }
+  }
+  adminSaving.value = row.userId
+  try {
+    const res = await setAppMemberAdmin(clientId.value, row.userId, next)
+    row.isAdmin = res.isAdmin
+    await reloadSummary()
+    ElMessage.success(next ? '已设为应用管理员' : '已取消应用管理员')
+  } catch (e) {
+    ElMessage.error(errorMessage(e))
+  } finally {
+    adminSaving.value = ''
+  }
 }
 
 async function selectAllMembers() {
@@ -407,6 +446,21 @@ onMounted(async () => {
           <template #default="{ row }">
             <el-tag v-if="row.status === 1" size="small" type="success">正常</el-tag>
             <el-tag v-else size="small" type="info">已停用</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="身份" width="220">
+          <template #default="{ row }">
+            <el-tag v-if="row.isAdmin" size="small" type="warning">应用管理员</el-tag>
+            <el-tag v-else size="small" type="info">普通成员</el-tag>
+            <el-button
+              link
+              type="primary"
+              size="small"
+              :loading="adminSaving === row.userId"
+              @click="toggleAdmin(row)"
+            >
+              {{ row.isAdmin ? '取消管理员' : '设为管理员' }}
+            </el-button>
           </template>
         </el-table-column>
         <el-table-column label="加入时间" width="160">

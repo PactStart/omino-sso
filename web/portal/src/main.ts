@@ -25,9 +25,12 @@ window.addEventListener(AUTH_EXPIRED_EVENT, () => {
 })
 
 // 任意接口 403 FORBIDDEN -> /403（PRD §3.4）
+// 例外：声明 meta.handleForbidden = 'local' 的路由（门户应用管理）由页面自行提示，
+// 否则管理页里任何一次越权操作都会丢掉当前应用的上下文（006 / FR-016）。
 window.addEventListener(FORBIDDEN_EVENT, () => {
   const current = router.currentRoute.value
   if (current.path === '/403') return
+  if (current.meta.handleForbidden === 'local') return
   void router.replace('/403')
 })
 

@@ -37,6 +37,10 @@ var (
 	ErrAppPermissionCodeExists    = errors.New("app permission code exists")
 	ErrAppPermissionInvalidParent = errors.New("app permission invalid parent")
 	ErrAppResourceStale           = errors.New("app resource stale")
+	// ErrAppClientDisabled / ErrAppNotAdmin 只用于「为什么拒绝」的服务端日志，
+	// 不映射为不同的 HTTP 响应（门户侧统一 403，避免泄露应用是否存在）。
+	ErrAppClientDisabled = errors.New("app client disabled")
+	ErrAppNotAdmin       = errors.New("app admin required")
 )
 
 // ErrAppPermissionHasChildren 携带子节点数量，便于 handler 生成可读提示。
@@ -72,7 +76,7 @@ type MemberFilter struct {
 	PageSize int
 }
 
-// MemberItem 成员视图。
+// MemberItem 成员视图。字段顺序必须与 store.MemberRow 一致（两者直接转换）。
 type MemberItem struct {
 	UserID      string
 	Username    string
@@ -82,6 +86,7 @@ type MemberItem struct {
 	Status      int8
 	JoinedAt    int64
 	RoleCount   int64
+	IsAdmin     bool
 }
 
 // CandidateItem 候选视图。
@@ -566,6 +571,51 @@ func (s *AppAuthService) PutRoleMembers(ctx context.Context, clientID, roleID st
 		return nil, 0, 0, 0, err
 	}
 	return dedup, added, removed, autoJoined, nil
+}
+
+// AuthorizeAppAdmin 判定用户能否以「应用管理员」身份管理该应用（006）。
+// 返回的哨兵只用于服务端日志：门户侧一律映射为 403，不区分失败原因（FR-010）。
+func (s *AppAuthService) AuthorizeAppAdmin(ctx context.Context, clientID, userID string) error {
+	if clientID == "" || userID == "" {
+		return ErrAppMemberNotFound
+	}
+	c, m, err := s.st.GetClientMembership(ctx, clientID, userID)
+	if err != nil {
+		return err
+	}
+	switch {
+	case c == nil:
+		return ErrClientNotFound
+	case c.Status != 1:
+		return ErrAppClientDisabled
+	case m == nil:
+		return ErrAppMemberNotFound
+	case !m.IsAdmin:
+		return ErrAppNotAdmin
+	}
+	return nil
+}
+
+// SetMemberAdmin 设置/取消某成员的应用管理员标记（仅由 admin 端调用，FR-007）。
+// 幂等：值未变化时返回 changed=false 且不写库；返回变更前的值供调用方写审计。
+func (s *AppAuthService) SetMemberAdmin(ctx context.Context, clientID, userID string, isAdmin bool) (before bool, changed bool, err error) {
+	if err := s.ensureClient(ctx, clientID); err != nil {
+		return false, false, err
+	}
+	_, m, err := s.st.GetClientMembership(ctx, clientID, userID)
+	if err != nil {
+		return false, false, err
+	}
+	if m == nil {
+		return false, false, ErrAppMemberNotFound
+	}
+	if m.IsAdmin == isAdmin {
+		return m.IsAdmin, false, nil
+	}
+	if _, err := s.st.SetMemberAdmin(ctx, clientID, userID, isAdmin); err != nil {
+		return m.IsAdmin, false, err
+	}
+	return m.IsAdmin, true, nil
 }
 
 // Snapshot 返回用户在该应用内的角色名与权限编码（空集返回空切片，不返回 nil）。

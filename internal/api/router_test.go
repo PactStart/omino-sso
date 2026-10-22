@@ -163,8 +163,10 @@ func TestDocsServedWithoutRedis(t *testing.T) {
 	for _, item := range doc.Paths {
 		ops += len(item)
 	}
-	if ops != 56 {
-		t.Fatalf("(method,path) 组合数为 %d, 期望 56", ops)
+	// 56（005 及之前）+ 18（006：admin 1 + 门户 16 + 门户只读组织树 1）
+	// + 4（门户应用信息：详情 / 更新 / Logo 设置 / Logo 清除）。
+	if ops != 78 {
+		t.Fatalf("(method,path) 组合数为 %d, 期望 78", ops)
 	}
 	if !strings.Contains(doc.Info.Description, "环境：test") {
 		t.Fatalf("info.description 未注入环境: %q", doc.Info.Description)
@@ -231,6 +233,69 @@ func TestDocsPathsMatchRouterRoutes(t *testing.T) {
 
 	if got, want := sortedKeys(documented), sortedKeys(registered); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("文档 path 集合与路由不一致（AC-1）:\n 文档=%v\n 路由=%v", got, want)
+	}
+}
+
+// TestAppAdminRoutesRegistered 固化 006 的路由面：
+// 22 条新路由必须注册（含应用信息详情/更新/Logo）；门户不得注册「设为管理员」与密钥；
+// 未带会话时门户端点统一返回 401（鉴权先于业务）。
+func TestAppAdminRoutesRegistered(t *testing.T) {
+	r := newTestRouter(t, "test")
+
+	registered := map[string]bool{}
+	for _, ri := range r.Routes() {
+		registered[ri.Method+" "+ri.Path] = true
+	}
+	for _, want := range []string{
+		"PUT /api/v1/admin/clients/:id/members/:uid/admin",
+		"GET /api/v1/me/orgs/tree",
+		"GET /api/v1/me/apps/:id",
+		"GET /api/v1/me/apps/:id/detail",
+		"PATCH /api/v1/me/apps/:id",
+		"POST /api/v1/me/apps/:id/logo",
+		"DELETE /api/v1/me/apps/:id/logo",
+		"GET /api/v1/me/apps/:id/members",
+		"GET /api/v1/me/apps/:id/members/candidates",
+		"POST /api/v1/me/apps/:id/members",
+		"POST /api/v1/me/apps/:id/members/remove",
+		"GET /api/v1/me/apps/:id/roles",
+		"POST /api/v1/me/apps/:id/roles",
+		"GET /api/v1/me/apps/:id/roles/:rid",
+		"PATCH /api/v1/me/apps/:id/roles/:rid",
+		"DELETE /api/v1/me/apps/:id/roles/:rid",
+		"PUT /api/v1/me/apps/:id/roles/:rid/permissions",
+		"PUT /api/v1/me/apps/:id/roles/:rid/members",
+		"GET /api/v1/me/apps/:id/permissions",
+		"POST /api/v1/me/apps/:id/permissions",
+		"PATCH /api/v1/me/apps/:id/permissions/:pid",
+		"DELETE /api/v1/me/apps/:id/permissions/:pid",
+	} {
+		if !registered[want] {
+			t.Errorf("缺少路由 %s", want)
+		}
+	}
+
+	// 门户不得暴露授予/取消管理员与密钥（FR-007）；应用配置只开放白名单字段，
+	// 其余只读（口径调整后）——密钥与启停/TTL 仍只在 admin 端。
+	for _, forbidden := range []string{
+		"PUT /api/v1/me/apps/:id/members/:uid/admin",
+		"POST /api/v1/me/apps/:id/secret",
+		"PATCH /api/v1/me/apps/:id/secret",
+	} {
+		if registered[forbidden] {
+			t.Errorf("门户不得注册 %s", forbidden)
+		}
+	}
+
+	// 未带会话 → 401，且响应体为统一格式。
+	for _, path := range []string{"/api/v1/me/apps/demo-app", "/api/v1/me/apps/demo-app/members", "/api/v1/me/orgs/tree"} {
+		rec := get(r, path)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("GET %s = %d, 期望 401", path, rec.Code)
+		}
+		if !strings.Contains(rec.Body.String(), `"code":"UNAUTHENTICATED"`) {
+			t.Fatalf("GET %s 响应体不是统一响应: %s", path, rec.Body.String())
+		}
 	}
 }
 

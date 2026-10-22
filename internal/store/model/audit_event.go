@@ -49,6 +49,11 @@ const (
 	EventAppPermissionDeleted = "app_permission_deleted"
 	EventAppGrantUpdated      = "app_grant_updated"
 
+	// 应用管理员身份变更（006-app-admin-role，AGENTS.md §6.7）。
+	// detail 记 {clientId, userId, isAdmin:{before,after}}，并在事件上记录操作者。
+	EventAppMemberAdminGranted = "app_member_admin_granted"
+	EventAppMemberAdminRevoked = "app_member_admin_revoked"
+
 	// 图片上传（004-object-storage-upload，AGENTS.md §6.7）。
 	EventFileUploaded      = "file_uploaded"
 	EventFileStatusUpdated = "file_status_updated"

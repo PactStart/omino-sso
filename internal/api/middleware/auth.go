@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 
@@ -17,6 +18,8 @@ const (
 	CtxUser       = "auth.user"
 	CtxSession    = "auth.session"
 	SessionCookie = "sid"
+	// CtxClientID 门户应用管理请求的目标应用（006，由 AppAdmin 写入）。
+	CtxClientID = "auth.clientId"
 )
 
 // Auth 从 HttpOnly cookie 解析会话并加载用户。
@@ -69,6 +72,9 @@ func loadSession(c *gin.Context, sessions *service.SessionService, st *store.Sto
 	}
 	c.Set(CtxUser, u)
 	c.Set(CtxSession, sess)
+	// 把操作者写进 request context：service.Auditor 在事件未显式指定操作者时据此回填，
+	// 使复用 admin handler 的门户侧操作也带 user_id / username（006 / FR-014）。
+	c.Request = c.Request.WithContext(service.WithActor(c.Request.Context(), u.ID, u.Username))
 	return true
 }
 
@@ -87,6 +93,37 @@ func Admin() gin.HandlerFunc {
 			}
 		}
 		response.Fail(c, response.ErrForbidden)
+	}
+}
+
+// AppAdminChecker 是 AppAdmin 所需的判定能力，由 *service.AppAuthService 实现。
+// 抽成接口只为让中间件可用假实现做单测（不需要数据库）。
+type AppAdminChecker interface {
+	AuthorizeAppAdmin(ctx context.Context, clientID, userID string) error
+}
+
+// AppAdmin 要求当前用户是该应用的应用管理员（006）。
+//
+// 拒绝语义统一为 403：应用不存在 / 非成员 / 非管理员 / 应用已停用一律返回同一响应，
+// 具体原因只写应用日志，避免泄露应用是否存在（FR-010）。
+// 身份判定每请求实时查库、不做任何缓存，因此授予/取消在下次请求即生效（FR-011）；
+// 平台 admin 角色不自动放行（spec A2），门户与 admin 是两条独立的授权路径。
+func AppAdmin(checker AppAdminChecker, logger *slog.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		u, ok := CurrentUser(c)
+		if !ok {
+			response.Fail(c, response.ErrUnauthenticated)
+			return
+		}
+		clientID := c.Param("id")
+		if err := checker.AuthorizeAppAdmin(c.Request.Context(), clientID, u.ID); err != nil {
+			logger.Warn("app admin denied",
+				"clientId", clientID, "userId", u.ID, "reason", err.Error(), "path", c.FullPath())
+			response.Fail(c, response.ErrForbidden)
+			return
+		}
+		c.Set(CtxClientID, clientID)
+		c.Next()
 	}
 }
 

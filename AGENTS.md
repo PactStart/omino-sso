@@ -80,7 +80,7 @@
 | 状态 | `pinia` | `2.3.0` | |
 | 请求 | `axios` | `1.7.9` | `withCredentials: true` |
 | 样式（portal） | `tailwindcss` | `4.1.0` | 登录页 / 门户 |
-| 组件库（admin） | `element-plus` | `2.9.1` | 表格 / 树 / 表单 |
+| 组件库（admin / portal 应用管理页） | `element-plus` | `2.9.1` | 表格 / 树 / 表单；portal 侧**仅** `views/app-admin/` 引入（2026-10-22 新增，见下方范围说明） |
 | 图表 | `echarts` + `vue-echarts` | `5.5.1` / `7.0.3` | 审计统计 |
 | 二维码 | `qrcode` | `1.5.4` | 两步验证绑定二维码（浏览器 canvas 渲染 `otpauth://`，2026-10-22 新增） |
 
@@ -99,6 +99,8 @@
 | DOM 环境 | `jsdom` | `25.0.1` | vitest 的 `environment: 'jsdom'`（2026-10-22 新增） |
 
 > 上述前端依赖走 `devDependencies`/`dependencies` 的**精确版本**（`npm install --save-exact`），与 §2.1 的锁定策略一致；升级须单独提交。
+
+> **portal 引入 `element-plus` 的范围与短板（2026-10-22，006-app-admin-role）**：这是按 §2.0「提案 → 确认 → 登记」走完的依赖新增（用户在 2026-10-22 明确确认「引入 element-plus@2.9.1，不重写」），已锁定 `2.9.1`（与 admin 同版本，`npm install --save-exact`，`package-lock.json` 无任何既有版本被动升级）。**使用范围严格限定**：仅 `web/portal/src/views/app-admin/` 及其子组件 `import`（含 `element-plus/dist/index.css`），由 Vite 按路由拆成独立 chunk；登录页、账号中心、我的应用等既有页面**不得**引入 EP，也不得在 `src/main.ts` 全局注册 EP（避免首屏包体与样式污染）。**已知短板**：EP 的全局样式与 Tailwind v4 preflight 存在互相覆盖风险，改动 `views/app-admin/` 样式时必须回归登录页 / 账号中心 / 我的应用；不采用「用 portal 原生表格重写管理页」的方案，原因是跨页多选表格、`el-tree-select`、`el-tree`、`el-tabs` 的自研成本与行为漂移风险高于依赖成本（原始诉求为「把 admin 端代码复制过去」，FR-006 要求两端行为一致）。
 
 ### 2.3 基础设施
 
@@ -195,7 +197,9 @@ omino-sso/
 │   │   │   ├── contact.go             # 005：绑定/修改手机号与邮箱（POST /me/phone、/me/email）
 │   │   │   ├── mfa.go                 # 005：MFA 绑定 / 确认 / 解绑（/me/mfa/*）
 │   │   │   ├── apps.go
-│   │   │   └── sessions.go
+│   │   │   ├── sessions.go
+│   │   │   ├── app_admin.go           # 006：门户应用管理摘要 + 15 个转调 admin.Handler 的薄 wrapper
+│   │   │   └── organizations.go       # 006：只读组织树（GET /me/orgs/tree）
 │   │   └── admin/                     # /api/v1/admin/*
 │   │       ├── users.go
 │   │       ├── orgs.go
@@ -256,6 +260,7 @@ omino-sso/
 │   ├── 0001_init.up.sql
 │   ├── 0001_init.down.sql
 │   ├── 0005_verification_auth.up.sql  # 005：send_records + uk_users_phone
+│   ├── 0006_app_admin_role.up.sql     # 006：client_members.is_admin（应用管理员标记）
 │   └── README.md                      # 手写 SQL，禁止 AutoMigrate
 └── web/
     ├── portal/                        # 登录页 + 账号中心（Tailwind）
@@ -270,7 +275,11 @@ omino-sso/
     │   ├── src/views/Login.spec.ts    # 2026-10-22 新增：登录方式切换 / 图形码 / 失败提示用例
     │   ├── src/views/Password.vue     # 修改密码：原密码与验证码两种方式（§4.1 的 me/password*）
     │   ├── src/views/Account.vue      # 账号中心：联系方式、MFA、会话
-    │   ├── src/views/Apps.vue
+    │   ├── src/api/app.ts             # 006：门户应用管理接口（/me/apps/:id/* 与 /me/orgs/tree）
+    │   ├── src/views/Apps.vue         # 006：应用管理员可见「管理」按钮（「打开」左侧）
+    │   ├── src/views/Apps.spec.ts     # 006：管理按钮可见性 / 跳转用例
+    │   ├── src/views/app-admin/       # 006：独立地址的管理页（AppAdminLayout + 应用信息/成员/角色/权限/授权）
+    │   ├── src/views/app-admin/Overview.vue  # 应用信息：参考 admin 详情，仅名称/描述/Logo/回调地址可改
     │   └── src/styles/tokens.css      # 品牌变量（主色 / 圆角 / 字体）
     └── admin/                         # 管理后台（Element Plus）
         ├── eslint.config.js
@@ -337,6 +346,27 @@ omino-sso/
 | POST | `/api/v1/me/mfa/unbind` | 验证码解绑 MFA | session |
 | GET | `/api/v1/me/sessions` | 登录设备列表 | session |
 | DELETE | `/api/v1/me/sessions/:sid` | 撤销会话 | session |
+| GET | `/api/v1/me/orgs/tree` | 只读组织树（006，门户应用管理页的部门筛选） | session |
+| GET | `/api/v1/me/apps/:id` | 应用管理摘要（006） | appAdmin |
+| GET | `/api/v1/me/apps/:id/detail` | 应用详情（006，门户「应用信息」页） | appAdmin |
+| PATCH | `/api/v1/me/apps/:id` | 更新应用基础信息（006，仅名称/描述/Logo/回调地址） | appAdmin |
+| POST | `/api/v1/me/apps/:id/logo` | 设置应用 Logo（006） | appAdmin |
+| DELETE | `/api/v1/me/apps/:id/logo` | 清除应用 Logo（006） | appAdmin |
+| GET | `/api/v1/me/apps/:id/members` | 成员列表（006） | appAdmin |
+| GET | `/api/v1/me/apps/:id/members/candidates` | 候选成员（006） | appAdmin |
+| POST | `/api/v1/me/apps/:id/members` | 添加成员（006） | appAdmin |
+| POST | `/api/v1/me/apps/:id/members/remove` | 移除成员（006） | appAdmin |
+| GET | `/api/v1/me/apps/:id/roles` | 角色列表（006） | appAdmin |
+| POST | `/api/v1/me/apps/:id/roles` | 新建角色（006） | appAdmin |
+| GET | `/api/v1/me/apps/:id/roles/:rid` | 角色详情（006） | appAdmin |
+| PATCH | `/api/v1/me/apps/:id/roles/:rid` | 修改角色（006） | appAdmin |
+| DELETE | `/api/v1/me/apps/:id/roles/:rid` | 删除角色（006） | appAdmin |
+| PUT | `/api/v1/me/apps/:id/roles/:rid/permissions` | 设置角色权限（006） | appAdmin |
+| PUT | `/api/v1/me/apps/:id/roles/:rid/members` | 设置角色成员（006） | appAdmin |
+| GET | `/api/v1/me/apps/:id/permissions` | 权限列表（006） | appAdmin |
+| POST | `/api/v1/me/apps/:id/permissions` | 新建权限（006） | appAdmin |
+| PATCH | `/api/v1/me/apps/:id/permissions/:pid` | 修改权限（006） | appAdmin |
+| DELETE | `/api/v1/me/apps/:id/permissions/:pid` | 删除权限（006） | appAdmin |
 | GET | `/api/v1/admin/users` | 用户列表 | admin |
 | POST | `/api/v1/admin/users` | 创建用户 | admin |
 | PATCH | `/api/v1/admin/users/:id` | 更新用户 | admin |
@@ -347,6 +377,7 @@ omino-sso/
 | GET | `/api/v1/admin/clients` | 应用列表 | admin |
 | POST | `/api/v1/admin/clients` | 注册应用 | admin |
 | POST | `/api/v1/admin/clients/:id/secret` | 轮换密钥 | admin |
+| PUT | `/api/v1/admin/clients/:id/members/:uid/admin` | 设置/取消应用管理员（006，body `{isAdmin}`，幂等） | admin |
 | GET | `/api/v1/admin/audit-logs` | 审计日志 | admin |
 | GET | `/api/v1/admin/send-records` | 短信/邮箱发送记录 | admin |
 | POST | `/api/v1/me/avatar` | 更新本人头像（004） | session |
@@ -369,6 +400,8 @@ omino-sso/
 > **`login` 场景未绑定目标改为显式报错（2026-10-22 行为修正）**：过去 `/api/v1/auth/code` 在 `login` 场景遇到"该手机号/邮箱不属于任何账号"时返回与成功完全一致的响应但不发信（防枚举），结果用户只看到"验证码已发送"却永远收不到，且 `send_records` 也无记录，无法自诊断。现改为返回 `404 VERIFY_TARGET_NOT_FOUND`，代价是该场景可被用于探测注册状态；判定为可接受——登录页本身就要以"账号是否存在"回显错误提示，静默成功只增加支持成本。**`find_password` 场景保持静默成功**（找回密码流程不暴露注册状态），两处差异不得被"顺手统一"抹掉。
 >
 > **联系方式出服务端的口径（2026-10-22）**：`GET /api/v1/me` 与各绑定接口的响应只返回脱敏值（`138****8000` / `z***@example.com`），前端不得二次脱敏；`/api/v1/auth/code` 在已登录的 `mfa_unbind`、`find_password` 场景忽略请求体 `target`，由服务端按会话解析本人已绑定的联系方式，浏览器不持有完整值。
+>
+> **应用管理员（`appAdmin` 鉴权，006-app-admin-role）**：`/api/v1/me/apps/:id/*` 只判断「当前用户是否为该应用的应用管理员」（`client_members.is_admin`），**不挂 `Admin()`、平台 admin 角色不自动放行**；拒绝语义统一为 `403 FORBIDDEN`（应用不存在 / 非成员 / 非管理员 / 应用已停用同一文案，原因只进应用日志，避免泄露应用是否存在）。判定每请求实时查库、**禁止加任何缓存**，因此授予与取消在下次请求即生效。门户侧开放成员 / 角色 / 权限 / 授权，以及**应用信息**（详情 / 基础信息更新 / Logo，见 §4.1 的 `/me/apps/:id/*` 四行）；应用信息页口径为「参考 admin 详情、可编辑字段缩减为名称 / 描述 / Logo / 回调地址」，登出地址、两类 TTL、启用状态在门户**只读**，白名单由 `ClientService.UpdateBasicInfo` 统一清空其余字段（handler 侧请求结构体也只有这 4 个字段）。**密钥轮换**与「设为/取消应用管理员」仍只在 admin 端（门户对应路径不注册，直接请求落 `NoRoute`）。`GET /api/v1/me/apps` 的 `isAppAdmin` 与成员列表的 `isAdmin` 均只来自成员标记。
 
 ---
 
@@ -627,6 +660,10 @@ omino-sso/
 | `POST /api/v1/auth/mfa/verify` | `mfaTicket`, `code`(6 位) | `redirectTo`, `user{id,username,displayName}` |
 | `POST /api/v1/me/password` | `oldPassword`, `newPassword` | `data: null` |
 | `GET /api/v1/me/apps` | — | `[{clientId,name,description,logoUrl,homeUrl,lastAccessAt}]` |
+| `GET /api/v1/me/apps/:id/detail` | — | 字段同 admin 详情（`clientName`/`description`/`logoUrl`/`redirectUris`/`postLogoutUris`/`grantTypes`/`scopes`/`isPublic`/`accessTokenTtl`/`refreshTokenTtl`/`status`/`memberCount`/`createdAt`/`updatedAt`）；**不含密钥** |
+| `PATCH /api/v1/me/apps/:id` | **仅** `clientName`/`description`/`logoUrl`/`redirectUris`（缺失=不变）+ `updatedAt`(可选版本)；其余字段即使提交也被忽略 | 同 `GET /api/v1/me/apps/:id/detail`；版本不符 `409 APP_RESOURCE_STALE` |
+| `POST /api/v1/me/apps/:id/logo` | `key`,`format`,`size` | `{id,provider,scene,format,size,url,status,creator,createdAt}`；同时回写该应用 `logo_url` |
+| `DELETE /api/v1/me/apps/:id/logo` | — | `data: null`；无活跃 Logo 时幂等成功 |
 | `GET /api/v1/me/sessions` | — | `[{sid,ip,userAgent,createdAt,lastSeenAt,current}]` |
 | `GET /api/v1/admin/users` | `keyword`,`deptId`,`status`,`page`(默认1),`pageSize`(默认20,最大100) | `{list:[...],total,page,pageSize}` |
 | `GET /api/v1/admin/orgs/tree` | — | `[{id,name,parentId,path,userCount,children[]}]` |
@@ -724,6 +761,7 @@ omino-sso/
 | 409 | `APP_PERMISSION_HAS_CHILDREN` | 权限下仍有子权限，不允许删除 |
 | 400 | `APP_PERMISSION_INVALID_PARENT` | 上级权限不存在 / 为自身或自身后代 / 跨应用 |
 | 409 | `APP_RESOURCE_STALE` | 写请求携带的 `updatedAt` 与服务端不一致（并发编辑） |
+| 404 | `APP_MEMBER_NOT_FOUND` | 目标用户不是该应用成员（把非成员设为应用管理员时拒绝，006） |
 | 400 | `AUTH_CODE_INVALID` | 短信/邮箱验证码错误、过期、已使用或错误次数超限 |
 | 404 | `VERIFY_TARGET_NOT_FOUND` | `login` 场景请求验证码时，该手机号/邮箱未绑定任何账号；文案须含「请用密码登录后到账号中心绑定」（`find_password` 仍静默成功） |
 | 409 | `VERIFY_TARGET_IN_USE` | 手机号/邮箱已被其他账号占用 |
@@ -876,13 +914,15 @@ omino-sso/
 | `trace_id` | VARCHAR(32) | NULL | |
 | `created_at` | BIGINT | NOT NULL, INDEX | |
 
-`event_type` 枚举（新增需登记）：`login_success`、`login_failure`、`mfa_success`、`mfa_failure`、`logout`、`password_changed`、`token_issued`、`token_revoked`、`code_reused`、`refresh_reused`、`user_created`、`user_updated`、`client_created`、`client_secret_rotated`、`org_created`、`org_updated`、`org_deleted`、`client_updated`、`app_member_added`、`app_member_removed`、`app_role_created`、`app_role_updated`、`app_role_deleted`、`app_permission_created`、`app_permission_updated`、`app_permission_deleted`、`app_grant_updated`、`file_uploaded`、`file_status_updated`、`verification_code_sent`、`phone_bound`、`email_bound`、`mfa_bound`、`mfa_unbound`、`password_reset`。
+`event_type` 枚举（新增需登记）：`login_success`、`login_failure`、`mfa_success`、`mfa_failure`、`logout`、`password_changed`、`token_issued`、`token_revoked`、`code_reused`、`refresh_reused`、`user_created`、`user_updated`、`client_created`、`client_secret_rotated`、`org_created`、`org_updated`、`org_deleted`、`client_updated`、`app_member_added`、`app_member_removed`、`app_role_created`、`app_role_updated`、`app_role_deleted`、`app_permission_created`、`app_permission_updated`、`app_permission_deleted`、`app_grant_updated`、`file_uploaded`、`file_status_updated`、`verification_code_sent`、`phone_bound`、`email_bound`、`mfa_bound`、`mfa_unbound`、`password_reset`、`app_member_admin_granted`、`app_member_admin_revoked`。
 
 > `verification_code_sent` 的 `detail` 记 `{channel,scene,target,provider}`（`target` 已脱敏）；验证码登录成功/失败复用 `login_success`/`login_failure`，MFA 二步复用 `mfa_success`/`mfa_failure`。
 
 `detail` 详略规则（003 起）：一般只记字段名列表与数量；**地址类字段（`redirectUris` / `postLogoutUris`）记变更前后的完整数组**；删除角色/权限记被解除绑定的 ID 快照（超过 20 项记数量 + 前 20 项）。
 
 > 组织写操作的审计划分以条件为准而非 HTTP 状态码：同级重名、存在子部门、存在账号、目标不存在、非法上级、层级超过 10 级都写 `failure`；JSON 绑定失败、名称/排序值等输入格式错误、401、403 只在应用日志留痕。
+
+> **操作者回填（2026-10-22，006-app-admin-role）**：`Auth` / `OptionalAuth` 解析出会话用户后把 `(userId, username)` 写入 request context（`service.WithActor`），`Auditor.Emit` 在事件**未显式指定操作者**时据此回填。因此所有走请求路径的 `app_*` / `client_*` / 组织写事件都会带操作者，门户侧复用 admin handler 的成员/角色/权限操作同样可追溯（FR-014 / SC-006）。显式指定的操作者优先（例如系统任务写系统账号）；未登录路径（如 `login_failure`）仍为空。
 
 ### 6.8 `consents`
 
@@ -900,7 +940,7 @@ omino-sso/
 
 | 表 | 关键列 | 约束 |
 |---|---|---|
-| `client_members` | `client_id`(64, as_cs)、`user_id`(26)、`added_by`(26)、`joined_at` | PK(client_id,user_id)；KEY idx_client_members_user(user_id,client_id) |
+| `client_members` | `client_id`(64, as_cs)、`user_id`(26)、`added_by`(26)、`joined_at`、`is_admin`(1, 默认 0, 006 新增) | PK(client_id,user_id)；KEY idx_client_members_user(user_id,client_id) |
 | `client_roles` | `id`(26)、`client_id`(64, as_cs)、`name`(32, as_cs)、`description`(100)、`created_at`、`updated_at` | PK(id)；UNIQUE uk_client_roles_name(client_id,name)；KEY idx_client_roles_client(client_id,created_at) |
 | `client_permissions` | `id`(26)、`client_id`(64, as_cs)、`parent_id`(26)、`code`(64, as_cs)、`name`(64)、`description`(255)、`sort` | PK(id)；UNIQUE uk_client_permissions_code(client_id,code)；KEY idx_client_permissions_parent(client_id,parent_id,sort) |
 | `client_role_permissions` | `role_id`(26)、`permission_id`(26)、`client_id` | PK(role_id,permission_id)；KEY idx_role_permissions_perm(permission_id) |
@@ -1029,6 +1069,18 @@ omino-sso/
 
 - **行为取舍必须落纸**：实现期临时决定的取舍（如 005 把 `login` 场景改成 `404`、而 `find_password` 保持静默）必须在同一提交内写入 `spec.md` Edge Cases + `contracts/` + 本节相关条款，不得留到 converge 阶段再补。
 - **文档里的命令必须可执行**：`specs/**`、`AGENTS.md` 中出现的 `` `make <target>` `` 由 `make check` 逐条用 `make -n` 验证；确需引用历史废弃目标时，在该行加 `docs-commands:ignore` 注释。
+
+### 7.5 集成测试库隔离（006-app-admin-role 事故）
+
+**2026-10-22 事故**：调试 006 时把 `TEST_MYSQL_DSN` 指向了开发库 `omino_sso`，而集成测试脚手架会 `DROP DATABASE` 重建 schema（`recreateTestDB`），导致开发库连同管理员账号、组织、审计记录一起被删除，只能靠 `bootstrap.Seed` 重建。
+
+**规则（已代码化，不是口头约定）**
+
+- 集成测试的 DSN 库名**必须以 `_test` 结尾**（如 `omino_sso_test`）。`internal/service/org_integration_test.go` 的 `requireTestDatabase` 有两道护栏：`openTestDB` 首次运行即 `t.Fatalf`，`recreateTestDB` 在真正 `DROP DATABASE` 前再校验一次。指向开发库会**直接失败**而不是跳过或照做。
+- 跑集成测试用 `make test-integration`，并先导出 `TEST_MYSQL_DSN`；`make test` 中的集成用例默认 `t.Skip`，不碰任何数据库。
+- 测试库可自动创建（`CREATE DATABASE`），无需手工建；每次运行会重建，库内不需要也不允许放有价值数据。
+
+**关联事实**：开发库的 `admin` 账号由 `bootstrap.Seed` 在 `users` 表为空时创建，用户名/密码来自 `ADMIN_BOOTSTRAP_USERNAME` / `ADMIN_BOOTSTRAP_PASSWORD`（`.env`，当前 `admin` / `Admin@12345`）。因此"清空 users 后重启服务"会把管理员密码重置回 bootstrap 值——这是重建而非改密，排查时先看 `users` 是否为空。
 
 ---
 

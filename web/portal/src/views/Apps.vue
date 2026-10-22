@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import PortalLayout from '@/layouts/PortalLayout.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorState from '@/components/ErrorState.vue'
@@ -10,6 +11,7 @@ import { initialOf, formatTime } from '@/utils/format'
 import { useToast } from '@/composables/useToast'
 
 const toast = useToast()
+const router = useRouter()
 
 const apps = ref<AppItem[]>([])
 const loading = ref(true)
@@ -52,6 +54,15 @@ function open(app: AppItem) {
     return
   }
   window.open(app.homeUrl, '_blank', 'noopener,noreferrer')
+}
+
+/**
+ * 进入该应用的门户管理页（006）。
+ * 只有 isAppAdmin 的应用才渲染该入口；服务端仍会再校验一次（FR-012），
+ * 因此手改地址也进不去无权限的应用。
+ */
+function manage(app: AppItem) {
+  void router.push(`/account/apps/${encodeURIComponent(app.clientId)}/manage`)
 }
 
 onMounted(load)
@@ -154,19 +165,31 @@ onMounted(load)
             {{ app.lastAccessAt ? `最近访问 ${formatTime(app.lastAccessAt)}` : '尚未访问' }}
           </span>
 
-          <button
-            type="button"
-            class="rounded-lg px-3 py-1.5 text-sm font-medium transition"
-            :class="
-              app.homeUrl
-                ? 'bg-brand-50 text-brand-700 hover:bg-brand-100'
-                : 'cursor-not-allowed bg-ink-50 text-ink-400'
-            "
-            :title="app.homeUrl ? '在新标签页打开' : '该应用未配置入口地址'"
-            @click="open(app)"
-          >
-            打开
-          </button>
+          <div class="flex items-center gap-2">
+            <!-- 应用管理员专属入口，位于「打开」左侧；普通成员不渲染（FR-004） -->
+            <button
+              v-if="app.isAppAdmin"
+              type="button"
+              class="rounded-lg border border-brand-200 px-3 py-1.5 text-sm font-medium text-brand-700 transition hover:bg-brand-50"
+              title="管理该应用（成员 / 角色 / 权限）"
+              @click="manage(app)"
+            >
+              管理
+            </button>
+            <button
+              type="button"
+              class="rounded-lg px-3 py-1.5 text-sm font-medium transition"
+              :class="
+                app.homeUrl
+                  ? 'bg-brand-50 text-brand-700 hover:bg-brand-100'
+                  : 'cursor-not-allowed bg-ink-50 text-ink-400'
+              "
+              :title="app.homeUrl ? '在新标签页打开' : '该应用未配置入口地址'"
+              @click="open(app)"
+            >
+              打开
+            </button>
+          </div>
         </div>
       </article>
     </div>

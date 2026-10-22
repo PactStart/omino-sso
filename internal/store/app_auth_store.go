@@ -25,6 +25,7 @@ var (
 )
 
 // MemberRow 成员列表行。
+// 字段顺序必须与 service.MemberItem 完全一致（两者直接转换）。
 type MemberRow struct {
 	UserID      string
 	Username    string
@@ -34,6 +35,23 @@ type MemberRow struct {
 	Status      int8
 	JoinedAt    int64
 	RoleCount   int64
+	IsAdmin     bool
+}
+
+// MemberClientRow 门户「我的应用」行：应用 + 当前用户在该应用的管理员标记（006）。
+type MemberClientRow struct {
+	model.Client
+	IsAdmin bool
+}
+
+// ClientMembershipRow 应用与其成员关系的一次性读取结果（LEFT JOIN）。
+// 应用不存在时 ClientID 为空串；用户非成员时 MemberUserID 为 nil。
+type ClientMembershipRow struct {
+	model.Client
+	MemberUserID *string `gorm:"column:member_user_id"`
+	AddedBy      *string `gorm:"column:added_by"`
+	JoinedAt     *int64  `gorm:"column:joined_at"`
+	IsAdmin      bool    `gorm:"column:is_admin"`
 }
 
 // CandidateRow 候选成员行。
@@ -118,7 +136,8 @@ func (s *Store) ListClientMembers(ctx context.Context, clientID, keyword, deptID
 	rows := []MemberRow{}
 	err := db.Raw(`SELECT m.user_id, u.username, u.display_name, u.dept_id,
   COALESCE(o.name, '') AS dept_name, u.status, m.joined_at,
-  (SELECT COUNT(*) FROM client_role_members rm WHERE rm.client_id = m.client_id AND rm.user_id = m.user_id) AS role_count
+  (SELECT COUNT(*) FROM client_role_members rm WHERE rm.client_id = m.client_id AND rm.user_id = m.user_id) AS role_count,
+  m.is_admin
 FROM client_members m
 JOIN users u ON u.id = m.user_id
 LEFT JOIN organizations o ON o.id = u.dept_id
@@ -269,14 +288,57 @@ func (s *Store) IsClientMember(ctx context.Context, clientID, userID string) (bo
 	return n > 0, err
 }
 
-// ListClientsForMember 返回用户以成员身份可访问的启用应用（FR-012）。
-func (s *Store) ListClientsForMember(ctx context.Context, userID string) ([]model.Client, error) {
-	var list []model.Client
-	err := s.DB(ctx).Raw(`SELECT c.* FROM clients c
+// ListClientsForMember 返回用户以成员身份可访问的启用应用（FR-012），
+// 并带出该用户在每个应用的管理员标记（006，供门户渲染「管理」按钮）。
+func (s *Store) ListClientsForMember(ctx context.Context, userID string) ([]MemberClientRow, error) {
+	var list []MemberClientRow
+	err := s.DB(ctx).Raw(`SELECT c.*, m.is_admin FROM clients c
 JOIN client_members m ON m.client_id = c.client_id
 WHERE m.user_id = ? AND c.status = 1
 ORDER BY c.created_at ASC`, userID).Scan(&list).Error
 	return list, err
+}
+
+// GetClientMembership 一次查询取回应用与当前用户的成员关系（单条 LEFT JOIN）。
+// 应用不存在返回 (nil, nil, nil)；用户非成员返回 (client, nil, nil)。
+func (s *Store) GetClientMembership(ctx context.Context, clientID, userID string) (*model.Client, *model.ClientMember, error) {
+	var row ClientMembershipRow
+	err := s.DB(ctx).Raw(`SELECT c.*, m.user_id AS member_user_id, m.added_by, m.joined_at, m.is_admin
+FROM clients c
+LEFT JOIN client_members m ON m.client_id = c.client_id AND m.user_id = ?
+WHERE c.client_id = ?`, userID, clientID).Scan(&row).Error
+	if err != nil {
+		return nil, nil, err
+	}
+	if row.ClientID == "" {
+		return nil, nil, nil
+	}
+	client := row.Client
+	if row.MemberUserID == nil {
+		return &client, nil, nil
+	}
+	member := &model.ClientMember{
+		ClientID: client.ClientID,
+		UserID:   *row.MemberUserID,
+		AddedBy:  row.AddedBy,
+		IsAdmin:  row.IsAdmin,
+	}
+	if row.JoinedAt != nil {
+		member.JoinedAt = *row.JoinedAt
+	}
+	return &client, member, nil
+}
+
+// SetMemberAdmin 幂等地设置成员的应用管理员标记。
+// 返回 false 表示未受影响的行（非成员，或值未变化 —— 由 service 结合前置读取区分）。
+func (s *Store) SetMemberAdmin(ctx context.Context, clientID, userID string, isAdmin bool) (bool, error) {
+	res := s.DB(ctx).Model(&model.ClientMember{}).
+		Where("client_id = ? AND user_id = ?", clientID, userID).
+		Update("is_admin", isAdmin)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
 }
 
 // ListClientsWithCount 应用列表（含成员数），hasMembers 为 nil 时不过滤。
