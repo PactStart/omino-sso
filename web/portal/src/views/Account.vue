@@ -12,7 +12,6 @@ import {
   bindPhone,
   clearMyAvatar,
   confirmMfaBind,
-  resetPasswordWithCode,
   sendCode,
   startMfaBind,
   unbindMfa,
@@ -314,93 +313,6 @@ async function submitUnbind() {
   }
 }
 
-/* ---------------- 已登录：验证码重置密码 ---------------- */
-
-const pwdDialog = ref(false)
-const pwdChannel = ref<VerifyChannel>('sms')
-const pwdCode = ref('')
-const pwdNew = ref('')
-const pwdConfirm = ref('')
-const pwdError = ref('')
-const pwdBusy = ref(false)
-const pwdSending = ref(false)
-const pwdCooldown = ref(0)
-let pwdTimer: number | undefined
-
-function openPwdReset() {
-  pwdChannel.value = me.value?.phone ? 'sms' : 'email'
-  pwdCode.value = ''
-  pwdNew.value = ''
-  pwdConfirm.value = ''
-  pwdError.value = ''
-  pwdCooldown.value = 0
-  pwdDialog.value = true
-}
-
-function startPwdCooldown(seconds: number) {
-  pwdCooldown.value = seconds
-  window.clearInterval(pwdTimer)
-  pwdTimer = window.setInterval(() => {
-    pwdCooldown.value -= 1
-    if (pwdCooldown.value <= 0) window.clearInterval(pwdTimer)
-  }, 1000)
-}
-
-async function sendPwdCode() {
-  pwdError.value = ''
-  const target = pwdChannel.value === 'sms' ? (me.value?.phone ?? '') : (me.value?.email ?? '')
-  if (!target) {
-    pwdError.value = '当前账号未绑定该联系方式'
-    return
-  }
-  if (pwdSending.value || pwdCooldown.value > 0) return
-  pwdSending.value = true
-  try {
-    const res = await sendCode({ scene: 'find_password', channel: pwdChannel.value, target })
-    startPwdCooldown(res.resendAfter || 60)
-    toast.success('验证码已发送')
-  } catch (e) {
-    pwdError.value = errorMessage(e)
-  } finally {
-    pwdSending.value = false
-  }
-}
-
-async function submitPwdReset() {
-  pwdError.value = ''
-  if (!/^\d{6}$/.test(pwdCode.value)) {
-    pwdError.value = '请输入 6 位验证码'
-    return
-  }
-  if (pwdNew.value.length < 8 || pwdNew.value.length > 128) {
-    pwdError.value = '新密码长度需为 8–128 位'
-    return
-  }
-  if (!/[A-Za-z]/.test(pwdNew.value) || !/\d/.test(pwdNew.value)) {
-    pwdError.value = '新密码需同时包含字母与数字'
-    return
-  }
-  if (pwdNew.value !== pwdConfirm.value) {
-    pwdError.value = '两次输入的新密码不一致'
-    return
-  }
-  if (pwdBusy.value) return
-  pwdBusy.value = true
-  try {
-    await resetPasswordWithCode({
-      channel: pwdChannel.value,
-      code: pwdCode.value,
-      newPassword: pwdNew.value,
-    })
-    pwdDialog.value = false
-    toast.success('密码已重置，其他设备会话已失效')
-  } catch (e) {
-    pwdError.value = errorMessage(e)
-  } finally {
-    pwdBusy.value = false
-  }
-}
-
 onMounted(() => load())
 </script>
 
@@ -578,8 +490,27 @@ onMounted(() => load())
         <section class="rounded-card border border-ink-200 bg-white p-6">
           <h3 class="text-sm font-semibold text-ink-800">安全状态</h3>
           <dl class="mt-4 space-y-4">
-            <div class="flex items-center justify-between gap-4">
-              <dt class="text-sm text-ink-400">两步验证（MFA）</dt>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <dt class="flex items-center gap-2.5 text-sm text-ink-400">
+                <span>两步验证（MFA）</span>
+                <button
+                  v-if="!me.mfaEnabled"
+                  type="button"
+                  class="rounded-lg bg-brand-600 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-brand-700 disabled:opacity-60"
+                  :disabled="mfaBindBusy"
+                  @click="openMfaBind"
+                >
+                  启用
+                </button>
+                <button
+                  v-else
+                  type="button"
+                  class="rounded-lg border border-ink-200 px-2.5 py-1 text-xs text-ink-600 transition hover:border-rose-300 hover:text-rose-600"
+                  @click="openUnbind"
+                >
+                  解绑
+                </button>
+              </dt>
               <dd class="flex items-center gap-2">
                 <span
                   class="rounded-full px-2.5 py-0.5 text-xs font-medium ring-1"
@@ -608,33 +539,6 @@ onMounted(() => load())
               <dd class="text-sm text-ink-800">{{ formatTime(me.createdAt) }}</dd>
             </div>
           </dl>
-
-          <div class="mt-5 flex flex-wrap gap-2">
-            <button
-              v-if="!me.mfaEnabled"
-              type="button"
-              class="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-brand-700 disabled:opacity-60"
-              :disabled="mfaBindBusy"
-              @click="openMfaBind"
-            >
-              启用两步验证
-            </button>
-            <button
-              v-else
-              type="button"
-              class="rounded-lg border border-ink-200 px-3 py-1.5 text-xs text-ink-600 transition hover:border-rose-300 hover:text-rose-600"
-              @click="openUnbind"
-            >
-              解绑两步验证
-            </button>
-            <button
-              type="button"
-              class="rounded-lg border border-ink-200 px-3 py-1.5 text-xs text-ink-600 transition hover:border-brand-300 hover:text-brand-700"
-              @click="openPwdReset"
-            >
-              验证码重置密码
-            </button>
-          </div>
         </section>
       </div>
     </div>
@@ -838,94 +742,6 @@ onMounted(() => load())
             @click="submitUnbind"
           >
             确认解绑
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 验证码重置密码 -->
-    <div
-      v-if="pwdDialog"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 px-4"
-      role="dialog"
-      aria-modal="true"
-    >
-      <div class="w-full max-w-sm rounded-card border border-ink-200 bg-white p-6 shadow-xl">
-        <h3 class="text-base font-semibold text-ink-800">验证码重置密码</h3>
-        <p class="mt-1 text-xs text-ink-400">重置后其他设备的登录会话将失效</p>
-
-        <div class="mt-4 space-y-3">
-          <div class="flex rounded-lg bg-ink-50 p-1 text-xs font-medium text-ink-500">
-            <button
-              type="button"
-              class="flex-1 rounded-md px-2 py-1.5 transition"
-              :class="pwdChannel === 'sms' ? 'bg-white text-brand-700 shadow-sm' : ''"
-              :disabled="!me?.phone"
-              @click="pwdChannel = 'sms'"
-            >
-              手机验证码
-            </button>
-            <button
-              type="button"
-              class="flex-1 rounded-md px-2 py-1.5 transition"
-              :class="pwdChannel === 'email' ? 'bg-white text-brand-700 shadow-sm' : ''"
-              :disabled="!me?.email"
-              @click="pwdChannel = 'email'"
-            >
-              邮箱验证码
-            </button>
-          </div>
-          <div class="flex gap-2">
-            <input
-              v-model="pwdCode"
-              type="text"
-              inputmode="numeric"
-              maxlength="6"
-              placeholder="6 位验证码"
-              class="w-full rounded-lg border border-ink-200 px-3.5 py-2.5 text-sm tracking-[0.3em] text-ink-800 outline-none transition focus:border-brand-400 focus:ring-4 focus:ring-brand-50"
-              @input="pwdCode = pwdCode.replace(/\D/g, '').slice(0, 6)"
-            />
-            <button
-              type="button"
-              class="shrink-0 rounded-lg border border-ink-200 px-3 text-xs text-ink-600 transition hover:border-brand-300 disabled:opacity-50"
-              :disabled="pwdSending || pwdCooldown > 0"
-              @click="sendPwdCode"
-            >
-              {{ pwdCooldown > 0 ? `${pwdCooldown}s` : '获取验证码' }}
-            </button>
-          </div>
-          <input
-            v-model="pwdNew"
-            type="password"
-            autocomplete="new-password"
-            placeholder="新密码（8–128 位，含字母与数字）"
-            class="w-full rounded-lg border border-ink-200 px-3.5 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-4 focus:ring-brand-50"
-          />
-          <input
-            v-model="pwdConfirm"
-            type="password"
-            autocomplete="new-password"
-            placeholder="确认新密码"
-            class="w-full rounded-lg border border-ink-200 px-3.5 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-4 focus:ring-brand-50"
-          />
-          <p v-if="pwdError" class="text-xs text-rose-600">{{ pwdError }}</p>
-        </div>
-
-        <div class="mt-5 flex justify-end gap-2">
-          <button
-            type="button"
-            class="rounded-lg border border-ink-200 px-3.5 py-2 text-sm text-ink-600"
-            @click="pwdDialog = false"
-          >
-            取消
-          </button>
-          <button
-            type="button"
-            class="rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-medium text-white transition hover:bg-brand-700 disabled:opacity-60"
-            :disabled="pwdBusy"
-            @click="submitPwdReset"
-          >
-            重置密码
           </button>
         </div>
       </div>
