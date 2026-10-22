@@ -90,8 +90,12 @@ lint-go:
 	}
 	$(GOLANGCI) run ./...
 
+# 与 test-web 同理：node_modules 不入库，干净检出（CI）时两套前端都要先安装，
+# 否则 `eslint: command not found` 会让 `make lint` 以 127 退出（`make test` 只装了 portal）。
 lint-web:
+	@test -d web/portal/node_modules || (cd web/portal && $(NPM_INSTALL))
 	cd web/portal && npm run lint
+	@test -d web/admin/node_modules || (cd web/admin && $(NPM_INSTALL))
 	cd web/admin && npm run lint
 
 # 两个前端产物 -> web/dist/portal、web/dist/admin
