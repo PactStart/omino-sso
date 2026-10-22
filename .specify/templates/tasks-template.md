@@ -9,9 +9,20 @@ description: "Task list template for feature implementation"
 
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Tests**: The examples below include test tasks. Tests are OPTIONAL - only include them if explicitly requested in the feature specification.
+**Tests**: 本项目不接受「测试可选」：宪法「开发工作流与质量门禁」要求新增或修改业务逻辑、端点、数据访问层时同步交付测试。因此**每条实现类任务自带对应测试任务**（同一次提交），测试不再单独堆到最后的 Polish 阶段。
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
+
+## 任务完成定义（DoD，来自 AGENTS.md §7.4）
+
+一条任务只有在下列四项同时满足时才算完成，缺一不得勾选：
+
+1. **代码**：行为符合 `spec.md` 与 `contracts/`，无 TODO / 空实现；
+2. **测试**：同一提交内含单测或门控集成用例；
+3. **登记**：新增/变更的路由、错误码、审计事件、环境变量、表结构、依赖版本同步写入 `AGENTS.md` §2 / §4.1·§4.6 / §5.3 / §6.7 / §9；
+4. **门禁**：`make build && make test && make lint && make check` 全绿。
+
+写任务描述时请把可验收的断言写进去（例：「连续 5 次错误后正确验证码也失效」而不是「有错误次数限制」）。
 
 ## Format: `[ID] [P?] [Story] Description`
 
