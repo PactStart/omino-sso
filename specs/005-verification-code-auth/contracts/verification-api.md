@@ -6,7 +6,8 @@
 
 - **响应格式**：成功 `{"code":"OK","message":"success","data":{...},"traceId":"..."}`；失败 `{"code":"<ERR>","message":"...","traceId":"..."}`（`/oauth2/*` 协议面除外，本特性全部落在 `:8081`）。
 - **鉴权**：
-  - 未登录可调：`/auth/code`、`/auth/login`、`/auth/password/reset`（需图形验证码防刷）。
+  - 未登录可调：`/auth/code`、`/auth/login`、`/auth/password/reset`。
+  - **图形验证码**：仅 `/auth/code` 的 `login` / `find_password` 场景（未登录时）与 `/auth/login` 的 `email_code` / `sms_code` 类型强制校验 `captchaId` + `captchaCode`（`GET /auth/captcha` 签发，2 分钟、一次有效），失败返回 `AUTH_CAPTCHA_INVALID`；`/auth/password/reset` 不校验图形码，靠 6 位验证码 + 连续错误 5 次失效 + 端点限流防刷，已登录会话一律不校验（与 AGENTS.md §4.1 一致）。
   - 需会话（`sid` cookie）：`/me/*`。
   - 需管理员会话：`/admin/*`。
 - **脱敏约定**：手机号与邮箱在响应中一律脱敏（澄清 Q4），脱敏在服务端完成，前端不做二次处理。
@@ -23,7 +24,7 @@
 |---|---|---|---|
 | `scene` | string | 是 | 枚举：`bind_phone` / `bind_email` / `login` / `find_password` / `mfa_unbind` |
 | `channel` | string | 是 | `sms` / `email`（与 scene 匹配） |
-| `target` | string | 是 | 手机号（11 位）或邮箱 |
+| `target` | string | 条件必填 | 手机号（11 位）或邮箱。未登录的 `login` / `find_password` 与 `bind_phone` / `bind_email` 必填；已登录会话的 `mfa_unbind` / `find_password` 可省略，服务端按会话解析本人已绑定的联系方式（忽略请求体传值） |
 | `captchaId` | string | 否 | 未登录场景（登录/找回）图形验证码 id |
 | `captchaCode` | string | 否 | 未登录场景图形验证码值 |
 
@@ -33,9 +34,9 @@
 { "code": "OK", "message": "success", "data": { "expiresIn": 300, "resendAfter": 60 }, "traceId": "..." }
 ```
 
-**错误**：`VALIDATION_FAILED`、`AUTH_CAPTCHA_INVALID`、`RATE_LIMITED`（60s 内重发）、`VERIFY_SEND_FAILED`（供应商失败）。
+**错误**：`VALIDATION_FAILED`、`AUTH_CAPTCHA_INVALID`、`RATE_LIMITED`（60s 内重发）、`VERIFY_SEND_FAILED`（供应商失败）、`VERIFY_TARGET_NOT_FOUND`（`login` 场景目标未绑定任何账号）。
 
-**防枚举约定**：`login` / `find_password` 场景对「未注册或未绑定目标联系方式」返回**统一成功响应**但不真实发送（不泄露账号存在性）；`bind_phone` / `bind_email` 场景对「已被其他账号占用」的目标返回 `VERIFY_TARGET_IN_USE`。
+**未绑定目标的处理（2026-10-22 修订）**：`login` 场景在取码阶段对「目标联系方式未绑定任何账号」返回 `404 VERIFY_TARGET_NOT_FOUND`，文案为「该手机号/邮箱未绑定任何账号，请用密码登录后到账号中心绑定」——显式放弃该场景的防枚举以换取可诊断性。`find_password` 场景仍对「未注册或未绑定目标联系方式」返回**统一成功响应**但不真实发送（不泄露账号存在性）。`bind_phone` / `bind_email` 场景对「已被其他账号占用」的目标返回 `VERIFY_TARGET_IN_USE`。
 
 ## 2. 登录（扩展多方式）
 

@@ -20,12 +20,14 @@
 - **Alternatives considered**:
   - 引入社区创蓝 SDK：质量/维护不确定，且把供应商签名细节锁进第三方库 → 拒绝。
 
-## 决策 3 — 邮箱发送：Go 标准库 `net/smtp` + 手写 MIME
+## 决策 3 — 邮箱发送：`github.com/jordan-wright/email`（2026-10-22 修订，取代「标准库 `net/smtp` + 手写 MIME」）
 
-- **Decision**: 邮箱验证码走 SMTP，用 Go 标准库 `net/smtp` 发送；邮件正文为 `multipart/alternative`（`text/plain` + `text/html`），HTML 模板由**模板文件**渲染（`html/template`），模板路径由配置指定。不引入 `gomail` 等第三方库。
-- **Rationale**: 验证码邮件结构简单，标准库足以；模板文件满足 FR-012（模板走文件 + 配置读取 + Docker 镜像复制），并便于运维不重新编译即可微调文案。避免新增依赖。
+- **Decision**: 邮箱验证码走 SMTP，投递与 MIME 组装都交给 `github.com/jordan-wright/email`：报文由 `email.Email`（`Text` + `HTML` → 自动 `multipart/alternative`）生成，投递按端口选择 `SendWithTLS`（465，SMTPS）/`SendWithStartTLS`（587）/`Send`（其它）；HTML 模板仍由**模板文件**渲染（`html/template`），路径由 `MAIL_TEMPLATE_PATH` 指定。
+- **Rationale**: 原决策「手写 boundary/base64 折行 + 自建 `smtp.Client` 会话」在实施中连续暴露缺陷——465 端口按明文拨号导致双方互等 `i/o timeout`、`MAIL FROM` 与认证账号不一致被 126 拒绝（`553`）。MIME 与会话属于「协议/编码类逻辑」，AGENTS §2.0 明确要求此类能力优先用成熟轮子；该库长期维护、MIT 许可、API 覆盖三种 TLS 形态。
+- **Known limitation**: 该库的 `Send*` 内部使用 `tls.Dial`，不接受 `ctx`、无超时参数，故超时由 `smtpProvider` 外层 watchdog 兜底（3 秒上限，见 T061），不依赖库。
 - **Alternatives considered**:
-  - `gomail`/`gopkg.in/mail`：API 更友好但引入额外依赖，且对验证码场景收益有限 → 拒绝。
+  - 继续手写 `net/smtp`（原决策）：需自行实现隐式 TLS、STARTTLS、MIME 折行，缺陷成本已在实施中证实 → 放弃。
+  - `gomail`/`gopkg.in/mail`：功能重叠且维护活跃度不及前者 → 拒绝。
   - 模板字符串硬编码进代码：无法满足「模板写文件 + 按配置读取」→ 拒绝。
 
 ## 决策 4 — 验证码存储：Redis 短时存储（TTL + 一次性 + 错误计数）

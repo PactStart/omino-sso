@@ -157,7 +157,7 @@ description: "Task list for 多通道验证与账号安全"
 
 - **T005 落地方式**：模板随 `configs/` 目录交付，路径由 `MAIL_TEMPLATE_PATH` 指定；`Makefile` 的 `assets` 目标在 `build`/`dev` 前做存在性校验（缺失即失败），把"首次发信才报错"提前到构建期。容器镜像打包方式暂缓。
 - **T010 调整为不启用接口抽象**：`store` 层在本项目统一以具体 `*store.Store` 提供（既有 `user_store.go` / `audit_store.go` 风格），`send_record_store.go` 沿用同一形态，未引入 `SendRecordStore` 接口与 mock，避免与既有分层惯例冲突。
-- **T037 二维码已落地**：portal 引入 `qrcode@1.5.4`（+`@types/qrcode@1.5.6`，已登记 AGENTS §2.2），绑定弹窗用 canvas 渲染 `otpauthUrl`，并保留下方密钥与链接作为兜底。
+- **T037 二维码已落地**：portal 引入 `qrcode@1.5.4`（+`@types/qrcode@1.5.6`，已登记 AGENTS §2.2），绑定弹窗用 `QRCode.toDataURL(otpauthUrl)` 生成 data URL 后交给 `<img>` 展示（qrcode 内部用 canvas 绘制再导出，页面无 canvas 节点），并保留下方密钥与链接作为兜底。
 - **T049 前端 lint 已接门禁**：两套前端新增 `eslint.config.js` 与 `npm run lint`（eslint 10.13.0 / eslint-plugin-vue 10.11.1 / typescript-eslint 8.72.0 / @vue/eslint-config-typescript 14.9.0 / globals 17.13.0，均 `--save-exact`），`make lint` 已聚合 Go + 前端。
 - **本地验证记录（2026-10-22）**：`make lint` / `make test` / `make build` 全绿；`TEST_MYSQL_DSN`+`TEST_REDIS_ADDR` 下 `TestVerifyLifecycle` 与全套 `TestOrg*` 通过；`bin/sso` 连测试库跑 30 项 HTTP 端到端冒烟全部通过（密码登录、绑定手机号、验证码登录、MFA 绑定/二步/解绑、越权与占用、发送记录脱敏与筛选、找回密码）。
 - **脱敏范围**：绑定/解绑接口响应与 `send_records.target` 一律服务端脱敏；`GET /me`、`GET /admin/users` 仍返回明文联系方式（前者供本人维护，且 `/auth/code?scene=mfa_unbind` 需要与已绑定值比对），属对"澄清 Q4"的收窄实现，如需全站脱敏需另起变更。
@@ -237,7 +237,7 @@ Task: "T018 在 internal/service/user.go 实现 BindPhone/BindEmail"
 - **T050**：`internal/service/captcha.go`（Redis `captcha:` 前缀、120 秒、`GETDEL` 一次性消费、SVG data URL）＋ `GET /api/v1/auth/captcha`；`/auth/code` 的 `login`/`find_password` 与 `/auth/login` 的 `email_code`/`sms_code` 强制校验，`AUTH_CAPTCHA_INVALID` 已实际返回；portal 的验证码登录与找回密码两处渲染并在失败后自动换图。
 - **T052**：`GET /api/v1/me` 返回 `notification.MaskPhone`/`MaskEmail` 脱敏值；`/auth/code` 已登录的 `mfa_unbind`/`find_password` 忽略请求体 `target`、改由服务端按会话解析；`Password.vue` 删除 `maskedTarget`，`Account.vue` 解绑不再传 `target`。
 - **T053**：`Dockerfile`（`golang:1.26-alpine` → `alpine:3.20`，非 root 用户）COPY `configs/verify-mail.tmpl` 并设 `MAIL_TEMPLATE_PATH`；`docker-compose.yml` 新增 `sso` 服务（依赖 mysql/redis 健康检查）。
-- **T054**：`vitest 3.2.7` + `@vue/test-utils 2.5.1` + `jsdom 25.0.1`（精确版本，已登记 AGENTS.md §2.2）；`Login.spec.ts` 5 条用例覆盖登录方式切换、图形验证码拦截/透传/失效、验证码登录失败提示；`make test` = `test-go` + `test-web`。
+- **T054**：`vitest 3.2.7` + `@vue/test-utils 2.5.1` + `jsdom 25.0.1`（精确版本，已登记 AGENTS.md §2.2）；`Login.spec.ts` 现为 12 条用例，覆盖登录方式切换与不兼容账号清空、图形验证码拦截/透传/失效、发送成功后换图、验证码登录失败提示（含绑定指引）、字段级旧错误清除、轻提示自动消失；`make test` = `test-go` + `test-web`。
 - **T055**：Account 页顶部可关闭引导（`localStorage` 键 `omino.portal.bind-hint-dismissed`），仅在手机号与邮箱均未绑定时出现，含「去绑定」锚点跳转。
 
 ---
@@ -251,6 +251,60 @@ Task: "T018 在 internal/service/user.go 实现 BindPhone/BindEmail"
 **实施备注（Phase 11，2026-10-22）**
 
 - **T057**：`internal/service/captcha.go` 改为 `image/png` 位图输出——`basicfont.Face7x13` 逐字绘制到 7x13 槽位、最近邻放大 2 倍、逐行剪切叠加，再叠 3 条干扰线与 160 个噪点，最终 `data:image/png;base64,…`；响应体不再包含任何可解析的明文码。新增 `TestCaptchaImageCarriesNoPlaintext`（解码 PNG、断言尺寸 120x40、断言原始字节不含验证码字符串、断言深色像素数）。新增依赖 `golang.org/x/image v0.20.0`（仅 `font/basicfont` 与 `math/fixed`），已登记 AGENTS.md §2.1 并说明理由，`go.mod` 其余锁定版本未变动。
-- **T058**：`Login.vue` 在「发送验证码成功」与「验证码登录提交失败」后立即 `refreshCaptcha()`（服务端 `GetDel` 已消费），`AUTH_CAPTCHA_INVALID` 分支改为只提示不重复拉取；新增 2 条用例覆盖「发送成功后换图」「登录失败后换图，重试不再多失败一次」，前端用例共 7 条。
+- **T058**：`Login.vue` 在「发送验证码成功」与「验证码登录提交失败」后立即 `refreshCaptcha()`（服务端 `GetDel` 已消费），`AUTH_CAPTCHA_INVALID` 分支改为只提示不重复拉取；新增 2 条用例覆盖「发送成功后换图」「登录失败后换图，重试不再多失败一次」，前端用例累计 12 条（`Login.spec.ts`）。
 - **T059**：`make test-web` 增加 `test -d web/portal/node_modules || $(NPM_INSTALL)`，干净检出可直接 `make test`；本机已有依赖时跳过安装，仍走 `npm ci` 的锁文件一致性语义。
 - **T057 缺陷修复（2026-10-22，人工验收反馈「只能看到 3 个字符」）**：原布局用 `slide = 6 + (宽-6-4*字宽)/3` 当字符步长（120 画布下步长 39），第 4 个字符起点落到 x=121，整字被画出画布。改为 `glyphOrigins()` 按真实字宽反推间隙，并新增两条回归：`TestCaptchaGlyphLayoutFitsCanvas`（各字符含右边界必须落在留白内）与图片用例的「最右字符区域必须有笔画」。同时把画布提到 132x44、字模放大 3 倍并加粗，字母表去掉位图下易与 8/5 混淆的 `B`/`S`；前端 `img` 容器改为 `132x44` + `object-contain`（原 `object-cover` 在 120x42 容器里还会横向裁掉约 3px）。
+
+---
+
+## Phase 12: Convergence
+
+- [X] T060 对齐 `login` 场景未绑定目标的提示与 spec 的「统一、不泄露账号存在性」：`internal/api/auth/code.go` 现返回 `404 VERIFY_TARGET_NOT_FOUND` 并回显「该邮箱/手机号未绑定任何账号」，与 spec Edge Cases（不泄露存在性 + 附指引）、`contracts/verification-api.md:38`、T025（统一成功响应）相冲突；须把 2026-10-22 的显式提示取舍写回 `spec.md` 的 Edge Cases 与契约条款（或改回统一响应），并把文案补齐为「如未绑定手机号/邮箱，请用密码登录后到账号中心绑定」per spec Edge Cases / T025 (contradicts)
+- [X] T061 恢复邮件发送的超时与失败语义：`internal/service/notification/smtp.go` 改用 `email.SendWithTLS`/`SendWithStartTLS`/`Send` 后不再有 3 秒上限（库内部 `tls.Dial` 无超时、不接受 `ctx`），SMTP 卡住时既不返回可理解提示也不写 `send_records` 失败记录；须补回超时（外层 watchdog 或可设 deadline 的投递路径），或在 T013 与 spec Edge Cases 中显式记录该偏离及其风险 per T013「3s 超时」/ spec Edge Cases「供应商不可用须给出提示并记录失败」(partial)
+- [X] T062 让邮件正文的有效期跟随配置：`internal/service/notification/smtp.go` 的 `ExpireMinutes` 硬编码为 5，而验证码 TTL 取自 `VERIFY_CODE_TTL`（允许 0–30 分钟，默认 300 秒），改配置后邮件仍写「5 分钟内有效」，与 `configs/verify-mail.tmpl` 的 `{{.ExpireMinutes}}` 占位语义不符；改为按实际 `CodeTTL` 渲染并补一条断言 per FR-012 / plan「邮件模板含有效期占位」(partial)
+- [X] T063 补齐 005 配置清单文档：`specs/005-verification-code-auth/quickstart.md` 的短信环境变量仍只有 `SMS_CHUANGLAN_TEMPLATE`，缺新必填项 `SMS_CHUANGLAN_TEMPLATE_ID`（创蓝 V2 模板接口缺它必返回 `code=130 templateId 不能为空`），且未说明「模板 ID 与内容文案二选一」的新校验语义，照文档配置将无法启动 per FR-011 / T001 (partial)
+- [X] T064 更新 plan/research 的依赖决策描述：`plan.md`「Primary Dependencies」与 `research.md`「决策 3」仍声明「短信与邮箱发送不新增 SDK、邮箱走 Go 标准库 `net/smtp` + 手写 MIME」，与实际的 `github.com/jordan-wright/email`（AGENTS §2.1 已登记、仅用于组装 MIME + 调用其 `Send*`）不符，须同步描述并写明不再手写 MIME 的理由 per plan「Primary Dependencies」/ research 决策 3 (contradicts)
+- [X] T065 记录登录页交互约定：`web/portal/src/views/Login.vue` 新增的「提示走 3.2 秒自动消失的轻提示」「切换登录方式时清空与目标格式不兼容的账号」「账号/密码/图形码/验证码输入即清除对应错误」属 spec 与 T027/T032 未定义的行为（本次为人工体验要求），须写入 `spec.md` 的登录场景或 `quickstart.md` 的交互说明，并明确 `VERIFY_TARGET_NOT_FOUND` 提示的展示形态 per FR-008 / T027 (unrequested)
+
+---
+
+## Phase 13: Convergence
+
+- [X] T066 实现供应商连续失败熔断：`research.md` 决策 11 要求「连续失败进入短时熔断，熔断期内请求直接返回失败提示」，但 `internal/service/notification/service.go` 在发送失败时仅释放重发间隔、落 `failed` 记录并返回 `ErrSendFailed`，全仓库无任何熔断/连续失败计数（`grep 熔断|breaker|circuit` 为空）；须用 Redis 计数 + 冷却窗口实现（阈值/时长可配置），冷期内直接返回 `VERIFY_SEND_FAILED` 且不调用供应商，并补单测；若判定不实现，须在 `research.md` 决策 11 显式降级记录 per research 决策 11 / critique E3（供应商慢响应或宕机会雪崩）(missing)
+- [X] T067 更新 plan 的性能目标表述：`plan.md`「Performance Goals」仍写「发送记录写入不阻塞主流程（异步）」，与实现及 `research.md` 决策 9、本文件 Notes「验证码同步落库（E1 决策），不可改回异步」相反，须改为同步落库（并说明写库失败仅告警不掩盖供应商已发送事实）per plan: Performance Goals (contradicts)
+- [X] T068 更新 plan 的依赖表述（第二处）：`plan.md`「Complexity Tracking」仍声明「短信与邮箱发送不新增第三方 SDK（创蓝走 HTTP API、邮箱走 `net/smtp`）」，与实际的 `github.com/jordan-wright/email` 不符（T064 仅更新了「Primary Dependencies」一处），须同步改写并保留「新增依赖须先在 AGENTS §2.1 登记」的约束说明 per plan: Complexity Tracking (contradicts)
+
+
+**实施备注（Phase 13，2026-10-22）**
+
+- **T066**：熔断落在 `internal/service/notification/service.go`——Redis key `verify:cb:<channel>`（连续失败计数，窗口 = 冷却时长）与 `verify:cb:<channel>:open`（开闸标记，TTL = 冷却窗口）。发送前先查开闸标记，命中则直接返回 `ErrSendFailed`，**不写验证码、不写 `send_records`**（本次未发起发送，写记录会让审计面失真），只落一条 `send skipped: provider circuit open` 警告日志；供应商成功即清零计数，失败则计数并在达阈值时开闸。配置项 `VERIFY_CIRCUIT_THRESHOLD`（默认 5，0 关闭）/ `VERIFY_CIRCUIT_COOLDOWN`（默认 60 秒），已在 AGENTS §9 与 `.env.example` 登记；阈值 > 0 而冷却为 0 视为启动错误（否则开闸即永久短路）。Redis 异常时不阻断发送，避免保护措施变成新的单点。集成用例 `TestCircuitBreaker` 覆盖「两次失败→开闸→第三次不调用供应商→冷却后恢复」，已在真实 MySQL+Redis 上通过。
+- **T067 / T068**：`plan.md` 的「Performance Goals」改为同步落库（引用决策 9 与 E1），「Complexity Tracking」改为「短信不引 SDK、邮箱用 `jordan-wright/email`」并保留「再引依赖须按 §2.0 提案确认」的约束。
+
+---
+
+## Phase 14: Convergence
+
+- [X] T069 为 005 新增的业务逻辑补单元测试：`internal/service/user.go` 的 `bindContact`/`BindPhone`/`BindEmail`（唯一性冲突映射 `VERIFY_TARGET_IN_USE`、验证码消费失败不写库、审计 `phone_bound`/`email_bound`）、`AuthenticateByCode`（未绑定目标统一错误、验证码错误计数）、`ResetPasswordByCode`/`ResetPasswordWithCode`（不自动登录、吊销全部会话 vs 保留当前会话），以及 `internal/service/mfa.go` 的 `StartBind`/`ConfirmBind`/`Unbind`（已绑定拒绝、ticket 一次性、动态码错误不改变绑定状态、未绑定解绑返回 `MFA_NOT_BOUND`）；测试不得依赖外部基础设施，或沿用 `TEST_MYSQL_DSN`+`TEST_REDIS_ADDR` 门控并在 `make test` 可见 per Constitution「开发工作流与质量门禁：改动必须伴随测试」(missing)
+- [X] T070 统一图形验证码的三方口径：`specs/005-verification-code-auth/contracts/verification-api.md` 的「统一约定」把 `/auth/password/reset` 列为「需图形验证码防刷」，而 `internal/api/auth/password.go` 与 AGENTS.md §4.1 的注释只要求 `/auth/code` 的 `login`/`find_password` 与 `/auth/login` 的 `email_code`/`sms_code`；须把契约改为与实现一致（若选择补实现，则须同步 AGENTS §4.1、`web/portal/src/views/Login.vue` 忘记密码最后一步与用例）per contracts §统一约定 / T050 (contradicts)
+- [X] T071 补齐契约 §1 中 `target` 的真实必填语义：`internal/api/auth/code.go` 的 `SendCodeRequest.Target` 为 `binding:"omitempty"`，已登录会话的 `mfa_unbind`/`find_password` 忽略请求体并改由服务端按会话解析（`code.go:64-75`），前端 `Account.vue`、`Password.vue` 均不传该字段，契约却写「必填=是」per contracts §1 / T025 (contradicts)
+- [X] T072 让 `find_password` 静默成功分支的返回策略取自配置：`internal/api/auth/code.go` 现硬编码 `SendCodeResult{ExpiresIn: 300, ResendAfter: 60}`，与 `VERIFY_CODE_TTL`/`VERIFY_RESEND_INTERVAL` 解耦，改配置后前端倒计时与实际策略不一致；改为从 `notification.Service` 暴露并读取实际值 per T001 / T025 (partial)
+- [X] T073 在 AGENTS.md §3 目录树的 `internal/api/me/` 下补登记实际存在的 `contact.go`（`/me/phone`、`/me/email`）与 `mfa.go`（MFA 绑定/解绑），使目录清单与仓库一致 per T019 / T035 (partial)
+- [X] T074 修正 `web/portal/src/api/types.ts` 中 `CaptchaResult.image` 的注释：仍写「SVG data URL」，而 `internal/service/captcha.go` 自 T057 起返回 `data:image/png;base64,…` per T057 (partial)
+- [X] T075 更正本文件实施备注中的过时记录：Phase 10 备注「`Login.spec.ts` 5 条用例」与 Phase 11 备注「前端用例共 7 条」实测为 12 条（`npx vitest run` 输出 `Tests 12 passed`）；`T037` 备注写「canvas 渲染二维码」，实际实现为 `QRCode.toDataURL` + `<img>`（`Account.vue`），须按实际事实改写 per T037 / T054 / T057 (partial)
+
+**实施备注（Phase 14，2026-10-22）**
+
+- **T069**：新增 `internal/service/verification_integration_test.go`（`package service_test`，与 `org_integration_test.go` 共用 `openTestDB`/`schemaOnce` 脚手架），沿用 `TEST_MYSQL_DSN` + `TEST_REDIS_ADDR` 双门控（缺一即整组 `t.Skip`，`make test` 不依赖外部基础设施）。5 个用例覆盖：`BindPhone`/`BindEmail`（脱敏返回、库内落值、占用冲突 `ErrTargetInUse`、错误验证码不写库）、`AuthenticateByCode`（成功、连续 5 次错误后正确码亦失效、未绑定号码统一 `ErrInvalidCredentials`）、`ResetPasswordByCode`（弱口令先拒、改密后可登录且不产生会话、未绑定目标统一验证码错误）、`ResetPasswordWithCode`（同密码拒绝、保留当前会话并吊销其他设备、未绑定渠道 `ErrTargetNotBound`）、MFA 全链路（错误动态码不改状态、ticket 一次性、有效码确认后 `mfa_enabled=true` 且密钥可解密、重复启动 `ErrMFAAlreadyBound`、未绑定渠道与未绑定状态解绑的错误分支）。已在本地 MySQL(3307)+Redis(6380) 实测全部通过；未引入 mock 接口，避免为测试重构分层（宪法「不重构既有目录结构与分层」）。
+- **T070 / T071**：`contracts/verification-api.md` 的「统一约定」改为与 `internal/api/auth/password.go`、AGENTS §4.1 一致的图形码口径（仅 `/auth/code` 的 `login`/`find_password`（未登录）与 `/auth/login` 的 `email_code`/`sms_code` 强制校验；`/auth/password/reset` 靠验证码错误上限与端点限流）；§1 的 `target` 改标「条件必填」并写明已登录 `mfa_unbind`/`find_password` 由服务端按会话解析。
+- **T072**：`notification.Service` 新增 `Policy() (expiresIn, resendAfter int)`，`internal/api/auth/code.go` 的 `find_password` 静默成功分支改用它，响应阈值不再硬编码 300/60。
+- **T073 / T074 / T075**：AGENTS §3 补登记 `me/contact.go`、`me/mfa.go`；`web/portal/src/api/types.ts` 的图形码注释改为 PNG data URL；更正本文件三处过时备注（前端用例 12 条、二维码实现方式）。
+
+---
+
+## Phase 15: Convergence
+
+- [X] T076 修订 `specs/005-verification-code-auth/quickstart.md` 使其与仓库实际可执行状态一致：第 9 行的 `make migrate` 目标不存在（Makefile 只提供 `migrate-up` / `migrate-down`，执行即报 `No rule to make target 'migrate'`）；配置段缺 T066 引入的 `VERIFY_CIRCUIT_THRESHOLD` / `VERIFY_CIRCUIT_COOLDOWN`（已在 AGENTS §9 与 `.env.example` 登记，缺失时读者无从调整熔断）；第 42 行「编译 bin/sso（含邮件模板复制）」表述不准确——`make build` 只做模板存在性校验（`assets`），模板复制发生在 `Dockerfile`；「自动化校验」一节未说明 `internal/service/verification_integration_test.go` 等 005 业务集成测试需 `TEST_MYSQL_DSN` + `TEST_REDIS_ADDR` 才会真正执行（否则 `t.Skip`）per T001 / T063 / T066 / T069 (partial)
+
+**实施备注（Phase 15，2026-10-22）**
+
+- **T076**：`quickstart.md` 四处修订——① 前置条件的 `make migrate` 改为 `make migrate-up`（并注明回退用 `make migrate-down`），两目标已用 `make -n` 验证存在；② 配置段补 `VERIFY_CIRCUIT_THRESHOLD` / `VERIFY_CIRCUIT_COOLDOWN`（含「阈值 0 关闭、阈值 > 0 时冷却必须 > 0」的启动校验说明）；③ `make build` 的真实行为改为「assets 模板存在性校验 + docs-check + 编译」（模板复制实际发生在 `Dockerfile`）；④「自动化校验」补集成测试的 `TEST_MYSQL_DSN` + `TEST_REDIS_ADDR` 双门控说明与示例命令（并警示该 DSN 指向的库会被 DROP 重建）、前端 12 条用例与提交前全量门禁命令。

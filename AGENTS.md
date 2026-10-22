@@ -26,6 +26,25 @@
 
 版本一经锁定不得随意升级；升级需单独提交并说明回归验证范围。初始基线如下，实际以 `go.mod` / `package.json` 为准。
 
+### 2.0 第三方依赖的引入原则（2026-10-22 新增）
+
+**优先用成熟轮子，不要自己造。** 一个能力只要存在「周知、高 star、长期维护」的现成实现，就应当引入而不是手写；手写协议/编码类逻辑（MIME 报文、TLS 形态、SMTP 会话、边界拼装、字符编码等）是缺陷高发区，且回归成本远高于依赖成本。
+
+**但引入前必须先征得确认**，流程固定为三步：
+
+1. **提案**：说明要做的事、候选库（模块路径 + 拟锁版本 + star 量级 + 最近提交活跃度 + 许可证），以及"不引库自己写"的代价对比；
+2. **确认**：取得用户明确同意后才可写入 `go.mod` / `package.json`；未经确认擅自引入视为缺陷（同"改规范需先改本文件"的约束强度）；
+3. **登记**：确认后登记到 §2.1 / §2.2 并锁定**精确版本**（Go 侧 `go get <path>@<version>`，前端 `npm install --save-exact`），同时写清"用它的哪部分、哪部分不用"以及已知短板（例如超时/ctx 不支持）。
+
+准入门槛（不满足需在提案中显式说明例外理由）：
+
+- 许可证为 MIT / Apache-2.0 / BSD；**GPL / AGPL 一律拒绝**；
+- 维护活跃：近 12 个月有提交或 issue 响应；star 量级与生态使用面匹配（此类库通常数千 star 起）；
+- 不得因引入它而被迫升级 §2.1 / §2.2 已锁定的任何版本（`go mod tidy` 后对比 `go.mod` 差异，出现被动升级即视为不可接受，须改用 `tools/go.mod` 隔离或换方案）；
+- 依赖增量可控：不引入 CGO、不引入大型框架、不引入与现有库职责重叠的实现（例如已有 `zitadel/oidc` 就不再引第二个 OIDC 库）。
+
+反向约束仍然有效：**协议实现类**（OIDC/JOSE/密码哈希/TOTP）必须用 §2.1 指定的库，不得因为"另一个库更流行"而替换。
+
 ### 2.1 后端
 
 | 组件 | 模块 | 锁定版本 | 用途 |
@@ -48,6 +67,7 @@
 | 测试 | `github.com/stretchr/testify` | `v1.10.0` | |
 | 日志 | `log/slog` | 标准库 | JSON handler |
 | 对象存储 | `github.com/aliyun/aliyun-oss-go-sdk/oss` | `v2.2.9` | 图片直传（PostObject 预签名）；2026-10-21 新增（004-object-storage-upload），另带间接依赖 `golang.org/x/time v0.16.0` |
+| 邮件发送 | `github.com/jordan-wright/email` | `v4.0.1-0.20210109023952-943e75fe5223+incompatible` | 验证码邮件：`Email` 组装 `multipart/alternative` 报文，`SendWithTLS`（465）/`SendWithStartTLS`（587）/`Send`（其它）负责投递；2026-10-22 新增，替代手拼 boundary + 自建 SMTP 会话。**该库的发送方法不带超时**（内部 `tls.Dial`），故邮件链路的超时依赖 TCP/服务器侧，`Send` 前只做 `ctx.Err()` 预检 |
 
 ### 2.2 前端
 
@@ -168,6 +188,8 @@ omino-sso/
 │   │   ├── me/                        # /api/v1/me/*
 │   │   │   ├── profile.go
 │   │   │   ├── password.go
+│   │   │   ├── contact.go             # 005：绑定/修改手机号与邮箱（POST /me/phone、/me/email）
+│   │   │   ├── mfa.go                 # 005：MFA 绑定 / 确认 / 解绑（/me/mfa/*）
 │   │   │   ├── apps.go
 │   │   │   └── sessions.go
 │   │   └── admin/                     # /api/v1/admin/*
@@ -329,6 +351,8 @@ omino-sso/
 > **组织写操作的并发语义**：三个组织写端点在同一事务内先对 `organizations` 全表加一次 `SELECT ... FOR UPDATE`（该表无 `tenant_id` 索引，实际为全局串行化），再读、校验、写；账号归属写入侧对目标部门行加锁。因此同级唯一性、10 级深度、成环、删除保护不依赖数据库唯一索引即可成立。
 >
 > **图形验证码（2026-10-22）**：未登录调用 `/api/v1/auth/code` 的 `login`、`find_password` 场景与 `/api/v1/auth/login` 的 `email_code`、`sms_code` 类型时，必须携带 `captchaId` + `captchaCode`（先调 `GET /api/v1/auth/captcha`，2 分钟有效、一次有效），校验失败返回 `400 AUTH_CAPTCHA_INVALID`。已登录会话一律不校验图形码。图片为 PNG 位图 data URL，**禁止**以 SVG/文本节点等可被脚本直接解码的形式下发；因图形码一次性消费，前端在发送成功或提交失败后必须立即换图。
+
+> **`login` 场景未绑定目标改为显式报错（2026-10-22 行为修正）**：过去 `/api/v1/auth/code` 在 `login` 场景遇到"该手机号/邮箱不属于任何账号"时返回与成功完全一致的响应但不发信（防枚举），结果用户只看到"验证码已发送"却永远收不到，且 `send_records` 也无记录，无法自诊断。现改为返回 `404 VERIFY_TARGET_NOT_FOUND`，代价是该场景可被用于探测注册状态；判定为可接受——登录页本身就要以"账号是否存在"回显错误提示，静默成功只增加支持成本。**`find_password` 场景保持静默成功**（找回密码流程不暴露注册状态），两处差异不得被"顺手统一"抹掉。
 >
 > **联系方式出服务端的口径（2026-10-22）**：`GET /api/v1/me` 与各绑定接口的响应只返回脱敏值（`138****8000` / `z***@example.com`），前端不得二次脱敏；`/api/v1/auth/code` 在已登录的 `mfa_unbind`、`find_password` 场景忽略请求体 `target`，由服务端按会话解析本人已绑定的联系方式，浏览器不持有完整值。
 
@@ -687,6 +711,7 @@ omino-sso/
 | 400 | `APP_PERMISSION_INVALID_PARENT` | 上级权限不存在 / 为自身或自身后代 / 跨应用 |
 | 409 | `APP_RESOURCE_STALE` | 写请求携带的 `updatedAt` 与服务端不一致（并发编辑） |
 | 400 | `AUTH_CODE_INVALID` | 短信/邮箱验证码错误、过期、已使用或错误次数超限 |
+| 404 | `VERIFY_TARGET_NOT_FOUND` | `login` 场景请求验证码时，该手机号/邮箱未绑定任何账号；文案须含「请用密码登录后到账号中心绑定」（`find_password` 仍静默成功） |
 | 409 | `VERIFY_TARGET_IN_USE` | 手机号/邮箱已被其他账号占用 |
 | 502 | `VERIFY_SEND_FAILED` | 验证码供应商发送失败或通道未配置 |
 | 409 | `MFA_ALREADY_BOUND` | 当前账号已绑定 MFA |
@@ -805,7 +830,7 @@ omino-sso/
 
 ### 6.6 `sessions`
 
-主存 Redis（`sso:sess:{sid}`，TTL 与会话一致），MySQL 仅保留审计副本。
+主存 Redis（`sess:{sid}`，TTL 与会话一致），MySQL 仅保留审计副本。
 
 | 字段 | 类型 | 约束 | 说明 |
 |---|---|---|---|
@@ -1060,7 +1085,6 @@ docker compose up -d --build   # mysql + redis + sso + nginx(静态托管两套�
 | `REDIS_ADDR` | 是 | `127.0.0.1:6379` | |
 | `REDIS_PASSWORD` | 否 | 空 | |
 | `REDIS_DB` | 否 | `0` | |
-| `REDIS_KEY_PREFIX` | 否 | `sso:` | |
 | `ARGON2_MEMORY_KIB` | 否 | `65536` | 64MB |
 | `ARGON2_ITERATIONS` | 否 | `3` | |
 | `ARGON2_PARALLELISM` | 否 | `2` | |
@@ -1085,22 +1109,30 @@ docker compose up -d --build   # mysql + redis + sso + nginx(静态托管两套�
 | `SMS_CHUANGLAN_URL` | 条件 | — | provider=chuanglan 时必填，创蓝 HTTP 接口地址 |
 | `SMS_CHUANGLAN_ACCOUNT` | 条件 | — | 同上 |
 | `SMS_CHUANGLAN_PASSWORD` | 条件 | — | 同上，服务端专用 |
-| `SMS_CHUANGLAN_TEMPLATE` | 条件 | — | 短信模板文案，`{code}` 替换为验证码 |
+| `SMS_CHUANGLAN_TEMPLATE_ID` | 条件 | — | 模板报备 ID（`v2/tpl/send` 必备，缺它返回 `130 templateId 不能为空`）；与 `SMS_CHUANGLAN_TEMPLATE` 二选一 |
+| `SMS_CHUANGLAN_TEMPLATE` | 条件 | — | 内容模板文案，仅未配 `TEMPLATE_ID` 时使用，`{code}` / `{s}` 替换为验证码 |
+
+> **模板变量 key 硬编码为 `param1`（2026-10-22 定稿，不做成环境变量）**：创蓝 V2 的 `templateParamJson` 按**位置**命名变量（`param1`、`param2`…），与模板文案里写 `{code}` 还是 `${s}` 无关。它一旦配错，网关只回 `code=130 所有手机号或参数均不合法`，不指向具体字段，排查成本远高于"多一个可配项"带来的灵活性；本项目模板固定为单变量验证码短信，故在 `internal/service/notification/chuanglan.go` 中以常量 `chuanglanParam` 硬编码，并有用例 `TestChuanglanSend_ParamKeyHardcoded` 锁定。
+
 | `MAIL_PROVIDER` | 否 | `mock` | `mock` / `smtp` / 空（关闭）；`prod` 下禁止 `mock` |
 | `MAIL_SMTP_HOST` | 条件 | — | provider=smtp 时必填 |
-| `MAIL_SMTP_PORT` | 否 | `587` | |
+| `MAIL_SMTP_PORT` | 否 | `587` | `465` 走 SMTPS（连接后立即 TLS 握手），其它端口走明文 + STARTTLS |
 | `MAIL_SMTP_USERNAME` | 否 | 空 | 非空时 `MAIL_SMTP_PASSWORD` 必填 |
 | `MAIL_SMTP_PASSWORD` | 条件 | — | |
-| `MAIL_FROM` | 条件 | — | 发件人，形如 `omino-sso <no-reply@example.com>` |
+| `MAIL_FROM` | 条件 | — | 发件人（From 头），形如 `omino-sso <no-reply@example.com>`；**信封发件人**（MAIL FROM）在 `MAIL_SMTP_USERNAME` 为邮箱形态时自动取该账号，规避 126/163 的 `553 Mail from must equal authorized user` |
 | `MAIL_TEMPLATE_PATH` | 否 | `./configs/verify-mail.tmpl` | `html/template` 模板文件 |
 | `VERIFY_CODE_TTL` | 否 | `300` | 秒，验证码有效期上限 30 分钟 |
 | `VERIFY_RESEND_INTERVAL` | 否 | `60` | 秒，必须小于 `VERIFY_CODE_TTL` |
 | `VERIFY_MAX_ATTEMPTS` | 否 | `5` | 单个验证码最大连续错误次数 |
 | `VERIFY_RECORD_RETENTION_DAYS` | 否 | `180` | 发送记录与审计日志保留天数 |
+| `VERIFY_CIRCUIT_THRESHOLD` | 否 | `5` | 供应商熔断阈值：同一渠道连续失败达该值即开闸，`0` 关闭熔断（2026-10-22 新增，research 决策 11） |
+| `VERIFY_CIRCUIT_COOLDOWN` | 否 | `60` | 熔断冷却秒数（开闸期间请求直接 `VERIFY_SEND_FAILED` 且不调用供应商），阈值 > 0 时必须 > 0 |
 | `ADMIN_BOOTSTRAP_USERNAME` | 是（首次） | — | 初始化管理员，仅在 `users` 为空时生效 |
 | `ADMIN_BOOTSTRAP_PASSWORD` | 是（首次） | — | 初始化后必须立即修改，并在生产环境删除该变量 |
 
 `.env.example` 必须与本表保持同步；新增变量时同步更新两处。
+
+> **`REDIS_KEY_PREFIX` 于 2026-10-22 移除（行为修正）**：该变量此前登记在本表中，但代码从未消费它——`internal/store/redis.go` 建客户端时只传 `Addr` / `Password` / `DB`，`config.RedisConfig.KeyPrefix` 无任何引用方，因此把它写进 `.env` 也不改变实际键名，属"看似生效、实则无效"的配置，会误导运维以为多个环境可以共用同一个 Redis DB。现删除该字段与相关文档，不加兼容分支（旧值留在环境里也不会被读取）。键命名一律由各模块自己的固定前缀承担（`sess:` / `captcha:` / `verify:code:` / `verify:attempt:` / `verify:resend:` / `mfa:setup:` / `rl:`），环境隔离只依赖 `REDIS_DB` 或独立实例。
 
 ---
 
@@ -1117,3 +1149,4 @@ docker compose up -d --build   # mysql + redis + sso + nginx(静态托管两套�
 - [ ] 改动已伴随/更新单元测试，且已主动执行 `make test` / `make lint`（未依赖 pre-commit 兜底）
 - [ ] 新增/删除路由或改动 DTO 后已执行 `make docs`，并同步更新 operation 数等硬编码测试断言
 - [ ] 新增带鉴权的端点前已界定访问者与可写范围（防越权）；前端筛选/搜索控件与后端实际过滤字段一致
+- [ ] 新增第三方依赖前已按 §2.0 提案并取得确认，引入后已登记到 §2.1 / §2.2 并锁定精确版本，`go mod tidy` 未造成既有依赖被动升级

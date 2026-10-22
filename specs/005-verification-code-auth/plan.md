@@ -16,7 +16,7 @@
 
 **Language/Version**: Go 1.26.0（后端）；TypeScript 5.7.2 + Vue 3.5.13（前端）
 
-**Primary Dependencies**: 既有 gin v1.10.0 / fx v1.23.0 / gorm v1.25.12 / go-redis v9.7.0 / ulid v2.1.0 / validator v10.23.0 / pquerna-otp v1.4.0（TOTP）/ argon2（x/crypto v0.31.0）；短信与邮箱发送不新增 SDK（创蓝走 HTTP API、邮箱走 Go 标准库 `net/smtp`），如需引入第三方库须先登记 AGENTS.md §2.1
+**Primary Dependencies**: 既有 gin v1.10.0 / fx v1.23.0 / gorm v1.25.12 / go-redis v9.7.0 / ulid v2.1.0 / validator v10.23.0 / pquerna-otp v1.4.0（TOTP）/ argon2（x/crypto v0.31.0）；短信走创蓝 HTTP API（不引入 SDK）；邮箱使用 `github.com/jordan-wright/email`（2026-10-22 引入并登记 AGENTS.md §2.1/§2.0：仅用其 MIME 组装与 `SendWithTLS`/`SendWithStartTLS`/`Send`，替代手写 boundary 与自建 SMTP 会话）
 
 **Storage**: MySQL 8.4（新增 `send_records` 表 + `users.phone` 唯一索引）；Redis 7.4（验证码短时存储 + 频率限制）
 
@@ -26,7 +26,7 @@
 
 **Project Type**: web-service（Go IdP，`:8080` 协议面 + `:8081` 管理 API）+ 两个 web 前端
 
-**Performance Goals**: 验证码签发/校验 < 200ms；发送记录写入不阻塞主流程（异步）；短信/邮件发送失败不影响验证码主链路（可降级为失败提示 + 记录）
+**Performance Goals**: 验证码签发/校验 < 200ms；发送记录**同步落库**以保证 100% 可追溯（`research.md` 决策 9、tasks Notes「E1 决策，不可改回异步」；写库失败仅告警，不掩盖供应商已发送的事实）；短信/邮件发送失败不影响验证码主链路（降级为失败提示 + 记录，并在连续失败时熔断）
 
 **Constraints**: 分层 `api → service → store`；结构变更走手写 SQL 迁移；错误码登记 AGENTS.md §5.3；审计事件登记 §6.7；短信/邮箱供应商密钥仅服务端持有；邮件模板文件随 Docker 镜像打包
 
@@ -100,4 +100,4 @@ web/
 
 ## Complexity Tracking
 
-> 无宪法违规需豁免。短信与邮箱发送不新增第三方 SDK（创蓝走 HTTP API、邮箱走 `net/smtp`），避免依赖膨胀；供应商密钥由 `internal/config` 统一加载并校验。若实施阶段确需引入邮箱/短信 SDK，须先在 AGENTS.md §2.1 登记并说明理由，不构成违规。
+> 无宪法违规需豁免。短信不引入 SDK（创蓝走 HTTP API）；邮箱使用 `github.com/jordan-wright/email`（2026-10-22 引入，已按 AGENTS §2.0 提案确认并登记 §2.1），仅用于组装 MIME 与调用其 `Send*`，不再手写 boundary/自建 SMTP 会话。供应商密钥由 `internal/config` 统一加载并校验。后续若再引入邮箱/短信 SDK，须先按 AGENTS §2.0 提案取得确认并在 §2.1 登记。
