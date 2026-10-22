@@ -132,6 +132,28 @@ func TestValidateNotification_SMSMissingFields(t *testing.T) {
 	}
 }
 
+// TestValidateNotification_CircuitBreaker 熔断参数：阈值 > 0 时冷却必须 > 0，
+// 否则开闸后永久短路（T066 / research 决策 11）。
+func TestValidateNotification_CircuitBreaker(t *testing.T) {
+	c := validBaseConfig()
+	c.Verify.CircuitThreshold = 5
+	c.Verify.CircuitCooldown = 0
+	if err := c.validate(); err == nil || !strings.Contains(err.Error(), "VERIFY_CIRCUIT_COOLDOWN") {
+		t.Fatalf("阈值 > 0 且冷却 = 0 应校验失败，实际 %v", err)
+	}
+
+	c.Verify.CircuitCooldown = time.Minute
+	if err := c.validate(); err != nil {
+		t.Fatalf("合法熔断配置不应报错，实际 %v", err)
+	}
+
+	c.Verify.CircuitThreshold = 0 // 0 表示关闭熔断
+	c.Verify.CircuitCooldown = 0
+	if err := c.validate(); err != nil {
+		t.Fatalf("关闭熔断（阈值 0）不应报错，实际 %v", err)
+	}
+}
+
 func TestValidateNotification_UnsupportedProvider(t *testing.T) {
 	c := validBaseConfig()
 	c.Mail.Provider = "sendgrid"

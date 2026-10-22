@@ -74,10 +74,9 @@ func (d DBConfig) DSN() string {
 }
 
 type RedisConfig struct {
-	Addr      string
-	Password  string
-	DB        int
-	KeyPrefix string
+	Addr     string
+	Password string
+	DB       int
 }
 
 type Argon2Config struct {
@@ -93,7 +92,10 @@ type SmsConfig struct {
 	ChuanglanURL      string
 	ChuanglanAccount  string
 	ChuanglanPassword string
-	ChuanglanTemplate string // 短信模板文案，支持 {code} 占位
+	// ChuanglanTemplateID 模板报备 ID（创蓝 v2/tpl/send 必填），与 ChuanglanTemplate 二选一：
+	// 填了 ID 走模板模式（templateId + templateParamJson），不再发送整段文案。
+	ChuanglanTemplateID string
+	ChuanglanTemplate   string // 内容模板文案（无 ID 时使用），支持 {code} / {s} 占位
 }
 
 // MailConfig 邮件通道配置。
@@ -114,6 +116,11 @@ type VerifyConfig struct {
 	ResendInterval      time.Duration
 	MaxAttempts         int
 	RecordRetentionDays int
+	// CircuitThreshold / CircuitCooldown 控制供应商熔断（research 决策 11）：
+	// 同一渠道连续失败达到阈值即打开熔断，冷却期内请求直接失败、不再调用供应商。
+	// CircuitThreshold <= 0 表示关闭熔断。
+	CircuitThreshold int
+	CircuitCooldown  time.Duration
 }
 
 // OSSConfig 对象存储配置（provider 驱动，004-object-storage-upload）。
@@ -175,10 +182,9 @@ func Load() (*Config, error) {
 			ConnMaxLifetime: envDuration("DB_CONN_MAX_LIFETIME", 30*time.Minute),
 		},
 		Redis: RedisConfig{
-			Addr:      env("REDIS_ADDR", "127.0.0.1:6379"),
-			Password:  env("REDIS_PASSWORD", ""),
-			DB:        envInt("REDIS_DB", 0),
-			KeyPrefix: env("REDIS_KEY_PREFIX", "sso:"),
+			Addr:     env("REDIS_ADDR", "127.0.0.1:6379"),
+			Password: env("REDIS_PASSWORD", ""),
+			DB:       envInt("REDIS_DB", 0),
 		},
 		Argon2: Argon2Config{
 			MemoryKiB:   uint32(envInt("ARGON2_MEMORY_KIB", 65536)),
@@ -200,11 +206,12 @@ func Load() (*Config, error) {
 			CredentialTTL:      time.Duration(envInt("OSS_CREDENTIAL_TTL", 300)) * time.Second,
 		},
 		SMS: SmsConfig{
-			Provider:          env("SMS_PROVIDER", "mock"),
-			ChuanglanURL:      env("SMS_CHUANGLAN_URL", ""),
-			ChuanglanAccount:  env("SMS_CHUANGLAN_ACCOUNT", ""),
-			ChuanglanPassword: env("SMS_CHUANGLAN_PASSWORD", ""),
-			ChuanglanTemplate: env("SMS_CHUANGLAN_TEMPLATE", ""),
+			Provider:            env("SMS_PROVIDER", "mock"),
+			ChuanglanURL:        env("SMS_CHUANGLAN_URL", ""),
+			ChuanglanAccount:    env("SMS_CHUANGLAN_ACCOUNT", ""),
+			ChuanglanPassword:   env("SMS_CHUANGLAN_PASSWORD", ""),
+			ChuanglanTemplateID: env("SMS_CHUANGLAN_TEMPLATE_ID", ""),
+			ChuanglanTemplate:   env("SMS_CHUANGLAN_TEMPLATE", ""),
 		},
 		Mail: MailConfig{
 			Provider:     env("MAIL_PROVIDER", "mock"),
@@ -220,6 +227,8 @@ func Load() (*Config, error) {
 			ResendInterval:      time.Duration(envInt("VERIFY_RESEND_INTERVAL", 60)) * time.Second,
 			MaxAttempts:         envInt("VERIFY_MAX_ATTEMPTS", 5),
 			RecordRetentionDays: envInt("VERIFY_RECORD_RETENTION_DAYS", 180),
+			CircuitThreshold:    envInt("VERIFY_CIRCUIT_THRESHOLD", 5),
+			CircuitCooldown:     time.Duration(envInt("VERIFY_CIRCUIT_COOLDOWN", 60)) * time.Second,
 		},
 	}
 
@@ -311,11 +320,14 @@ func (c *Config) validateNotification() error {
 			"SMS_CHUANGLAN_URL":      c.SMS.ChuanglanURL,
 			"SMS_CHUANGLAN_ACCOUNT":  c.SMS.ChuanglanAccount,
 			"SMS_CHUANGLAN_PASSWORD": c.SMS.ChuanglanPassword,
-			"SMS_CHUANGLAN_TEMPLATE": c.SMS.ChuanglanTemplate,
 		} {
 			if strings.TrimSpace(v) == "" {
 				missing = append(missing, name)
 			}
+		}
+		// 模板 ID（v2/tpl/send 模板报备模式）与整段文案二选一，都不配则无从发送。
+		if strings.TrimSpace(c.SMS.ChuanglanTemplateID) == "" && strings.TrimSpace(c.SMS.ChuanglanTemplate) == "" {
+			missing = append(missing, "SMS_CHUANGLAN_TEMPLATE_ID or SMS_CHUANGLAN_TEMPLATE")
 		}
 		if len(missing) > 0 {
 			sort.Strings(missing)
@@ -374,6 +386,16 @@ func (c *Config) validateNotification() error {
 	}
 	if c.Verify.MaxAttempts < 0 || c.Verify.MaxAttempts > 10 {
 		return errors.New("VERIFY_MAX_ATTEMPTS must be in [1, 10]")
+	}
+	if c.Verify.CircuitThreshold < 0 || c.Verify.CircuitThreshold > 100 {
+		return errors.New("VERIFY_CIRCUIT_THRESHOLD must be in [0, 100] (0 disables the breaker)")
+	}
+	if c.Verify.CircuitCooldown < 0 || c.Verify.CircuitCooldown > 10*time.Minute {
+		return errors.New("VERIFY_CIRCUIT_COOLDOWN must be in [0, 10m]")
+	}
+	// 开了熔断却设成 0 冷却，会导致开闸后永久短路，直接判定为配置错误。
+	if c.Verify.CircuitThreshold > 0 && c.Verify.CircuitCooldown <= 0 {
+		return errors.New("VERIFY_CIRCUIT_COOLDOWN must be > 0 when VERIFY_CIRCUIT_THRESHOLD > 0")
 	}
 	if c.Verify.RecordRetentionDays < 0 {
 		return errors.New("VERIFY_RECORD_RETENTION_DAYS must not be negative")

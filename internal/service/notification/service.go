@@ -23,6 +23,10 @@ const (
 	codeKeyPrefix    = "verify:code:"
 	attemptKeyPrefix = "verify:attempt:"
 	resendKeyPrefix  = "verify:resend:"
+	// 供应商熔断（决策 11）：verify:cb:<channel> 记连续失败数，
+	// verify:cb:<channel>:open 为开闸标记（TTL 即冷却窗口）。
+	circuitKeyPrefix = "verify:cb:"
+	circuitOpenFlag  = ":open"
 )
 
 // Service 签发与校验验证码，并记录每次发送结果。
@@ -37,6 +41,10 @@ type Service struct {
 	codeTTL     time.Duration
 	resendAfter time.Duration
 	maxAttempts int
+
+	// 熔断参数：cbThreshold <= 0 表示关闭（便于测试与纯 mock 环境）。
+	cbThreshold int
+	cbCooldown  time.Duration
 }
 
 // New 按配置选择供应商实现；未配置的通道为 nil，调用时返回通道未启用错误。
@@ -46,6 +54,12 @@ func New(cfg *config.Config, st *store.Store, audit AuditSink, logger *slog.Logg
 	}
 	s := &Service{st: st, log: logger, audit: audit}
 
+	// TTL 先确定：邮件正文里的「N 分钟内有效」要用同一个值渲染（T062）。
+	s.codeTTL = cfg.Verify.CodeTTL
+	if s.codeTTL <= 0 {
+		s.codeTTL = 5 * time.Minute
+	}
+
 	switch cfg.SMS.Provider {
 	case "chuanglan":
 		s.sms = NewChuanglan(cfg.SMS)
@@ -54,7 +68,7 @@ func New(cfg *config.Config, st *store.Store, audit AuditSink, logger *slog.Logg
 	}
 	switch cfg.Mail.Provider {
 	case "smtp":
-		p, err := NewSMTP(cfg.Mail)
+		p, err := NewSMTP(cfg.Mail, s.codeTTL)
 		if err != nil {
 			return nil, err
 		}
@@ -63,10 +77,6 @@ func New(cfg *config.Config, st *store.Store, audit AuditSink, logger *slog.Logg
 		s.email = NewMock()
 	}
 
-	s.codeTTL = cfg.Verify.CodeTTL
-	if s.codeTTL <= 0 {
-		s.codeTTL = 5 * time.Minute
-	}
 	s.resendAfter = cfg.Verify.ResendInterval
 	if s.resendAfter <= 0 {
 		s.resendAfter = 60 * time.Second
@@ -75,6 +85,8 @@ func New(cfg *config.Config, st *store.Store, audit AuditSink, logger *slog.Logg
 	if s.maxAttempts <= 0 {
 		s.maxAttempts = 5
 	}
+	s.cbThreshold = cfg.Verify.CircuitThreshold
+	s.cbCooldown = cfg.Verify.CircuitCooldown
 	return s, nil
 }
 
@@ -92,6 +104,13 @@ type IssueInput struct {
 type IssueResult struct {
 	ExpiresIn   int `json:"expiresIn"`
 	ResendAfter int `json:"resendAfter"`
+}
+
+// Policy 返回当前配置下的验证码有效期与重发间隔（秒）。
+// 供「不真实发送、但响应形状须与成功一致」的分支（如 find_password 的静默成功）复用，
+// 避免硬编码阈值与 VERIFY_CODE_TTL / VERIFY_RESEND_INTERVAL 脱节。
+func (s *Service) Policy() (expiresIn, resendAfter int) {
+	return int(s.codeTTL.Seconds()), int(s.resendAfter.Seconds())
 }
 
 // ErrChannelDisabled 通道未配置（provider 为空）。
@@ -112,6 +131,14 @@ func (s *Service) Issue(ctx context.Context, in IssueInput) (IssueResult, error)
 	provider, err := s.provider(in.Channel)
 	if err != nil {
 		return IssueResult{}, err
+	}
+
+	// 熔断打开时直接失败：不占用供应商配额、不写验证码、也不产生发送记录
+	// （本次根本没有发起发送，写入记录会让 send_records 失真）。
+	if s.circuitOpen(ctx, in.Channel) {
+		s.log.Warn("send skipped: provider circuit open",
+			"channel", in.Channel, "scene", in.Scene, "provider", provider.Name())
+		return IssueResult{}, ErrSendFailed
 	}
 
 	rdb := s.st.Redis()
@@ -141,9 +168,11 @@ func (s *Service) Issue(ctx context.Context, in IssueInput) (IssueResult, error)
 		s.persist(ctx, in, masked, model.SendResultFailed, provider.Name(), sendErr.Error())
 		s.auditSent(ctx, in, masked, model.SendResultFailed, provider.Name())
 		s.log.Error("send verification code", "channel", in.Channel, "scene", in.Scene, "provider", provider.Name(), "err", sendErr)
+		s.circuitFail(ctx, in.Channel)
 		return IssueResult{}, ErrSendFailed
 	}
 
+	s.circuitOK(ctx, in.Channel)
 	s.persist(ctx, in, masked, model.SendResultSuccess, provider.Name(), "")
 	s.auditSent(ctx, in, masked, model.SendResultSuccess, provider.Name())
 	return IssueResult{
@@ -310,4 +339,50 @@ func (s *Service) auditSent(ctx context.Context, in IssueInput, masked, result, 
 		IP:        in.IP,
 		UserAgent: in.UserAgent,
 	})
+}
+
+// circuitOpen 判断该渠道是否处于熔断冷却期（research 决策 11）。
+// Redis 异常时不阻断发送：熔断是保护措施，不应反过来成为新的单点故障。
+func (s *Service) circuitOpen(ctx context.Context, channel string) bool {
+	if s.cbThreshold <= 0 || s.cbCooldown <= 0 {
+		return false
+	}
+	n, err := s.st.Redis().Exists(ctx, circuitKeyPrefix+channel+circuitOpenFlag).Result()
+	if err != nil {
+		s.log.Warn("circuit check failed", "channel", channel, "err", err)
+		return false
+	}
+	return n > 0
+}
+
+// circuitFail 记录一次供应商失败；连续失败达到阈值即开闸并进入冷却窗口。
+func (s *Service) circuitFail(ctx context.Context, channel string) {
+	if s.cbThreshold <= 0 || s.cbCooldown <= 0 {
+		return
+	}
+	rdb := s.st.Redis()
+	key := circuitKeyPrefix + channel
+	n, err := rdb.Incr(ctx, key).Result()
+	if err != nil {
+		s.log.Warn("circuit counter failed", "channel", channel, "err", err)
+		return
+	}
+	if n == 1 {
+		// 计数器窗口与冷却窗口一致，避免零星历史失败长期累积误判。
+		_ = rdb.Expire(ctx, key, s.cbCooldown).Err()
+	}
+	if n >= int64(s.cbThreshold) {
+		_ = rdb.Set(ctx, key+circuitOpenFlag, 1, s.cbCooldown).Err()
+		_ = rdb.Del(ctx, key).Err()
+		s.log.Error("provider circuit opened",
+			"channel", channel, "threshold", s.cbThreshold, "cooldown", s.cbCooldown.String())
+	}
+}
+
+// circuitOK 供应商本次成功：清零失败计数（开闸标记仍按 TTL 自然过期）。
+func (s *Service) circuitOK(ctx context.Context, channel string) {
+	if s.cbThreshold <= 0 || s.cbCooldown <= 0 {
+		return
+	}
+	_ = s.st.Redis().Del(ctx, circuitKeyPrefix+channel).Err()
 }

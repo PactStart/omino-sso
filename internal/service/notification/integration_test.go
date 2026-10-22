@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -170,5 +171,67 @@ func TestVerifyLifecycle(t *testing.T) {
 	if err := db.Exec("DELETE FROM send_records WHERE target IN ?",
 		[]string{MaskPhone(phone), MaskPhone(phone2), MaskPhone(phone3)}).Error; err != nil {
 		t.Fatalf("清理发送记录失败: %v", err)
+	}
+}
+
+// faultyProvider 恒定失败的供应商，用于验证连续失败熔断（research 决策 11 / T066）。
+type faultyProvider struct {
+	calls int32
+}
+
+func (f *faultyProvider) Name() string { return model.SendProviderMock }
+
+func (f *faultyProvider) Send(ctx context.Context, channel, target, code string) error {
+	atomic.AddInt32(&f.calls, 1)
+	return errors.New("provider down")
+}
+
+// TestCircuitBreaker 连续失败达到阈值后开闸，冷却期内请求直接失败且不再调用供应商。
+func TestCircuitBreaker(t *testing.T) {
+	svc, _ := newIntegrationService(t)
+	ctx := context.Background()
+	rdb := svc.st.Redis()
+
+	svc.cbThreshold = 2
+	svc.cbCooldown = time.Minute
+	t.Cleanup(func() { svc.cbThreshold = 0 })
+
+	countKey := circuitKeyPrefix + ChannelSMS
+	openKey := countKey + circuitOpenFlag
+	_ = rdb.Del(ctx, countKey, openKey).Err()
+	t.Cleanup(func() { _ = rdb.Del(ctx, countKey, openKey).Err() })
+
+	faulty := &faultyProvider{}
+	svc.sms = faulty
+
+	for i := 0; i < 2; i++ {
+		target := fmt.Sprintf("1380000000%d", i)
+		if _, err := svc.Issue(ctx, IssueInput{Scene: SceneLogin, Channel: ChannelSMS, Target: target}); !errors.Is(err, ErrSendFailed) {
+			t.Fatalf("第 %d 次签发应返回 ErrSendFailed，实际 %v", i+1, err)
+		}
+	}
+	if got := atomic.LoadInt32(&faulty.calls); got != 2 {
+		t.Fatalf("前两次应各调用一次供应商，实际 %d", got)
+	}
+	if n, err := rdb.Exists(ctx, openKey).Result(); err != nil || n != 1 {
+		t.Fatalf("连续失败达阈值后应写入开闸标记，实际 n=%d err=%v", n, err)
+	}
+
+	// 第三次：熔断期内直接失败，供应商不被调用，也不产生验证码与发送记录。
+	if _, err := svc.Issue(ctx, IssueInput{Scene: SceneLogin, Channel: ChannelSMS, Target: "13800000009"}); !errors.Is(err, ErrSendFailed) {
+		t.Fatalf("熔断期内应返回 ErrSendFailed，实际 %v", err)
+	}
+	if got := atomic.LoadInt32(&faulty.calls); got != 2 {
+		t.Fatalf("熔断期内不应调用供应商，实际调用 %d 次", got)
+	}
+
+	// 冷却结束后恢复：删掉开闸标记（等价于 TTL 到期）后应重新尝试供应商。
+	_ = rdb.Del(ctx, openKey).Err()
+	svc.cbThreshold = 0 // 关闭熔断，验证请求重新回到供应商
+	if _, err := svc.Issue(ctx, IssueInput{Scene: SceneLogin, Channel: ChannelSMS, Target: "13800000008"}); !errors.Is(err, ErrSendFailed) {
+		t.Fatalf("冷却后应再次尝试发送并失败，实际 %v", err)
+	}
+	if got := atomic.LoadInt32(&faulty.calls); got != 3 {
+		t.Fatalf("冷却结束后应重新调用供应商，实际调用 %d 次", got)
 	}
 }
