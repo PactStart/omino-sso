@@ -26,6 +26,25 @@
 
 版本一经锁定不得随意升级；升级需单独提交并说明回归验证范围。初始基线如下，实际以 `go.mod` / `package.json` 为准。
 
+### 2.0 第三方依赖的引入原则（2026-10-22 新增）
+
+**优先用成熟轮子，不要自己造。** 一个能力只要存在「周知、高 star、长期维护」的现成实现，就应当引入而不是手写；手写协议/编码类逻辑（MIME 报文、TLS 形态、SMTP 会话、边界拼装、字符编码等）是缺陷高发区，且回归成本远高于依赖成本。
+
+**但引入前必须先征得确认**，流程固定为三步：
+
+1. **提案**：说明要做的事、候选库（模块路径 + 拟锁版本 + star 量级 + 最近提交活跃度 + 许可证），以及"不引库自己写"的代价对比；
+2. **确认**：取得用户明确同意后才可写入 `go.mod` / `package.json`；未经确认擅自引入视为缺陷（同"改规范需先改本文件"的约束强度）；
+3. **登记**：确认后登记到 §2.1 / §2.2 并锁定**精确版本**（Go 侧 `go get <path>@<version>`，前端 `npm install --save-exact`），同时写清"用它的哪部分、哪部分不用"以及已知短板（例如超时/ctx 不支持）。
+
+准入门槛（不满足需在提案中显式说明例外理由）：
+
+- 许可证为 MIT / Apache-2.0 / BSD；**GPL / AGPL 一律拒绝**；
+- 维护活跃：近 12 个月有提交或 issue 响应；star 量级与生态使用面匹配（此类库通常数千 star 起）；
+- 不得因引入它而被迫升级 §2.1 / §2.2 已锁定的任何版本（`go mod tidy` 后对比 `go.mod` 差异，出现被动升级即视为不可接受，须改用 `tools/go.mod` 隔离或换方案）；
+- 依赖增量可控：不引入 CGO、不引入大型框架、不引入与现有库职责重叠的实现（例如已有 `zitadel/oidc` 就不再引第二个 OIDC 库）。
+
+反向约束仍然有效：**协议实现类**（OIDC/JOSE/密码哈希/TOTP）必须用 §2.1 指定的库，不得因为"另一个库更流行"而替换。
+
 ### 2.1 后端
 
 | 组件 | 模块 | 锁定版本 | 用途 |
@@ -40,6 +59,7 @@
 | JOSE | `github.com/go-jose/go-jose/v4` | `v4.0.4` | JWS / JWKS，禁止使用 v3 |
 | 密码哈希 | `golang.org/x/crypto` | `v0.31.0` | `argon2.IDKey` |
 | TOTP | `github.com/pquerna/otp` | `v1.4.0` | MFA |
+| 验证码字体 | `golang.org/x/image` | `v0.20.0` | 仅用 `font/basicfont` + `math/fixed` 把图形验证码画成 PNG 位图（2026-10-22 新增；此前用 SVG `<text>` 明文，脚本可直接解码，等于没有防刷） |
 | Redis | `github.com/redis/go-redis/v9` | `v9.7.0` | session / 限流 / 缓存 |
 | ID | `github.com/oklog/ulid/v2` | `v2.1.0` | 主键 |
 | 校验 | `github.com/go-playground/validator/v10` | `v10.23.0` | 请求校验 |
@@ -47,6 +67,7 @@
 | 测试 | `github.com/stretchr/testify` | `v1.10.0` | |
 | 日志 | `log/slog` | 标准库 | JSON handler |
 | 对象存储 | `github.com/aliyun/aliyun-oss-go-sdk/oss` | `v2.2.9` | 图片直传（PostObject 预签名）；2026-10-21 新增（004-object-storage-upload），另带间接依赖 `golang.org/x/time v0.16.0` |
+| 邮件发送 | `github.com/jordan-wright/email` | `v4.0.1-0.20210109023952-943e75fe5223+incompatible` | 验证码邮件：`Email` 组装 `multipart/alternative` 报文，`SendWithTLS`（465）/`SendWithStartTLS`（587）/`Send`（其它）负责投递；2026-10-22 新增，替代手拼 boundary + 自建 SMTP 会话。**该库的发送方法不带超时**（内部 `tls.Dial`），故邮件链路的超时依赖 TCP/服务器侧，`Send` 前只做 `ctx.Err()` 预检 |
 
 ### 2.2 前端
 
@@ -61,6 +82,23 @@
 | 样式（portal） | `tailwindcss` | `4.1.0` | 登录页 / 门户 |
 | 组件库（admin） | `element-plus` | `2.9.1` | 表格 / 树 / 表单 |
 | 图表 | `echarts` + `vue-echarts` | `5.5.1` / `7.0.3` | 审计统计 |
+| 二维码 | `qrcode` | `1.5.4` | 两步验证绑定二维码（浏览器 canvas 渲染 `otpauth://`，2026-10-22 新增） |
+
+**前端质量工具（devDependencies，2026-10-22 新增）**
+
+| 组件 | 模块 | 锁定版本 | 用途 |
+|---|---|---|---|
+| Linter | `eslint` | `10.13.0` | 扁平配置 `eslint.config.js`，两套前端各自 `npm run lint` |
+| Vue 规则 | `eslint-plugin-vue` | `10.11.1` | `flat/essential` |
+| TS 规则 | `typescript-eslint` | `8.72.0` | 类型感知关闭，仅语法/未使用变量等硬规则 |
+| Vue+TS 预设 | `@vue/eslint-config-typescript` | `14.9.0` | 组合上述两套 |
+| 全局变量 | `globals` | `17.13.0` | `browser` 全局声明 |
+| 二维码类型 | `@types/qrcode` | `1.5.6` | `qrcode` 的 TS 类型 |
+| 测试运行器 | `vitest` | `3.2.7` | portal 首屏用例（登录方式切换、图形验证码、验证码登录失败提示），接入 `make test`（2026-10-22 新增） |
+| 组件测试 | `@vue/test-utils` | `2.5.1` | 挂载 `Login.vue` 等组件做交互断言（2026-10-22 新增） |
+| DOM 环境 | `jsdom` | `25.0.1` | vitest 的 `environment: 'jsdom'`（2026-10-22 新增） |
+
+> 上述前端依赖走 `devDependencies`/`dependencies` 的**精确版本**（`npm install --save-exact`），与 §2.1 的锁定策略一致；升级须单独提交。
 
 ### 2.3 基础设施
 
@@ -101,6 +139,8 @@ omino-sso/
 ├── go.mod
 ├── Makefile
 ├── docker-compose.yml                 # mysql + redis + sso + portal + admin
+├── Dockerfile                         # 2026-10-22 新增：服务端多阶段镜像，必须 COPY configs/verify-mail.tmpl
+├── .dockerignore                      # 2026-10-22 新增：构建上下文裁剪（排除 web/、specs/、.env）
 ├── .env.example                       # 环境变量模板（§9）
 ├── .tmp/                              # 文档生成中间产物（gitignore，不入库）
 ├── tools/                             # 构建期工具，独立 module（禁止被业务包 import）
@@ -139,24 +179,40 @@ omino-sso/
 │   │   │   ├── openapi.json           # 生成物，入库（OpenAPI 3.0.3）
 │   │   │   └── docs_test.go
 │   │   ├── auth/                      # /api/v1/auth/*
-│   │   │   ├── login.go               # 账号密码登录、失败计数、锁定
+│   │   │   ├── login.go               # 密码 / 验证码登录、失败计数、锁定
+│   │   │   ├── code.go                # 005：验证码发送（未登录强制图形码；已登录目标由服务端解析）
+│   │   │   ├── captcha.go             # 005：图形验证码签发（GET /auth/captcha）
+│   │   │   ├── password.go            # 005：验证码找回密码
 │   │   │   ├── mfa.go                 # TOTP 校验、绑定/确认
 │   │   │   └── logout.go
 │   │   ├── me/                        # /api/v1/me/*
 │   │   │   ├── profile.go
 │   │   │   ├── password.go
+│   │   │   ├── contact.go             # 005：绑定/修改手机号与邮箱（POST /me/phone、/me/email）
+│   │   │   ├── mfa.go                 # 005：MFA 绑定 / 确认 / 解绑（/me/mfa/*）
 │   │   │   ├── apps.go
 │   │   │   └── sessions.go
 │   │   └── admin/                     # /api/v1/admin/*
 │   │       ├── users.go
 │   │       ├── orgs.go
 │   │       ├── clients.go
-│   │       └── audit.go
+│   │       ├── audit.go
+│   │       └── send_records.go        # 005：发送记录分页查询
 │   ├── service/                       # 业务规则层（不依赖 gin/gorm）
-│   │   ├── user.go
+│   │   ├── user.go                    # 含标识符识别 / 联系方式绑定 / 验证码重置密码
+│   │   ├── mfa.go                     # 005：MFA 绑定与解绑
+│   │   ├── cleanup.go                 # 005：内置定时清理（发送记录 / 审计日志）
+│   │   ├── captcha.go                 # 005：图形验证码（Redis 短时 + 一次性消费 + PNG 位图，响应不含明文码）
+│   │   ├── captcha_test.go            # 005：图形验证码单测（假 Redis 实现，无需外部依赖）
 │   │   ├── client.go
 │   │   ├── session.go
-│   │   └── audit.go
+│   │   ├── audit.go                   # 含 notification.AuditSink 实现
+│   │   └── notification/              # 005：验证码与发送通道抽象
+│   │       ├── provider.go            # Provider 接口 / 场景渠道枚举 / 脱敏
+│   │       ├── chuanglan.go           # 创蓝短信（HTTP，3s 超时）
+│   │       ├── smtp.go                # SMTP 邮件（模板文件 + multipart/alternative）
+│   │       ├── mock.go                # 模拟发送（固定 888888）
+│   │       └── service.go             # 签发 / 校验 / 发送记录 / 审计
 │   ├── store/
 │   │   ├── module.go                  # fx.Module("store")，Provide 接口绑定
 │   │   ├── db.go                      # gorm.Open + 连接池 + 健康检查
@@ -169,8 +225,10 @@ omino-sso/
 │   │   │   ├── refresh_token.go
 │   │   │   ├── session.go
 │   │   │   ├── consent.go
+│   │   │   ├── send_record.go         # 005
 │   │   │   └── audit_event.go
 │   │   ├── user_store.go
+│   │   ├── send_record_store.go       # 005：发送记录 CRUD + 分批清理
 │   │   ├── client_store.go
 │   │   ├── code_store.go              # 原子 UPDATE 消费授权码
 │   │   ├── token_store.go             # 刷新轮换 + family 吊销
@@ -187,22 +245,31 @@ omino-sso/
 │       │   └── clock.go               # 接口化，便于测试
 │       └── log/
 │           └── log.go
+├── configs/
+│   ├── dev-signing-key.pem            # 开发用签名私钥（不入仓库）
+│   └── verify-mail.tmpl               # 005：验证码邮件模板（html/template）
 ├── migrations/
 │   ├── 0001_init.up.sql
 │   ├── 0001_init.down.sql
+│   ├── 0005_verification_auth.up.sql  # 005：send_records + uk_users_phone
 │   └── README.md                      # 手写 SQL，禁止 AutoMigrate
 └── web/
     ├── portal/                        # 登录页 + 账号中心（Tailwind）
+    │   ├── eslint.config.js
+    │   ├── vitest.config.ts           # 2026-10-22 新增：jsdom + @ 别名，`npm run test`
     │   ├── index.html
     │   ├── vite.config.ts
     │   ├── src/main.ts
     │   ├── src/router.ts
     │   ├── src/api/client.ts
-    │   ├── src/views/Login.vue        # 账号密码 + 图形验证码 + MFA 二步
-    │   ├── src/views/Account.vue
+    │   ├── src/views/Login.vue        # 账号密码 / 验证码登录 + 图形验证码 + MFA 二步
+    │   ├── src/views/Login.spec.ts    # 2026-10-22 新增：登录方式切换 / 图形码 / 失败提示用例
+    │   ├── src/views/Password.vue     # 修改密码：原密码与验证码两种方式（§4.1 的 me/password*）
+    │   ├── src/views/Account.vue      # 账号中心：联系方式、MFA、会话
     │   ├── src/views/Apps.vue
     │   └── src/styles/tokens.css      # 品牌变量（主色 / 圆角 / 字体）
     └── admin/                         # 管理后台（Element Plus）
+        ├── eslint.config.js
         ├── index.html
         ├── vite.config.ts
         ├── src/main.ts
@@ -211,6 +278,7 @@ omino-sso/
         ├── src/views/Users.vue        # 左组织树 + 右用户表
         ├── src/views/Clients.vue
         ├── src/views/AuditLogs.vue
+        ├── src/views/SendRecords.vue  # 005 发送记录
         └── src/views/Settings.vue
 ```
 
@@ -248,12 +316,21 @@ omino-sso/
 | POST | `/oauth2/introspect` | 令牌自省 | client |
 | GET | `/oauth2/end_session` | 登出 | session |
 | GET | `/.well-known/openid-configuration` | 元数据 | 无 |
-| POST | `/api/v1/auth/login` | 账号密码登录 | 无 |
+| POST | `/api/v1/auth/login` | 账号登录（密码 / 邮箱验证码 / 手机验证码） | 无 |
 | POST | `/api/v1/auth/mfa/verify` | MFA 二次校验 | mfaTicket |
+| GET | `/api/v1/auth/captcha` | 获取图形验证码（未登录验证码登录 / 找回密码的前置） | 无 |
+| POST | `/api/v1/auth/code` | 发送短信/邮箱验证码 | 无（bind 类场景需 session） |
+| POST | `/api/v1/auth/password/reset` | 找回（重置）密码 | 无 |
 | POST | `/api/v1/auth/logout` | 登出 | session |
 | GET | `/api/v1/me` | 当前用户 | session |
 | GET | `/api/v1/me/apps` | 我可访问的应用 | session |
 | POST | `/api/v1/me/password` | 修改密码 | session |
+| POST | `/api/v1/me/password/reset` | 验证码重置密码（吊销其他设备会话） | session |
+| POST | `/api/v1/me/phone` | 绑定/修改手机号 | session |
+| POST | `/api/v1/me/email` | 绑定/修改邮箱 | session |
+| POST | `/api/v1/me/mfa/bind` | 启动 MFA 绑定（返回 otpauth URL） | session |
+| POST | `/api/v1/me/mfa/bind/confirm` | 确认 MFA 绑定 | session |
+| POST | `/api/v1/me/mfa/unbind` | 验证码解绑 MFA | session |
 | GET | `/api/v1/me/sessions` | 登录设备列表 | session |
 | DELETE | `/api/v1/me/sessions/:sid` | 撤销会话 | session |
 | GET | `/api/v1/admin/users` | 用户列表 | admin |
@@ -267,10 +344,17 @@ omino-sso/
 | POST | `/api/v1/admin/clients` | 注册应用 | admin |
 | POST | `/api/v1/admin/clients/:id/secret` | 轮换密钥 | admin |
 | GET | `/api/v1/admin/audit-logs` | 审计日志 | admin |
+| GET | `/api/v1/admin/send-records` | 短信/邮箱发送记录 | admin |
 
 > **`PATCH /api/v1/admin/users/:id` 的行为修正**：提交 `deptId` 时，服务端在短事务内锁定目标部门并校验其存在，不存在返回 `400 VALIDATION_FAILED`（过去为静默写入，会与部门删除竞态产生悬空 `dept_id`）。`POST /api/v1/admin/users` 的 `deptId` 校验方式同步调整为同一临界区，对外行为不变。
 >
 > **组织写操作的并发语义**：三个组织写端点在同一事务内先对 `organizations` 全表加一次 `SELECT ... FOR UPDATE`（该表无 `tenant_id` 索引，实际为全局串行化），再读、校验、写；账号归属写入侧对目标部门行加锁。因此同级唯一性、10 级深度、成环、删除保护不依赖数据库唯一索引即可成立。
+>
+> **图形验证码（2026-10-22）**：未登录调用 `/api/v1/auth/code` 的 `login`、`find_password` 场景与 `/api/v1/auth/login` 的 `email_code`、`sms_code` 类型时，必须携带 `captchaId` + `captchaCode`（先调 `GET /api/v1/auth/captcha`，2 分钟有效、一次有效），校验失败返回 `400 AUTH_CAPTCHA_INVALID`。已登录会话一律不校验图形码。图片为 PNG 位图 data URL，**禁止**以 SVG/文本节点等可被脚本直接解码的形式下发；因图形码一次性消费，前端在发送成功或提交失败后必须立即换图。
+
+> **`login` 场景未绑定目标改为显式报错（2026-10-22 行为修正）**：过去 `/api/v1/auth/code` 在 `login` 场景遇到"该手机号/邮箱不属于任何账号"时返回与成功完全一致的响应但不发信（防枚举），结果用户只看到"验证码已发送"却永远收不到，且 `send_records` 也无记录，无法自诊断。现改为返回 `404 VERIFY_TARGET_NOT_FOUND`，代价是该场景可被用于探测注册状态；判定为可接受——登录页本身就要以"账号是否存在"回显错误提示，静默成功只增加支持成本。**`find_password` 场景保持静默成功**（找回密码流程不暴露注册状态），两处差异不得被"顺手统一"抹掉。
+>
+> **联系方式出服务端的口径（2026-10-22）**：`GET /api/v1/me` 与各绑定接口的响应只返回脱敏值（`138****8000` / `z***@example.com`），前端不得二次脱敏；`/api/v1/auth/code` 在已登录的 `mfa_unbind`、`find_password` 场景忽略请求体 `target`，由服务端按会话解析本人已绑定的联系方式，浏览器不持有完整值。
 
 ---
 
@@ -357,12 +441,17 @@ omino-sso/
 
 | 字段 | 类型 | 必填 | 约束 |
 |---|---|---|---|
-| `username` | string | 是 | 1–64，trim 后非空，大小写敏感 |
-| `password` | string | 是 | 8–128 |
+| `loginType` | string | 否 | `password`（默认）/ `email_code` / `sms_code` |
+| `identifier` | string | 否 | 用户名 / 邮箱 / 手机号，服务端按正则识别；`password` 方式下与 `username` 二选一 |
+| `username` | string | 否 | 兼容旧调用；`identifier` 为空时使用 |
+| `password` | string | 否 | `loginType=password` 时必填，8–128 |
+| `code` | string | 否 | `loginType=email_code/sms_code` 时必填，6 位 |
 | `captchaId` | string | 否 | 连续失败 ≥ 3 次后必填 |
 | `captchaCode` | string | 否 | 4 位，不区分大小写 |
 | `clientId` | string | 是 | 默认 `portal` |
 | `rememberMe` | bool | 否 | true 时会话 7 天，否则 8 小时 |
+
+> **多方式登录语义**：`password` 方式按 `^1\d{10}$` 判手机号、含 `@` 判邮箱、其余判用户名，各自命中唯一索引后走既有密码校验与账号锁定策略；`email_code` / `sms_code` 方式校验一次性验证码（scene=`login`），成功后**不触发** TOTP 二步（渠道验证已证明归属），`amr` 记 `email_otp` / `sms_otp`。
 
 **响应 200（需二次 MFA）**
 
@@ -508,6 +597,8 @@ omino-sso/
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
+| `email` | string \| null | **脱敏返回**（`z***@example.com`），未绑定为 `null` |
+| `phone` | string \| null | **脱敏返回**（`138****8000`），未绑定为 `null` |
 | `deptPath` | string[] | 从根到当前部门的名称路径 |
 | `mfaEnabled` | bool | 用户是否已绑定 TOTP |
 | `mfaRequired` | bool | 是否被管理员强制 MFA |
@@ -619,6 +710,12 @@ omino-sso/
 | 409 | `APP_PERMISSION_HAS_CHILDREN` | 权限下仍有子权限，不允许删除 |
 | 400 | `APP_PERMISSION_INVALID_PARENT` | 上级权限不存在 / 为自身或自身后代 / 跨应用 |
 | 409 | `APP_RESOURCE_STALE` | 写请求携带的 `updatedAt` 与服务端不一致（并发编辑） |
+| 400 | `AUTH_CODE_INVALID` | 短信/邮箱验证码错误、过期、已使用或错误次数超限 |
+| 404 | `VERIFY_TARGET_NOT_FOUND` | `login` 场景请求验证码时，该手机号/邮箱未绑定任何账号；文案须含「请用密码登录后到账号中心绑定」（`find_password` 仍静默成功） |
+| 409 | `VERIFY_TARGET_IN_USE` | 手机号/邮箱已被其他账号占用 |
+| 502 | `VERIFY_SEND_FAILED` | 验证码供应商发送失败或通道未配置 |
+| 409 | `MFA_ALREADY_BOUND` | 当前账号已绑定 MFA |
+| 400 | `MFA_NOT_BOUND` | 当前账号尚未绑定 MFA |
 | 429 | `RATE_LIMITED` | 触发限流 |
 | 500 | `INTERNAL_ERROR` | 未预期错误（日志记录完整堆栈，响应不含） |
 | 503 | `DEPENDENCY_UNAVAILABLE` | MySQL/Redis 不可用 |
@@ -733,7 +830,7 @@ omino-sso/
 
 ### 6.6 `sessions`
 
-主存 Redis（`sso:sess:{sid}`，TTL 与会话一致），MySQL 仅保留审计副本。
+主存 Redis（`sess:{sid}`，TTL 与会话一致），MySQL 仅保留审计副本。
 
 | 字段 | 类型 | 约束 | 说明 |
 |---|---|---|---|
@@ -765,7 +862,9 @@ omino-sso/
 | `trace_id` | VARCHAR(32) | NULL | |
 | `created_at` | BIGINT | NOT NULL, INDEX | |
 
-`event_type` 枚举（新增需登记）：`login_success`、`login_failure`、`mfa_success`、`mfa_failure`、`logout`、`password_changed`、`token_issued`、`token_revoked`、`code_reused`、`refresh_reused`、`user_created`、`user_updated`、`client_created`、`client_secret_rotated`、`org_created`、`org_updated`、`org_deleted`、`client_updated`、`app_member_added`、`app_member_removed`、`app_role_created`、`app_role_updated`、`app_role_deleted`、`app_permission_created`、`app_permission_updated`、`app_permission_deleted`、`app_grant_updated`、`file_uploaded`、`file_status_updated`。
+`event_type` 枚举（新增需登记）：`login_success`、`login_failure`、`mfa_success`、`mfa_failure`、`logout`、`password_changed`、`token_issued`、`token_revoked`、`code_reused`、`refresh_reused`、`user_created`、`user_updated`、`client_created`、`client_secret_rotated`、`org_created`、`org_updated`、`org_deleted`、`client_updated`、`app_member_added`、`app_member_removed`、`app_role_created`、`app_role_updated`、`app_role_deleted`、`app_permission_created`、`app_permission_updated`、`app_permission_deleted`、`app_grant_updated`、`file_uploaded`、`file_status_updated`、`verification_code_sent`、`phone_bound`、`email_bound`、`mfa_bound`、`mfa_unbound`、`password_reset`。
+
+> `verification_code_sent` 的 `detail` 记 `{channel,scene,target,provider}`（`target` 已脱敏）；验证码登录成功/失败复用 `login_success`/`login_failure`，MFA 二步复用 `mfa_success`/`mfa_failure`。
 
 `detail` 详略规则（003 起）：一般只记字段名列表与数量；**地址类字段（`redirectUris` / `postLogoutUris`）记变更前后的完整数组**；删除角色/权限记被解除绑定的 ID 快照（超过 20 项记数量 + 前 20 项）。
 
@@ -816,6 +915,25 @@ omino-sso/
 | `updated_at` | BIGINT | NOT NULL | |
 
 索引：`idx_files_scene_created(scene, created_at)`、`idx_files_status(status)`、`idx_files_target(scene, target_id)`。
+
+### 6.11 `send_records`（005，`migrations/0005_verification_auth.up.sql`）
+
+短信/邮箱验证码发送流水（审计型，不使用软删除，按保留期物理清理）。
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `id` | CHAR(26) | PK | ULID |
+| `channel` | VARCHAR(16) | NOT NULL, INDEX | `sms` / `email` |
+| `scene` | VARCHAR(32) | NOT NULL, INDEX | `bind_phone` / `bind_email` / `login` / `find_password` / `mfa_unbind` |
+| `target` | VARCHAR(128) | NOT NULL | **脱敏后**的接收方 |
+| `result` | VARCHAR(16) | NOT NULL, INDEX | `success` / `failed` |
+| `provider` | VARCHAR(32) | NOT NULL | `chuanglan` / `smtp` / `mock` |
+| `error` | VARCHAR(255) | NULL | 失败原因 |
+| `created_at` | BIGINT | NOT NULL, INDEX | 清理依据 |
+
+索引：`idx_send_records_created(created_at)`、`idx_send_records_channel_created(channel, created_at)`、`idx_send_records_scene_created(scene, created_at)`、`idx_send_records_result_created(result, created_at)`。
+
+> 同一迁移为 `users` 新增 `UNIQUE KEY uk_users_phone (phone)`（`uk_users_email` 已在 0001 存在）：手机号全局唯一，唯一索引允许多个 NULL，存量未绑定账号不受影响。发送记录与审计日志保留 180 天（`VERIFY_RECORD_RETENTION_DAYS`），由进程内每日定时任务分批物理删除。
 
 ---
 
@@ -967,7 +1085,6 @@ docker compose up -d --build   # mysql + redis + sso + nginx(静态托管两套�
 | `REDIS_ADDR` | 是 | `127.0.0.1:6379` | |
 | `REDIS_PASSWORD` | 否 | 空 | |
 | `REDIS_DB` | 否 | `0` | |
-| `REDIS_KEY_PREFIX` | 否 | `sso:` | |
 | `ARGON2_MEMORY_KIB` | 否 | `65536` | 64MB |
 | `ARGON2_ITERATIONS` | 否 | `3` | |
 | `ARGON2_PARALLELISM` | 否 | `2` | |
@@ -988,10 +1105,34 @@ docker compose up -d --build   # mysql + redis + sso + nginx(静态托管两套�
 | `OSS_BASE_PATH` | 否 | 空 | 对象键前缀，例 `sso` |
 | `OSS_CUSTOM_DOMAIN` | 否 | `https://<bucket>.<endpoint>` | 公开访问域名 |
 | `OSS_CREDENTIAL_TTL` | 否 | `300` | 直传凭证有效期（秒） |
+| `SMS_PROVIDER` | 否 | `mock` | `mock` / `chuanglan` / 空（关闭）；`prod` 下禁止 `mock` |
+| `SMS_CHUANGLAN_URL` | 条件 | — | provider=chuanglan 时必填，创蓝 HTTP 接口地址 |
+| `SMS_CHUANGLAN_ACCOUNT` | 条件 | — | 同上 |
+| `SMS_CHUANGLAN_PASSWORD` | 条件 | — | 同上，服务端专用 |
+| `SMS_CHUANGLAN_TEMPLATE_ID` | 条件 | — | 模板报备 ID（`v2/tpl/send` 必备，缺它返回 `130 templateId 不能为空`）；与 `SMS_CHUANGLAN_TEMPLATE` 二选一 |
+| `SMS_CHUANGLAN_TEMPLATE` | 条件 | — | 内容模板文案，仅未配 `TEMPLATE_ID` 时使用，`{code}` / `{s}` 替换为验证码 |
+
+> **模板变量 key 硬编码为 `param1`（2026-10-22 定稿，不做成环境变量）**：创蓝 V2 的 `templateParamJson` 按**位置**命名变量（`param1`、`param2`…），与模板文案里写 `{code}` 还是 `${s}` 无关。它一旦配错，网关只回 `code=130 所有手机号或参数均不合法`，不指向具体字段，排查成本远高于"多一个可配项"带来的灵活性；本项目模板固定为单变量验证码短信，故在 `internal/service/notification/chuanglan.go` 中以常量 `chuanglanParam` 硬编码，并有用例 `TestChuanglanSend_ParamKeyHardcoded` 锁定。
+
+| `MAIL_PROVIDER` | 否 | `mock` | `mock` / `smtp` / 空（关闭）；`prod` 下禁止 `mock` |
+| `MAIL_SMTP_HOST` | 条件 | — | provider=smtp 时必填 |
+| `MAIL_SMTP_PORT` | 否 | `587` | `465` 走 SMTPS（连接后立即 TLS 握手），其它端口走明文 + STARTTLS |
+| `MAIL_SMTP_USERNAME` | 否 | 空 | 非空时 `MAIL_SMTP_PASSWORD` 必填 |
+| `MAIL_SMTP_PASSWORD` | 条件 | — | |
+| `MAIL_FROM` | 条件 | — | 发件人（From 头），形如 `omino-sso <no-reply@example.com>`；**信封发件人**（MAIL FROM）在 `MAIL_SMTP_USERNAME` 为邮箱形态时自动取该账号，规避 126/163 的 `553 Mail from must equal authorized user` |
+| `MAIL_TEMPLATE_PATH` | 否 | `./configs/verify-mail.tmpl` | `html/template` 模板文件 |
+| `VERIFY_CODE_TTL` | 否 | `300` | 秒，验证码有效期上限 30 分钟 |
+| `VERIFY_RESEND_INTERVAL` | 否 | `60` | 秒，必须小于 `VERIFY_CODE_TTL` |
+| `VERIFY_MAX_ATTEMPTS` | 否 | `5` | 单个验证码最大连续错误次数 |
+| `VERIFY_RECORD_RETENTION_DAYS` | 否 | `180` | 发送记录与审计日志保留天数 |
+| `VERIFY_CIRCUIT_THRESHOLD` | 否 | `5` | 供应商熔断阈值：同一渠道连续失败达该值即开闸，`0` 关闭熔断（2026-10-22 新增，research 决策 11） |
+| `VERIFY_CIRCUIT_COOLDOWN` | 否 | `60` | 熔断冷却秒数（开闸期间请求直接 `VERIFY_SEND_FAILED` 且不调用供应商），阈值 > 0 时必须 > 0 |
 | `ADMIN_BOOTSTRAP_USERNAME` | 是（首次） | — | 初始化管理员，仅在 `users` 为空时生效 |
 | `ADMIN_BOOTSTRAP_PASSWORD` | 是（首次） | — | 初始化后必须立即修改，并在生产环境删除该变量 |
 
 `.env.example` 必须与本表保持同步；新增变量时同步更新两处。
+
+> **`REDIS_KEY_PREFIX` 于 2026-10-22 移除（行为修正）**：该变量此前登记在本表中，但代码从未消费它——`internal/store/redis.go` 建客户端时只传 `Addr` / `Password` / `DB`，`config.RedisConfig.KeyPrefix` 无任何引用方，因此把它写进 `.env` 也不改变实际键名，属"看似生效、实则无效"的配置，会误导运维以为多个环境可以共用同一个 Redis DB。现删除该字段与相关文档，不加兼容分支（旧值留在环境里也不会被读取）。键命名一律由各模块自己的固定前缀承担（`sess:` / `captcha:` / `verify:code:` / `verify:attempt:` / `verify:resend:` / `mfa:setup:` / `rl:`），环境隔离只依赖 `REDIS_DB` 或独立实例。
 
 ---
 
@@ -1008,3 +1149,4 @@ docker compose up -d --build   # mysql + redis + sso + nginx(静态托管两套�
 - [ ] 改动已伴随/更新单元测试，且已主动执行 `make test` / `make lint`（未依赖 pre-commit 兜底）
 - [ ] 新增/删除路由或改动 DTO 后已执行 `make docs`，并同步更新 operation 数等硬编码测试断言
 - [ ] 新增带鉴权的端点前已界定访问者与可写范围（防越权）；前端筛选/搜索控件与后端实际过滤字段一致
+- [ ] 新增第三方依赖前已按 §2.0 提案并取得确认，引入后已登记到 §2.1 / §2.2 并锁定精确版本，`go mod tidy` 未造成既有依赖被动升级

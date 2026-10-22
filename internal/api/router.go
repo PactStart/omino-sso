@@ -15,6 +15,7 @@ import (
 	"github.com/omino/omino-sso/internal/api/response"
 	"github.com/omino/omino-sso/internal/config"
 	"github.com/omino/omino-sso/internal/service"
+	"github.com/omino/omino-sso/internal/service/notification"
 	"github.com/omino/omino-sso/internal/store"
 )
 
@@ -29,6 +30,9 @@ func NewRouter(
 	orgs *service.OrgService,
 	appAuth *service.AppAuthService,
 	fileSvc *service.FileService,
+	notif *notification.Service,
+	captcha *service.CaptchaService,
+	mfaSvc *service.MFAService,
 	audit *service.Auditor,
 	logger *slog.Logger,
 ) *gin.Engine {
@@ -42,9 +46,9 @@ func NewRouter(
 	r.Use(middleware.Trace())
 	r.Use(middleware.RateLimit(st.Redis(), "api", cfg.RateLimitAPIPerMin, time.Minute))
 
-	authH := auth.NewHandler(cfg, users, sessions, audit, logger)
-	meH := me.NewHandler(users, sessions, clients, fileSvc, audit, logger)
-	adminH := admin.NewHandler(users, clients, orgs, appAuth, fileSvc, audit, logger)
+	authH := auth.NewHandler(cfg, users, sessions, notif, captcha, audit, logger)
+	meH := me.NewHandler(users, sessions, clients, fileSvc, mfaSvc, audit, logger)
+	adminH := admin.NewHandler(users, clients, orgs, appAuth, fileSvc, notif, audit, logger)
 	filesH := files.NewHandler(fileSvc, logger)
 
 	// 接口文档（规范 §4.0）：仅非 prod 注册，且不套统一响应、不挂限流。
@@ -59,6 +63,12 @@ func NewRouter(
 	// 公开端点
 	v1.POST("/auth/login", middleware.RateLimit(st.Redis(), "login", cfg.RateLimitLoginPerMin, time.Minute), authH.Login)
 	v1.POST("/auth/mfa/verify", middleware.RateLimit(st.Redis(), "mfa", cfg.RateLimitLoginPerMin, time.Minute), authH.VerifyMFA)
+	v1.POST("/auth/password/reset", middleware.RateLimit(st.Redis(), "resetpwd", cfg.RateLimitLoginPerMin, time.Minute), authH.ResetPassword)
+	// 图形验证码：未登录的验证码登录与找回密码必须先取图形码（005 边界用例，防刷/防枚举）。
+	v1.GET("/auth/captcha", middleware.RateLimit(st.Redis(), "captcha", cfg.RateLimitLoginPerMin, time.Minute), authH.Captcha)
+	// 验证码发送：未登录可调，但 bind_* / mfa_unbind 场景在处理器内要求会话（OptionalAuth 只做尽力解析）。
+	v1.POST("/auth/code", middleware.RateLimit(st.Redis(), "verify", cfg.RateLimitLoginPerMin, time.Minute),
+		middleware.OptionalAuth(sessions, st, logger), authH.SendCode)
 
 	// 需登录
 	authed := v1.Group("")
@@ -68,6 +78,13 @@ func NewRouter(
 		authed.GET("/me", meH.Profile)
 		authed.GET("/me/apps", meH.Apps)
 		authed.POST("/me/password", meH.ChangePassword)
+		authed.POST("/me/password/reset", meH.ResetPassword)
+		// 联系方式绑定/修改与 MFA 管理（005）。
+		authed.POST("/me/phone", meH.BindPhone)
+		authed.POST("/me/email", meH.BindEmail)
+		authed.POST("/me/mfa/bind", meH.StartMFABind)
+		authed.POST("/me/mfa/bind/confirm", meH.ConfirmMFABind)
+		authed.POST("/me/mfa/unbind", meH.UnbindMFA)
 		authed.GET("/me/sessions", meH.Sessions)
 		authed.DELETE("/me/sessions/:sid", meH.RevokeSession)
 		authed.POST("/me/avatar", meH.UpdateAvatar)
@@ -111,6 +128,7 @@ func NewRouter(
 		adminGroup.DELETE("/clients/:id/permissions/:pid", adminH.DeletePermission)
 
 		adminGroup.GET("/audit-logs", adminH.ListAuditLogs)
+		adminGroup.GET("/send-records", adminH.ListSendRecords)
 
 		// 图片上传（004）。
 		adminGroup.POST("/clients/:id/logo", adminH.SetClientLogo)

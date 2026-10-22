@@ -87,6 +87,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '文件管理', requiresAdmin: true },
   },
   {
+    path: '/admin/send-records',
+    name: 'send-records',
+    component: () => import('@/views/SendRecords.vue'),
+    meta: { title: '发送记录', requiresAdmin: true },
+  },
+  {
     path: '/offline',
     name: 'offline',
     component: () => import('@/views/Offline.vue'),

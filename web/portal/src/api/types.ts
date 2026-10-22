@@ -17,11 +17,69 @@ export interface Me {
   createdAt: string
 }
 
+export type LoginType = 'password' | 'email_code' | 'sms_code'
+export type VerifyChannel = 'sms' | 'email'
+export type VerifyScene = 'bind_phone' | 'bind_email' | 'login' | 'find_password' | 'mfa_unbind'
+
 export interface LoginPayload {
-  username: string
-  password: string
+  loginType?: LoginType
+  identifier?: string
+  username?: string
+  password?: string
+  code?: string
+  captchaId?: string
+  captchaCode?: string
   clientId: string
   rememberMe: boolean
+}
+
+/**
+ * 发送验证码。target 仅在 bind_* 场景与未登录的 login/find_password 场景需要；
+ * 已登录的 mfa_unbind/find_password 由服务端按会话解析目标（联系方式不经浏览器）。
+ */
+export interface SendCodePayload {
+  scene: VerifyScene
+  channel: VerifyChannel
+  target?: string
+  captchaId?: string
+  captchaCode?: string
+}
+
+export interface CaptchaResult {
+  captchaId: string
+  /** 可直接用于 <img src> 的 PNG data URL（位图，响应不含明文验证码） */
+  image: string
+  expiresIn: number
+}
+
+export interface SendCodeResult {
+  expiresIn: number
+  resendAfter: number
+}
+
+export interface ResetPasswordPayload {
+  channel: VerifyChannel
+  target: string
+  code: string
+  newPassword: string
+}
+
+export interface BindPhoneResult {
+  phone: string
+}
+
+export interface BindEmailResult {
+  email: string
+}
+
+export interface MfaBindStart {
+  otpauthUrl: string
+  mfaSetupTicket: string
+  expiresIn: number
+}
+
+export interface MfaBoundResult {
+  bound: boolean
 }
 
 export interface LoginUserBrief {

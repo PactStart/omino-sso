@@ -1,0 +1,16 @@
+# 构建上下文只需 Go 源码与 configs/（邮件模板随镜像发布，不可排除）
+.git
+.gitignore
+.specify
+.tmp
+specs
+tools
+web
+node_modules
+**/node_modules
+*.log
+.env
+.env.*
+!.env.example
+coverage
+dist

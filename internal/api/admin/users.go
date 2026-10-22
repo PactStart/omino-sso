@@ -11,6 +11,7 @@ import (
 	"github.com/omino/omino-sso/internal/api/dto"
 	"github.com/omino/omino-sso/internal/api/response"
 	"github.com/omino/omino-sso/internal/service"
+	"github.com/omino/omino-sso/internal/service/notification"
 	"github.com/omino/omino-sso/internal/store/model"
 )
 
@@ -22,13 +23,26 @@ type Handler struct {
 	orgs    *service.OrgService
 	appAuth *service.AppAuthService
 	files   *service.FileService
+	notif   *notification.Service
 	audit   *service.Auditor
 	log     *slog.Logger
 }
 
 // NewHandler 构造。
-func NewHandler(users *service.UserService, clients *service.ClientService, orgs *service.OrgService, appAuth *service.AppAuthService, files *service.FileService, audit *service.Auditor, logger *slog.Logger) *Handler {
-	return &Handler{users: users, client: clients, orgs: orgs, appAuth: appAuth, files: files, audit: audit, log: logger}
+func NewHandler(
+	users *service.UserService,
+	clients *service.ClientService,
+	orgs *service.OrgService,
+	appAuth *service.AppAuthService,
+	files *service.FileService,
+	notif *notification.Service,
+	audit *service.Auditor,
+	logger *slog.Logger,
+) *Handler {
+	return &Handler{
+		users: users, client: clients, orgs: orgs, appAuth: appAuth,
+		files: files, notif: notif, audit: audit, log: logger,
+	}
 }
 
 // ListUsers GET /api/v1/admin/users

@@ -23,34 +23,53 @@ const (
 // 浏览器永不持有 access_token / refresh_token（规范 §7 约束 4）。
 func Auth(sessions *service.SessionService, st *store.Store, logger *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		raw, err := c.Cookie(SessionCookie)
-		if err != nil || raw == "" {
-			response.Fail(c, response.ErrUnauthenticated)
+		if !loadSession(c, sessions, st, logger, true) {
 			return
 		}
-		sess, err := sessions.Get(c.Request.Context(), raw)
-		if err != nil {
-			if errors.Is(err, store.ErrSessionNotFound) {
-				response.Fail(c, response.ErrUnauthenticated)
-				return
-			}
-			logger.Error("load session", "err", err)
-			response.Fail(c, response.ErrInternal)
-			return
-		}
-		u, err := st.GetUserByID(c.Request.Context(), sess.UserID)
-		if err != nil {
-			response.Fail(c, response.ErrUnauthenticated)
-			return
-		}
-		if u.Status == model.UserStatusDisabled {
-			response.Fail(c, response.ErrAccountDisabled)
-			return
-		}
-		c.Set(CtxUser, u)
-		c.Set(CtxSession, sess)
 		c.Next()
 	}
+}
+
+// OptionalAuth 尽力解析会话：无 cookie 或会话失效时不拦截。
+// 用于 /auth/code 这类「未登录可调、但绑定类场景要求会话」的端点。
+func OptionalAuth(sessions *service.SessionService, st *store.Store, logger *slog.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		loadSession(c, sessions, st, logger, false)
+		c.Next()
+	}
+}
+
+// loadSession 解析会话并注入当前用户；required 为 true 时失败即写响应并返回 false。
+func loadSession(c *gin.Context, sessions *service.SessionService, st *store.Store, logger *slog.Logger, required bool) bool {
+	deny := func(err *response.Error) bool {
+		if required {
+			response.Fail(c, err)
+			return false
+		}
+		return true
+	}
+	raw, err := c.Cookie(SessionCookie)
+	if err != nil || raw == "" {
+		return deny(response.ErrUnauthenticated)
+	}
+	sess, err := sessions.Get(c.Request.Context(), raw)
+	if err != nil {
+		if errors.Is(err, store.ErrSessionNotFound) {
+			return deny(response.ErrUnauthenticated)
+		}
+		logger.Error("load session", "err", err)
+		return deny(response.ErrInternal)
+	}
+	u, err := st.GetUserByID(c.Request.Context(), sess.UserID)
+	if err != nil {
+		return deny(response.ErrUnauthenticated)
+	}
+	if u.Status == model.UserStatusDisabled {
+		return deny(response.ErrAccountDisabled)
+	}
+	c.Set(CtxUser, u)
+	c.Set(CtxSession, sess)
+	return true
 }
 
 // Admin 要求当前用户具备 admin 角色。

@@ -7,6 +7,7 @@ import (
 
 	"github.com/omino/omino-sso/internal/pkg/id"
 	"github.com/omino/omino-sso/internal/pkg/trace"
+	"github.com/omino/omino-sso/internal/service/notification"
 	"github.com/omino/omino-sso/internal/store"
 	"github.com/omino/omino-sso/internal/store/model"
 )
@@ -85,6 +86,23 @@ func (a *Auditor) Emit(ctx context.Context, e Event) {
 	default:
 		a.log.Warn("audit queue full, event dropped", "event_type", e.Type)
 	}
+}
+
+// VerificationCodeSent 实现 notification.AuditSink：验证码发送审计（005）。
+func (a *Auditor) VerificationCodeSent(ctx context.Context, e notification.VerificationSentEvent) {
+	a.Emit(ctx, Event{
+		Type:      model.EventVerificationCodeSent,
+		UserID:    e.UserID,
+		IP:        e.IP,
+		UserAgent: e.UserAgent,
+		Result:    e.Result,
+		Fields: map[string]any{
+			"channel":  e.Channel,
+			"scene":    e.Scene,
+			"target":   e.Target,
+			"provider": e.Provider,
+		},
+	})
 }
 
 // AuditFilter 审计日志筛选条件。

@@ -27,6 +27,7 @@ import (
 	"github.com/omino/omino-sso/internal/config"
 	"github.com/omino/omino-sso/internal/pkg/id"
 	"github.com/omino/omino-sso/internal/service"
+	"github.com/omino/omino-sso/internal/service/notification"
 	"github.com/omino/omino-sso/internal/store"
 	"github.com/omino/omino-sso/internal/store/model"
 )
@@ -642,7 +643,11 @@ func TestUpdateUserRejectsMissingDept(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	audit := service.NewAuditor(env.st, 1, env.log)
-	h := admin.NewHandler(env.users, service.NewClientService(env.st), env.orgs, service.NewAppAuthService(env.st), service.NewFileService(env.st, store.NewNoopFileStore(), audit), audit, env.log)
+	notif, err := notification.New(&config.Config{}, env.st, audit, env.log)
+	if err != nil {
+		t.Fatalf("构造验证码服务失败: %v", err)
+	}
+	h := admin.NewHandler(env.users, service.NewClientService(env.st), env.orgs, service.NewAppAuthService(env.st), service.NewFileService(env.st, store.NewNoopFileStore(), audit), notif, audit, env.log)
 	r := gin.New()
 	r.PATCH("/api/v1/admin/users/:id", h.UpdateUser)
 

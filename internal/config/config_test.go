@@ -13,9 +13,9 @@ func validBaseConfig() *Config {
 		Issuer:         "http://localhost:8080",
 		SigningKeyPath: "/tmp/dev-signing-key.pem",
 		CryptoKey:      [32]byte{1, 2, 3, 4, 5},
-		AuthCodeTTL:     60 * time.Second,
-		DB:              DBConfig{User: "root", Password: "x"},
-		Redis:           RedisConfig{Addr: "127.0.0.1:6379"},
+		AuthCodeTTL:    60 * time.Second,
+		DB:             DBConfig{User: "root", Password: "x"},
+		Redis:          RedisConfig{Addr: "127.0.0.1:6379"},
 	}
 }
 
@@ -93,5 +93,95 @@ func TestValidateOSS_StsDurationOutOfRange(t *testing.T) {
 	err := c.validate()
 	if err == nil || !strings.Contains(err.Error(), "OSS_STS_DURATION_SECONDS must be in [900, 43200]") {
 		t.Fatalf("应报 OSS_STS_DURATION_SECONDS 越界，实际 %v", err)
+	}
+}
+
+func TestValidateNotification_MockAllowedInDev(t *testing.T) {
+	c := validBaseConfig()
+	c.SMS.Provider = "mock"
+	c.Mail.Provider = "mock"
+	c.Verify = VerifyConfig{
+		CodeTTL:             5 * time.Minute,
+		ResendInterval:      60 * time.Second,
+		MaxAttempts:         5,
+		RecordRetentionDays: 180,
+	}
+	if err := c.validate(); err != nil {
+		t.Fatalf("dev 下 mock 通道应通过校验，实际 %v", err)
+	}
+}
+
+func TestValidateNotification_ProdRejectsMock(t *testing.T) {
+	c := validBaseConfig()
+	c.AppEnv = "prod"
+	c.Issuer = "https://sso.example.com"
+	c.SMS.Provider = "mock"
+	err := c.validate()
+	if err == nil || !strings.Contains(err.Error(), "SMS_PROVIDER must not be mock in prod") {
+		t.Fatalf("prod 下 mock 短信应被拒绝，实际 %v", err)
+	}
+}
+
+func TestValidateNotification_SMSMissingFields(t *testing.T) {
+	c := validBaseConfig()
+	c.SMS.Provider = "chuanglan"
+	c.SMS.ChuanglanURL = "https://smssh1.253.com/msg/v1/send/json"
+	err := c.validate()
+	if err == nil || !strings.Contains(err.Error(), "missing required env for SMS") {
+		t.Fatalf("chuanglan 缺参数应校验失败，实际 %v", err)
+	}
+}
+
+// TestValidateNotification_CircuitBreaker 熔断参数：阈值 > 0 时冷却必须 > 0，
+// 否则开闸后永久短路（T066 / research 决策 11）。
+func TestValidateNotification_CircuitBreaker(t *testing.T) {
+	c := validBaseConfig()
+	c.Verify.CircuitThreshold = 5
+	c.Verify.CircuitCooldown = 0
+	if err := c.validate(); err == nil || !strings.Contains(err.Error(), "VERIFY_CIRCUIT_COOLDOWN") {
+		t.Fatalf("阈值 > 0 且冷却 = 0 应校验失败，实际 %v", err)
+	}
+
+	c.Verify.CircuitCooldown = time.Minute
+	if err := c.validate(); err != nil {
+		t.Fatalf("合法熔断配置不应报错，实际 %v", err)
+	}
+
+	c.Verify.CircuitThreshold = 0 // 0 表示关闭熔断
+	c.Verify.CircuitCooldown = 0
+	if err := c.validate(); err != nil {
+		t.Fatalf("关闭熔断（阈值 0）不应报错，实际 %v", err)
+	}
+}
+
+func TestValidateNotification_UnsupportedProvider(t *testing.T) {
+	c := validBaseConfig()
+	c.Mail.Provider = "sendgrid"
+	err := c.validate()
+	if err == nil || !strings.Contains(err.Error(), "unsupported MAIL_PROVIDER") {
+		t.Fatalf("未知邮件 provider 应校验失败，实际 %v", err)
+	}
+}
+
+func TestValidateNotification_SMTPMissingFields(t *testing.T) {
+	c := validBaseConfig()
+	c.Mail.Provider = "smtp"
+	c.Mail.SMTPPort = 587
+	err := c.validate()
+	if err == nil || !strings.Contains(err.Error(), "missing required env for MAIL") {
+		t.Fatalf("smtp 缺参数应校验失败，实际 %v", err)
+	}
+}
+
+func TestValidateNotification_ResendIntervalMustBeLessThanTTL(t *testing.T) {
+	c := validBaseConfig()
+	c.Verify = VerifyConfig{
+		CodeTTL:        time.Minute,
+		ResendInterval: 2 * time.Minute,
+		MaxAttempts:    5,
+	}
+	err := c.validate()
+	if err == nil || !strings.Contains(err.Error(), "VERIFY_RESEND_INTERVAL") {
+		t.Fatalf("重发间隔不小于有效期应校验失败，实际 %v", err)
 	}
 }

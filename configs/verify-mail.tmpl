@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{.AppName}} 验证码</title>
+  </head>
+  <body style="margin:0;padding:24px;background:#f5f6f8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-serif;color:#1f2329;">
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:12px;padding:32px;">
+      <tr>
+        <td>
+          <h1 style="margin:0 0 16px;font-size:18px;font-weight:600;">{{.AppName}} 邮箱验证码</h1>
+          <p style="margin:0 0 8px;font-size:14px;line-height:22px;color:#4e5969;">你正在进行「{{.SceneText}}」操作，验证码为：</p>
+          <p style="margin:0 0 16px;font-size:32px;font-weight:700;letter-spacing:8px;color:#1664ff;">{{.Code}}</p>
+          <p style="margin:0 0 8px;font-size:14px;line-height:22px;color:#4e5969;">验证码 {{.ExpireMinutes}} 分钟内有效，仅可使用一次。连续输错将立即失效。</p>
+          <p style="margin:0 0 24px;font-size:14px;line-height:22px;color:#4e5969;">如非本人操作，请忽略本邮件，并建议尽快修改密码。</p>
+          <hr style="border:none;border-top:1px solid #e5e6eb;margin:0 0 16px;" />
+          <p style="margin:0;font-size:12px;line-height:20px;color:#86909c;">本邮件由系统自动发送，请勿直接回复。© {{.Year}} {{.AppName}}</p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

@@ -17,6 +17,7 @@ import (
 	"github.com/omino/omino-sso/internal/api/docs"
 	"github.com/omino/omino-sso/internal/config"
 	"github.com/omino/omino-sso/internal/service"
+	"github.com/omino/omino-sso/internal/service/notification"
 	"github.com/omino/omino-sso/internal/store"
 )
 
@@ -49,7 +50,13 @@ func newTestRouter(t *testing.T, env string) *gin.Engine {
 	orgs := service.NewOrgService(st, logger)
 	appAuth := service.NewAppAuthService(st)
 	fileSvc := service.NewFileService(st, store.NewNoopFileStore(), audit)
-	return NewRouter(cfg, st, users, sessions, clients, orgs, appAuth, fileSvc, audit, logger)
+	notif, err := notification.New(cfg, st, audit, logger)
+	if err != nil {
+		t.Fatalf("构造验证码服务失败: %v", err)
+	}
+	mfaSvc := service.NewMFAService(st, cfg, notif, audit, logger)
+	captchaSvc := service.NewCaptchaService(st, logger)
+	return NewRouter(cfg, st, users, sessions, clients, orgs, appAuth, fileSvc, notif, captchaSvc, mfaSvc, audit, logger)
 }
 
 // TestOrgRoutesRegistered 固化组织架构的 4 条路由，并验证三条写路由在无
@@ -156,8 +163,8 @@ func TestDocsServedWithoutRedis(t *testing.T) {
 	for _, item := range doc.Paths {
 		ops += len(item)
 	}
-	if ops != 46 {
-		t.Fatalf("(method,path) 组合数为 %d, 期望 46", ops)
+	if ops != 56 {
+		t.Fatalf("(method,path) 组合数为 %d, 期望 56", ops)
 	}
 	if !strings.Contains(doc.Info.Description, "环境：test") {
 		t.Fatalf("info.description 未注入环境: %q", doc.Info.Description)

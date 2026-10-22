@@ -29,6 +29,8 @@ import type {
   RemoveMembersResult,
   RoleDetail,
   RotatedSecret,
+  SendRecordPage,
+  SendRecordQuery,
   UpdateClientPayload,
   UpdateOrgPayload,
   UpdatePermissionPayload,
@@ -343,4 +345,10 @@ export function updateFileStatus(id: string, status: 'active' | 'disabled' | 'de
     method: 'PATCH',
     data: { status },
   })
+}
+
+/* ---------------- 005 发送记录 ---------------- */
+
+export function listSendRecords(query: SendRecordQuery) {
+  return request<SendRecordPage>({ url: '/admin/send-records', method: 'GET', params: query })
 }

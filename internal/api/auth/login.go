@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -12,6 +13,7 @@ import (
 	"github.com/omino/omino-sso/internal/api/response"
 	"github.com/omino/omino-sso/internal/config"
 	"github.com/omino/omino-sso/internal/service"
+	"github.com/omino/omino-sso/internal/service/notification"
 	"github.com/omino/omino-sso/internal/store/model"
 )
 
@@ -20,19 +22,43 @@ type Handler struct {
 	cfg      *config.Config
 	users    *service.UserService
 	sessions *service.SessionService
+	notif    *notification.Service
+	captcha  *service.CaptchaService
 	audit    *service.Auditor
 	log      *slog.Logger
 }
 
 // NewHandler 构造。
-func NewHandler(cfg *config.Config, users *service.UserService, sessions *service.SessionService, audit *service.Auditor, logger *slog.Logger) *Handler {
-	return &Handler{cfg: cfg, users: users, sessions: sessions, audit: audit, log: logger}
+func NewHandler(
+	cfg *config.Config,
+	users *service.UserService,
+	sessions *service.SessionService,
+	notif *notification.Service,
+	captcha *service.CaptchaService,
+	audit *service.Auditor,
+	logger *slog.Logger,
+) *Handler {
+	return &Handler{
+		cfg: cfg, users: users, sessions: sessions, notif: notif,
+		captcha: captcha, audit: audit, log: logger,
+	}
 }
 
-// LoginRequest 规范 §4.3 请求体。
+// 登录方式枚举（契约 verification-api.md §2）。
+const (
+	LoginTypePassword  string = "password"
+	LoginTypeEmailCode string = "email_code"
+	LoginTypeSMSCode   string = "sms_code"
+)
+
+// LoginRequest 规范 §4.3 请求体（005 扩展多方式登录）。
+// password 方式下 identifier 与 username 二者传其一；验证码方式下必传 identifier + code。
 type LoginRequest struct {
-	Username    string `json:"username" binding:"required,min=1,max=64" example:"zhangsan"`
-	Password    string `json:"password" binding:"required,min=8,max=128" example:"S3cure!pass"`
+	LoginType   string `json:"loginType" binding:"omitempty,oneof=password email_code sms_code" example:"password"`
+	Identifier  string `json:"identifier" binding:"omitempty,max=128" example:"zhangsan"`
+	Username    string `json:"username" binding:"omitempty,max=64" example:"zhangsan"`
+	Password    string `json:"password" binding:"omitempty,max=128" example:"S3cure!pass"`
+	Code        string `json:"code" binding:"omitempty,len=6" example:"123456"`
 	CaptchaID   string `json:"captchaId" example:"01J9ZK2Q3W5X7Y9A1B3C5D7E9F"`
 	CaptchaCode string `json:"captchaCode" example:"8f3k"`
 	ClientID    string `json:"clientId" example:"portal"`
@@ -70,19 +96,31 @@ func (h *Handler) Login(c *gin.Context) {
 	}
 	meta := service.Meta{IP: c.ClientIP(), UserAgent: c.Request.UserAgent()}
 
-	u, err := h.users.Authenticate(c.Request.Context(), service.NormalizeUsername(req.Username), req.Password, meta)
-	if err != nil {
-		switch {
-		case errors.Is(err, service.ErrAccountLocked):
-			response.Fail(c, response.ErrAccountLocked)
-		case errors.Is(err, service.ErrAccountDisabled):
-			response.Fail(c, response.ErrAccountDisabled)
-		case errors.Is(err, service.ErrInvalidCredentials):
-			response.Fail(c, response.ErrInvalidCredentials)
-		default:
-			h.log.Error("authenticate", "err", err)
-			response.Fail(c, response.ErrInternal)
+	loginType := req.LoginType
+	if loginType == "" {
+		loginType = LoginTypePassword
+	}
+	if loginType != LoginTypePassword {
+		// 未登录的验证码登录先过图形验证码，避免批量试码与账号枚举（005 边界用例）。
+		if !h.verifyCaptcha(c, req.CaptchaID, req.CaptchaCode) {
+			return
 		}
+		h.loginByCode(c, req, loginType, clientID, meta)
+		return
+	}
+
+	identifier := strings.TrimSpace(req.Identifier)
+	if identifier == "" {
+		identifier = req.Username
+	}
+	if identifier == "" || req.Password == "" {
+		response.Fail(c, response.ErrValidation)
+		return
+	}
+
+	u, err := h.users.AuthenticateByIdentifier(c.Request.Context(), identifier, req.Password, meta)
+	if err != nil {
+		h.failAuth(c, err)
 		return
 	}
 
@@ -103,6 +141,48 @@ func (h *Handler) Login(c *gin.Context) {
 	}
 
 	h.completeLogin(c, u, []string{"pwd"}, req.RememberMe, clientID)
+}
+
+// loginByCode 邮箱/手机验证码登录。验证码已证明渠道归属，因此豁免 TOTP 二步（澄清 Q6）。
+func (h *Handler) loginByCode(c *gin.Context, req LoginRequest, loginType, clientID string, meta service.Meta) {
+	target := strings.TrimSpace(req.Identifier)
+	if target == "" || len(req.Code) != 6 {
+		response.Fail(c, response.ErrValidation)
+		return
+	}
+	channel := notification.ChannelEmail
+	amr := []string{"email_otp"}
+	if loginType == LoginTypeSMSCode {
+		channel = notification.ChannelSMS
+		amr = []string{"sms_otp"}
+	}
+	u, err := h.users.AuthenticateByCode(c.Request.Context(), channel, target, req.Code, meta)
+	if err != nil {
+		h.failAuth(c, err)
+		return
+	}
+	h.completeLogin(c, u, amr, req.RememberMe, clientID)
+}
+
+// failAuth 统一映射认证类错误到登记的错误码。
+func (h *Handler) failAuth(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrAccountLocked):
+		response.Fail(c, response.ErrAccountLocked)
+	case errors.Is(err, service.ErrAccountDisabled):
+		response.Fail(c, response.ErrAccountDisabled)
+	case errors.Is(err, service.ErrInvalidCredentials):
+		response.Fail(c, response.ErrInvalidCredentials)
+	case errors.Is(err, notification.ErrCodeInvalid):
+		response.Fail(c, response.ErrAuthCodeInvalid)
+	case errors.Is(err, notification.ErrTooFrequent):
+		response.Fail(c, response.ErrRateLimited.WithMessage("验证码发送过于频繁，请稍后再试"))
+	case errors.Is(err, notification.ErrChannelDisabled), errors.Is(err, notification.ErrSendFailed):
+		response.Fail(c, response.ErrVerifySendFailed)
+	default:
+		h.log.Error("authenticate", "err", err)
+		response.Fail(c, response.ErrInternal)
+	}
 }
 
 func (h *Handler) completeLogin(c *gin.Context, u *model.User, amr []string, remember bool, clientID string) {

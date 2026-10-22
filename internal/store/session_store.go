@@ -107,6 +107,21 @@ func (s *Store) DeleteSessionsByUser(ctx context.Context, userID string) error {
 		Updates(map[string]any{"revoked": true}).Error
 }
 
+// DeleteOtherSessions 吊销用户除 keepSID 之外的全部会话（已登录重置密码场景）。
+func (s *Store) DeleteOtherSessions(ctx context.Context, userID, keepSID string) error {
+	var sids []string
+	if err := s.DB(ctx).Model(&model.Session{}).
+		Where("user_id = ? AND revoked = 0 AND sid <> ?", userID, keepSID).Pluck("sid", &sids).Error; err != nil {
+		return err
+	}
+	for _, sid := range sids {
+		_ = s.rdb.Del(ctx, s.sessionKey(sid)).Err()
+	}
+	return s.DB(ctx).Model(&model.Session{}).
+		Where("user_id = ? AND revoked = 0 AND sid <> ?", userID, keepSID).
+		Updates(map[string]any{"revoked": true}).Error
+}
+
 // ListSessionsByUser 返回用户未失效的会话（MySQL 副本）。
 func (s *Store) ListSessionsByUser(ctx context.Context, userID string, now int64) ([]model.Session, error) {
 	var list []model.Session

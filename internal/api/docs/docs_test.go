@@ -227,6 +227,15 @@ func TestEmbeddedSpecStructure(t *testing.T) {
 		t.Fatalf("入库产物的接口契约版本应为 1.0，实际 %q（运行版本由运行时注入，不应写入产物）", doc.Info.Version)
 	}
 
+	// 公开端点（未登录可调）不声明 security；005 新增 /auth/code、/auth/password/reset 与 /auth/captcha。
+	publicPaths := map[string]bool{
+		"/api/v1/auth/login":          true,
+		"/api/v1/auth/mfa/verify":     true,
+		"/api/v1/auth/code":           true,
+		"/api/v1/auth/password/reset": true,
+		"/api/v1/auth/captcha":        true,
+	}
+
 	ops := 0
 	for path, item := range doc.Paths {
 		// servers 固定为 "/"，因此 path 必须自带 /api/v1 前缀，否则 Try it out 会 404。
@@ -257,7 +266,7 @@ func TestEmbeddedSpecStructure(t *testing.T) {
 				t.Errorf("%s %s 缺少 500 响应", method, path)
 			}
 			// 公开端点不标 security，其余必须标。
-			if path == "/api/v1/auth/login" || path == "/api/v1/auth/mfa/verify" {
+			if publicPaths[path] {
 				if len(op.Security) != 0 {
 					t.Errorf("%s %s 是公开端点，不应声明 security", method, path)
 				}
@@ -266,8 +275,8 @@ func TestEmbeddedSpecStructure(t *testing.T) {
 			}
 		}
 	}
-	if ops != 46 {
-		t.Fatalf("operation 数为 %d，规范要求 46", ops)
+	if ops != 56 {
+		t.Fatalf("operation 数为 %d，规范要求 56", ops)
 	}
 
 	scheme, ok := doc.Components.SecuritySchemes["cookieAuth"]
