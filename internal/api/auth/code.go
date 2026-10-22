@@ -21,7 +21,7 @@ type SendCodeResult struct {
 type SendCodeRequest struct {
 	Scene       string `json:"scene" binding:"required,oneof=bind_phone bind_email login find_password mfa_unbind" example:"bind_phone"`
 	Channel     string `json:"channel" binding:"required,oneof=sms email" example:"sms"`
-	Target      string `json:"target" binding:"required,max=128" example:"13800138000"`
+	Target      string `json:"target" binding:"omitempty,max=128" example:"13800138000"`
 	CaptchaID   string `json:"captchaId" example:"01J9ZK2Q3W5X7Y9A1B3C5D7E9F"`
 	CaptchaCode string `json:"captchaCode" example:"8f3k"`
 }
@@ -30,13 +30,14 @@ type SendCodeRequest struct {
 //
 // @Summary      发送验证码
 // @Description  按场景向手机号或邮箱发送 6 位验证码（默认 5 分钟有效，同一目标 60 秒内不可重发）。bind_phone / bind_email 需登录会话且目标已被他人占用时返回 VERIFY_TARGET_IN_USE；login / find_password / mfa_unbind 对未注册或未绑定的目标返回与成功一致的响应但不真实发送（防枚举）。provider=mock 时验证码固定 888888 且不产生真实短信/邮件。
-// @Description  图形验证码字段（captchaId/captchaCode）为未登录防刷预留，当前与 /auth/login 一致仅做透传。
+// @Description  目标解析：已登录会话的 mfa_unbind 与 find_password 场景忽略请求体 target，一律取该账号已绑定的联系方式（脱敏后不回落浏览器）；未登录的 login / find_password 与 bind_* 场景必须传 target。
+// @Description  图形验证码：未登录调用 login / find_password 场景必须携带 captchaId + captchaCode（先调用 GET /auth/captcha），否则返回 AUTH_CAPTCHA_INVALID；已登录调用不校验。
 // @Tags         认证
 // @Accept       json
 // @Produce      json
 // @Param        body  body  SendCodeRequest  true  "发送验证码请求体"
 // @Success      200   {object}  response.Body{data=SendCodeResult}  "已发送（或按防枚举约定静默成功）"
-// @Failure      400   {object}  response.Body  "VALIDATION_FAILED"
+// @Failure      400   {object}  response.Body  "VALIDATION_FAILED / AUTH_CAPTCHA_INVALID"
 // @Failure      401   {object}  response.Body  "UNAUTHENTICATED（bind 类场景缺少会话）"
 // @Failure      409   {object}  response.Body  "VERIFY_TARGET_IN_USE"
 // @Failure      429   {object}  response.Body  "RATE_LIMITED"
@@ -53,14 +54,28 @@ func (h *Handler) SendCode(c *gin.Context) {
 	ctx := c.Request.Context()
 	user, hasUser := middleware.CurrentUser(c)
 
-	normalized, err := notification.NormalizeTarget(req.Channel, req.Target)
-	if err != nil {
-		response.Fail(c, response.ErrValidation.WithMessage("手机号或邮箱格式不正确"))
-		return
-	}
 	// 场景与渠道必须匹配（bind_phone 只能走短信，bind_email 只能走邮箱）。
 	if want, ok := notification.ChannelForScene(req.Scene); !ok || (want != "" && want != req.Channel) {
 		response.Fail(c, response.ErrValidation.WithMessage("场景与渠道不匹配"))
+		return
+	}
+
+	// 已登录账号的 mfa_unbind / find_password 场景：目标由服务端按会话解析，
+	// 不信任客户端传值（联系方式在 /me 中已脱敏，浏览器不再持有完整值）。
+	target := req.Target
+	sendsToSelf := hasUser && (req.Scene == notification.SceneMFAUnbind || req.Scene == notification.SceneFindPassword)
+	if sendsToSelf {
+		bound, ok := boundContact(user, req.Channel)
+		if !ok {
+			response.Fail(c, response.ErrValidation.WithMessage("验证码需发送到当前账号已绑定的联系方式"))
+			return
+		}
+		target = bound
+	}
+
+	normalized, err := notification.NormalizeTarget(req.Channel, target)
+	if err != nil {
+		response.Fail(c, response.ErrValidation.WithMessage("手机号或邮箱格式不正确"))
 		return
 	}
 
@@ -95,16 +110,17 @@ func (h *Handler) SendCode(c *gin.Context) {
 			return
 		}
 		in.UserID = user.ID
-		if !mfaUnbindTargetMatches(user, req.Channel, normalized) {
-			response.Fail(c, response.ErrValidation.WithMessage("验证码需发送到当前账号已绑定的联系方式"))
+	default:
+		// login / find_password。
+		if sendsToSelf {
+			in.UserID = user.ID
+			break
+		}
+		// 未登录：先过图形验证码再查账号（防批量试码与枚举）。
+		if !h.verifyCaptcha(c, req.CaptchaID, req.CaptchaCode) {
 			return
 		}
-	default:
-		// login / find_password：防枚举——目标不存在时返回与成功一致的响应但不发送。
 		in.UserID = ""
-		if hasUser {
-			in.UserID = user.ID
-		}
 		owner, err := h.users.ContactOwner(ctx, req.Channel, normalized)
 		if err != nil {
 			h.log.Error("lookup contact owner", "err", err)
@@ -141,14 +157,17 @@ func (h *Handler) failSendCode(c *gin.Context, err error) {
 	}
 }
 
-// mfaUnbindTargetMatches 校验解绑验证码的目标与当前账号已绑定的联系方式一致。
-func mfaUnbindTargetMatches(u *model.User, channel, target string) bool {
+// boundContact 返回账号在该渠道上已绑定的完整联系方式。
+func boundContact(u *model.User, channel string) (string, bool) {
 	switch channel {
 	case notification.ChannelSMS:
-		return u.Phone != nil && *u.Phone == target
+		if u.Phone != nil && *u.Phone != "" {
+			return *u.Phone, true
+		}
 	case notification.ChannelEmail:
-		return u.Email != nil && *u.Email == target
-	default:
-		return false
+		if u.Email != nil && *u.Email != "" {
+			return *u.Email, true
+		}
 	}
+	return "", false
 }

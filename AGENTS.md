@@ -40,6 +40,7 @@
 | JOSE | `github.com/go-jose/go-jose/v4` | `v4.0.4` | JWS / JWKS，禁止使用 v3 |
 | 密码哈希 | `golang.org/x/crypto` | `v0.31.0` | `argon2.IDKey` |
 | TOTP | `github.com/pquerna/otp` | `v1.4.0` | MFA |
+| 验证码字体 | `golang.org/x/image` | `v0.20.0` | 仅用 `font/basicfont` + `math/fixed` 把图形验证码画成 PNG 位图（2026-10-22 新增；此前用 SVG `<text>` 明文，脚本可直接解码，等于没有防刷） |
 | Redis | `github.com/redis/go-redis/v9` | `v9.7.0` | session / 限流 / 缓存 |
 | ID | `github.com/oklog/ulid/v2` | `v2.1.0` | 主键 |
 | 校验 | `github.com/go-playground/validator/v10` | `v10.23.0` | 请求校验 |
@@ -73,6 +74,9 @@
 | Vue+TS 预设 | `@vue/eslint-config-typescript` | `14.9.0` | 组合上述两套 |
 | 全局变量 | `globals` | `17.13.0` | `browser` 全局声明 |
 | 二维码类型 | `@types/qrcode` | `1.5.6` | `qrcode` 的 TS 类型 |
+| 测试运行器 | `vitest` | `3.2.7` | portal 首屏用例（登录方式切换、图形验证码、验证码登录失败提示），接入 `make test`（2026-10-22 新增） |
+| 组件测试 | `@vue/test-utils` | `2.5.1` | 挂载 `Login.vue` 等组件做交互断言（2026-10-22 新增） |
+| DOM 环境 | `jsdom` | `25.0.1` | vitest 的 `environment: 'jsdom'`（2026-10-22 新增） |
 
 > 上述前端依赖走 `devDependencies`/`dependencies` 的**精确版本**（`npm install --save-exact`），与 §2.1 的锁定策略一致；升级须单独提交。
 
@@ -115,6 +119,8 @@ omino-sso/
 ├── go.mod
 ├── Makefile
 ├── docker-compose.yml                 # mysql + redis + sso + portal + admin
+├── Dockerfile                         # 2026-10-22 新增：服务端多阶段镜像，必须 COPY configs/verify-mail.tmpl
+├── .dockerignore                      # 2026-10-22 新增：构建上下文裁剪（排除 web/、specs/、.env）
 ├── .env.example                       # 环境变量模板（§9）
 ├── .tmp/                              # 文档生成中间产物（gitignore，不入库）
 ├── tools/                             # 构建期工具，独立 module（禁止被业务包 import）
@@ -153,7 +159,10 @@ omino-sso/
 │   │   │   ├── openapi.json           # 生成物，入库（OpenAPI 3.0.3）
 │   │   │   └── docs_test.go
 │   │   ├── auth/                      # /api/v1/auth/*
-│   │   │   ├── login.go               # 账号密码登录、失败计数、锁定
+│   │   │   ├── login.go               # 密码 / 验证码登录、失败计数、锁定
+│   │   │   ├── code.go                # 005：验证码发送（未登录强制图形码；已登录目标由服务端解析）
+│   │   │   ├── captcha.go             # 005：图形验证码签发（GET /auth/captcha）
+│   │   │   ├── password.go            # 005：验证码找回密码
 │   │   │   ├── mfa.go                 # TOTP 校验、绑定/确认
 │   │   │   └── logout.go
 │   │   ├── me/                        # /api/v1/me/*
@@ -171,6 +180,8 @@ omino-sso/
 │   │   ├── user.go                    # 含标识符识别 / 联系方式绑定 / 验证码重置密码
 │   │   ├── mfa.go                     # 005：MFA 绑定与解绑
 │   │   ├── cleanup.go                 # 005：内置定时清理（发送记录 / 审计日志）
+│   │   ├── captcha.go                 # 005：图形验证码（Redis 短时 + 一次性消费 + PNG 位图，响应不含明文码）
+│   │   ├── captcha_test.go            # 005：图形验证码单测（假 Redis 实现，无需外部依赖）
 │   │   ├── client.go
 │   │   ├── session.go
 │   │   ├── audit.go                   # 含 notification.AuditSink 实现
@@ -223,13 +234,16 @@ omino-sso/
 └── web/
     ├── portal/                        # 登录页 + 账号中心（Tailwind）
     │   ├── eslint.config.js
+    │   ├── vitest.config.ts           # 2026-10-22 新增：jsdom + @ 别名，`npm run test`
     │   ├── index.html
     │   ├── vite.config.ts
     │   ├── src/main.ts
     │   ├── src/router.ts
     │   ├── src/api/client.ts
-    │   ├── src/views/Login.vue        # 账号密码 + 图形验证码 + MFA 二步
-    │   ├── src/views/Account.vue
+    │   ├── src/views/Login.vue        # 账号密码 / 验证码登录 + 图形验证码 + MFA 二步
+    │   ├── src/views/Login.spec.ts    # 2026-10-22 新增：登录方式切换 / 图形码 / 失败提示用例
+    │   ├── src/views/Password.vue     # 修改密码：原密码与验证码两种方式（§4.1 的 me/password*）
+    │   ├── src/views/Account.vue      # 账号中心：联系方式、MFA、会话
     │   ├── src/views/Apps.vue
     │   └── src/styles/tokens.css      # 品牌变量（主色 / 圆角 / 字体）
     └── admin/                         # 管理后台（Element Plus）
@@ -282,6 +296,7 @@ omino-sso/
 | GET | `/.well-known/openid-configuration` | 元数据 | 无 |
 | POST | `/api/v1/auth/login` | 账号登录（密码 / 邮箱验证码 / 手机验证码） | 无 |
 | POST | `/api/v1/auth/mfa/verify` | MFA 二次校验 | mfaTicket |
+| GET | `/api/v1/auth/captcha` | 获取图形验证码（未登录验证码登录 / 找回密码的前置） | 无 |
 | POST | `/api/v1/auth/code` | 发送短信/邮箱验证码 | 无（bind 类场景需 session） |
 | POST | `/api/v1/auth/password/reset` | 找回（重置）密码 | 无 |
 | POST | `/api/v1/auth/logout` | 登出 | session |
@@ -312,6 +327,10 @@ omino-sso/
 > **`PATCH /api/v1/admin/users/:id` 的行为修正**：提交 `deptId` 时，服务端在短事务内锁定目标部门并校验其存在，不存在返回 `400 VALIDATION_FAILED`（过去为静默写入，会与部门删除竞态产生悬空 `dept_id`）。`POST /api/v1/admin/users` 的 `deptId` 校验方式同步调整为同一临界区，对外行为不变。
 >
 > **组织写操作的并发语义**：三个组织写端点在同一事务内先对 `organizations` 全表加一次 `SELECT ... FOR UPDATE`（该表无 `tenant_id` 索引，实际为全局串行化），再读、校验、写；账号归属写入侧对目标部门行加锁。因此同级唯一性、10 级深度、成环、删除保护不依赖数据库唯一索引即可成立。
+>
+> **图形验证码（2026-10-22）**：未登录调用 `/api/v1/auth/code` 的 `login`、`find_password` 场景与 `/api/v1/auth/login` 的 `email_code`、`sms_code` 类型时，必须携带 `captchaId` + `captchaCode`（先调 `GET /api/v1/auth/captcha`，2 分钟有效、一次有效），校验失败返回 `400 AUTH_CAPTCHA_INVALID`。已登录会话一律不校验图形码。图片为 PNG 位图 data URL，**禁止**以 SVG/文本节点等可被脚本直接解码的形式下发；因图形码一次性消费，前端在发送成功或提交失败后必须立即换图。
+>
+> **联系方式出服务端的口径（2026-10-22）**：`GET /api/v1/me` 与各绑定接口的响应只返回脱敏值（`138****8000` / `z***@example.com`），前端不得二次脱敏；`/api/v1/auth/code` 在已登录的 `mfa_unbind`、`find_password` 场景忽略请求体 `target`，由服务端按会话解析本人已绑定的联系方式，浏览器不持有完整值。
 
 ---
 
@@ -554,6 +573,8 @@ omino-sso/
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
+| `email` | string \| null | **脱敏返回**（`z***@example.com`），未绑定为 `null` |
+| `phone` | string \| null | **脱敏返回**（`138****8000`），未绑定为 `null` |
 | `deptPath` | string[] | 从根到当前部门的名称路径 |
 | `mfaEnabled` | bool | 用户是否已绑定 TOTP |
 | `mfaRequired` | bool | 是否被管理员强制 MFA |

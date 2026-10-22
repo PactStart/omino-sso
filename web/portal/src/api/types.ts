@@ -27,14 +27,29 @@ export interface LoginPayload {
   username?: string
   password?: string
   code?: string
+  captchaId?: string
+  captchaCode?: string
   clientId: string
   rememberMe: boolean
 }
 
+/**
+ * 发送验证码。target 仅在 bind_* 场景与未登录的 login/find_password 场景需要；
+ * 已登录的 mfa_unbind/find_password 由服务端按会话解析目标（联系方式不经浏览器）。
+ */
 export interface SendCodePayload {
   scene: VerifyScene
   channel: VerifyChannel
-  target: string
+  target?: string
+  captchaId?: string
+  captchaCode?: string
+}
+
+export interface CaptchaResult {
+  captchaId: string
+  /** 可直接用于 <img src> 的 SVG data URL */
+  image: string
+  expiresIn: number
 }
 
 export interface SendCodeResult {

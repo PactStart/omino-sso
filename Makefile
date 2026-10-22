@@ -7,7 +7,7 @@ DOCS_VERSION_PKG := github.com/omino/omino-sso/internal/api/docs
 SWAGGER_JSON := .tmp/swagger/swagger.json
 OPENAPI_JSON := internal/api/docs/openapi.json
 
-.PHONY: help deps keys assets dev build test lint lint-go lint-web build-web docs docs-check docs-serve migrate-up migrate-down clean
+.PHONY: help deps keys assets dev build test test-go test-web lint lint-go lint-web build-web docs docs-check docs-serve migrate-up migrate-down clean
 
 help:
 	@echo "deps        下载依赖"
@@ -65,8 +65,16 @@ docs-serve: docs
 	@echo "文档入口: http://127.0.0.1:8081/docs/ （APP_ENV=prod 时不提供）"
 	$(GO) run ./cmd/sso
 
-test:
+test: test-go test-web
+
+test-go:
 	$(GO) test ./...
+
+# 前端用例走 vitest（登录方式切换、图形验证码、验证码登录失败提示）。
+# node_modules 不入库：干净检出时先按 $(NPM_INSTALL) 安装，已装过则直接跑，保证新克隆可直接 `make test`。
+test-web:
+	@test -d web/portal/node_modules || (cd web/portal && $(NPM_INSTALL))
+	cd web/portal && npm run test
 
 # lint 是宪法要求的交付检查（「开发工作流与质量门禁」第 1 条），必须能真正失败：
 # 不允许 `|| true` 吞掉问题，也不允许工具缺失时静默通过。

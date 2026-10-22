@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { login, resetPassword, sendCode, verifyMfa } from '@/api'
+import { getCaptcha, login, resetPassword, sendCode, verifyMfa } from '@/api'
 import { errorCode, errorMessage } from '@/api/client'
 import { ADMIN_HOME } from '@/config'
 import { useSessionStore } from '@/stores/session'
@@ -39,7 +39,9 @@ const sendingCode = ref(false)
 
 const form = reactive({ username: '', password: '', rememberMe: false })
 const loginCode = ref('')
-const errors = reactive({ username: '', password: '', code: '' })
+const errors = reactive({ username: '', password: '', code: '', captcha: '' })
+/** 图形验证码：未登录的验证码登录与找回密码必须先过图形码（2 分钟有效、一次有效） */
+const captcha = reactive({ id: '', image: '', code: '', loading: false })
 const mfa = reactive({ ticket: '', code: '', expiresIn: 0 })
 const forgot = reactive({
   channel: 'email' as VerifyChannel,
@@ -78,6 +80,27 @@ onMounted(() => {
   }
 })
 
+/** 拉取新的图形验证码（一次性使用，提交失败后必须刷新） */
+async function refreshCaptcha() {
+  captcha.loading = true
+  try {
+    const res = await getCaptcha()
+    captcha.id = res.captchaId
+    captcha.image = res.image
+    captcha.code = ''
+  } catch (e) {
+    banner.value = errorMessage(e)
+  } finally {
+    captcha.loading = false
+  }
+}
+
+/** 需要图形验证码的场景（验证码登录 / 找回密码）按需首次拉取 */
+async function ensureCaptcha() {
+  if (captcha.id && captcha.image) return
+  await refreshCaptcha()
+}
+
 onBeforeUnmount(() => {
   window.clearInterval(cooldownTimer)
   window.clearInterval(codeTimer)
@@ -87,6 +110,7 @@ function clearErrors() {
   errors.username = ''
   errors.password = ''
   errors.code = ''
+  errors.captcha = ''
   forgotErrors.target = ''
   forgotErrors.code = ''
   forgotErrors.newPassword = ''
@@ -123,6 +147,7 @@ function switchMode(mode: LoginType) {
   clearErrors()
   loginCode.value = ''
   form.password = ''
+  if (mode !== 'password') void ensureCaptcha()
 }
 
 /** 校验登录标识：密码登录允许三种标识，验证码登录要求对应格式 */
@@ -152,12 +177,13 @@ async function submitCredentials() {
     } else if (form.password.length < 8 || form.password.length > 128) {
       errors.password = `密码长度需为 8–128 位`
     }
-  } else if (!/^\d{6}$/.test(loginCode.value)) {
-    errors.code = '请输入 6 位验证码'
+  } else {
+    if (!/^\d{6}$/.test(loginCode.value)) errors.code = '请输入 6 位验证码'
+    if (!captcha.code.trim()) errors.captcha = '请输入图形验证码'
   }
 
   // 一次性展示所有字段问题，避免逐个试错
-  if (errors.username || errors.password || errors.code) return
+  if (errors.username || errors.password || errors.code || errors.captcha) return
   if (submitting.value || cooldown.value > 0) return
 
   submitting.value = true
@@ -176,6 +202,8 @@ async function submitCredentials() {
             loginType: loginType.value,
             identifier,
             code: loginCode.value,
+            captchaId: captcha.id,
+            captchaCode: captcha.code,
             clientId: 'portal',
             rememberMe: form.rememberMe,
           })
@@ -216,18 +244,40 @@ async function sendLoginCode() {
     errors.username = msg
     return
   }
+  if (!captcha.code.trim()) {
+    errors.captcha = '请先输入图形验证码'
+    return
+  }
   if (sendingCode.value || codeCooldown.value > 0) return
   sendingCode.value = true
   try {
     const channel: VerifyChannel = loginType.value === 'sms_code' ? 'sms' : 'email'
-    const res = await sendCode({ scene: 'login', channel, target })
+    const res = await sendCode({
+      scene: 'login',
+      channel,
+      target,
+      captchaId: captcha.id,
+      captchaCode: captcha.code,
+    })
     startCodeCooldown(res.resendAfter || 60)
+    // 图形码已在服务端消费，重发前必须先换一张
+    void refreshCaptcha()
     notice.value = `验证码已发送，${Math.ceil((res.expiresIn || 300) / 60)} 分钟内有效`
   } catch (e) {
+    if (errorCode(e) === 'AUTH_CAPTCHA_INVALID') {
+      handleCaptchaError()
+      return
+    }
     banner.value = errorMessage(e)
   } finally {
     sendingCode.value = false
   }
+}
+
+/** 图形验证码错误：提示并换一张（一次性使用，必须重新获取） */
+function handleCaptchaError() {
+  errors.captcha = '图形验证码错误或已过期，请重新输入'
+  void refreshCaptcha()
 }
 
 function setForgotChannel(channel: VerifyChannel) {
@@ -246,6 +296,7 @@ function openForgot() {
   forgot.code = ''
   forgot.newPassword = ''
   forgot.confirmPassword = ''
+  void ensureCaptcha()
 }
 
 function backToCredentials(message = '') {
@@ -268,13 +319,28 @@ async function sendForgotCode() {
     forgotErrors.target = /^1\d{10}$/.test(target) ? '' : '请输入 11 位手机号'
   }
   if (forgotErrors.target) return
+  if (!captcha.code.trim()) {
+    errors.captcha = '请先输入图形验证码'
+    return
+  }
   if (sendingCode.value || codeCooldown.value > 0) return
   sendingCode.value = true
   try {
-    const res = await sendCode({ scene: 'find_password', channel: forgot.channel, target })
+    const res = await sendCode({
+      scene: 'find_password',
+      channel: forgot.channel,
+      target,
+      captchaId: captcha.id,
+      captchaCode: captcha.code,
+    })
     startCodeCooldown(res.resendAfter || 60)
+    void refreshCaptcha()
     notice.value = '如该联系方式已绑定账号，验证码将发送到该地址'
   } catch (e) {
+    if (errorCode(e) === 'AUTH_CAPTCHA_INVALID') {
+      handleCaptchaError()
+      return
+    }
     banner.value = errorMessage(e)
   } finally {
     sendingCode.value = false
@@ -328,11 +394,26 @@ async function submitForgot() {
 }
 
 function handleLoginError(e: unknown) {
+  // 验证码登录：服务端对图形码是一次性消费（GetDel），本次提交无论成败都已用掉，
+  // 必须换一张，否则用户重试的第一次请求必然先返回 AUTH_CAPTCHA_INVALID。
+  if (loginType.value !== 'password') void refreshCaptcha()
+
   switch (errorCode(e)) {
     case 'AUTH_INVALID_CREDENTIALS':
-      banner.value = '用户名或密码错误'
-      form.password = ''
-      passwordInput.value?.focus()
+      // 验证码登录：账号未绑定对应联系方式时同样落到此处（服务端不区分，避免枚举），
+      // 故提示统一给出「绑定指引」而不是「密码错误」。
+      if (loginType.value === 'password') {
+        banner.value = '用户名或密码错误'
+        form.password = ''
+        passwordInput.value?.focus()
+      } else {
+        banner.value =
+          '验证码登录失败，请确认验证码是否正确；如账号未绑定手机号或邮箱，请改用密码登录后到账号中心绑定'
+      }
+      break
+    case 'AUTH_CAPTCHA_INVALID':
+      // 图片已在函数入口刷新，这里只提示
+      errors.captcha = '图形验证码错误或已过期，请重新输入'
       break
     case 'AUTH_ACCOUNT_LOCKED':
       banner.value = errorMessage(e) || '账号已锁定，请 15 分钟后再试或联系管理员'
@@ -538,37 +619,78 @@ function onCodeInput(event: Event) {
               <p v-if="errors.password" class="mt-1.5 text-xs text-rose-600">{{ errors.password }}</p>
             </div>
 
-            <div v-else>
-              <label for="login-code" class="mb-1.5 block text-sm font-medium text-ink-600">
-                验证码
-              </label>
-              <div class="flex gap-2">
-                <input
-                  id="login-code"
-                  v-model="loginCode"
-                  type="text"
-                  inputmode="numeric"
-                  autocomplete="one-time-code"
-                  maxlength="6"
-                  placeholder="6 位数字"
-                  class="w-full rounded-lg border bg-white px-3.5 py-2.5 text-sm tracking-[0.3em] text-ink-800 outline-none transition placeholder:tracking-normal placeholder:text-ink-400/70 focus:ring-4"
-                  :class="
-                    errors.code
-                      ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-100'
-                      : 'border-ink-200 focus:border-brand-400 focus:ring-brand-50'
-                  "
-                  @input="loginCode = loginCode.replace(/\D/g, '').slice(0, 6)"
-                />
-                <button
-                  type="button"
-                  class="shrink-0 rounded-lg border border-ink-200 px-3 text-xs text-ink-600 transition hover:border-brand-300 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  :disabled="sendingCode || codeCooldown > 0"
-                  @click="sendLoginCode"
-                >
-                  {{ codeCooldown > 0 ? `${codeCooldown}s 后重发` : '获取验证码' }}
-                </button>
+            <div v-else class="space-y-4">
+              <div>
+                <label for="login-captcha" class="mb-1.5 block text-sm font-medium text-ink-600">
+                  图形验证码
+                </label>
+                <div class="flex gap-2">
+                  <input
+                    id="login-captcha"
+                    v-model="captcha.code"
+                    type="text"
+                    autocomplete="off"
+                    maxlength="4"
+                    placeholder="4 位字符"
+                    class="w-full rounded-lg border bg-white px-3.5 py-2.5 text-sm tracking-[0.3em] text-ink-800 uppercase outline-none transition placeholder:tracking-normal placeholder:text-ink-400/70 focus:ring-4"
+                    :class="
+                      errors.captcha
+                        ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-100'
+                        : 'border-ink-200 focus:border-brand-400 focus:ring-brand-50'
+                    "
+                    @input="captcha.code = captcha.code.replace(/[^0-9A-Za-z]/g, '').slice(0, 4)"
+                  />
+                  <button
+                    type="button"
+                    class="h-[44px] w-[132px] shrink-0 overflow-hidden rounded-lg border border-ink-200 bg-white transition hover:border-brand-300 disabled:opacity-60"
+                    title="看不清？点击换一张"
+                    :disabled="captcha.loading"
+                    @click="refreshCaptcha"
+                  >
+                    <img
+                      v-if="captcha.image"
+                      :src="captcha.image"
+                      alt="图形验证码"
+                      class="h-full w-full object-contain"
+                    />
+                    <span v-else class="text-xs text-ink-400">加载中…</span>
+                  </button>
+                </div>
+                <p v-if="errors.captcha" class="mt-1.5 text-xs text-rose-600">{{ errors.captcha }}</p>
               </div>
-              <p v-if="errors.code" class="mt-1.5 text-xs text-rose-600">{{ errors.code }}</p>
+
+              <div>
+                <label for="login-code" class="mb-1.5 block text-sm font-medium text-ink-600">
+                  验证码
+                </label>
+                <div class="flex gap-2">
+                  <input
+                    id="login-code"
+                    v-model="loginCode"
+                    type="text"
+                    inputmode="numeric"
+                    autocomplete="one-time-code"
+                    maxlength="6"
+                    placeholder="6 位数字"
+                    class="w-full rounded-lg border bg-white px-3.5 py-2.5 text-sm tracking-[0.3em] text-ink-800 outline-none transition placeholder:tracking-normal placeholder:text-ink-400/70 focus:ring-4"
+                    :class="
+                      errors.code
+                        ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-100'
+                        : 'border-ink-200 focus:border-brand-400 focus:ring-brand-50'
+                    "
+                    @input="loginCode = loginCode.replace(/\D/g, '').slice(0, 6)"
+                  />
+                  <button
+                    type="button"
+                    class="shrink-0 rounded-lg border border-ink-200 px-3 text-xs text-ink-600 transition hover:border-brand-300 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    :disabled="sendingCode || codeCooldown > 0"
+                    @click="sendLoginCode"
+                  >
+                    {{ codeCooldown > 0 ? `${codeCooldown}s 后重发` : '获取验证码' }}
+                  </button>
+                </div>
+                <p v-if="errors.code" class="mt-1.5 text-xs text-rose-600">{{ errors.code }}</p>
+              </div>
             </div>
 
             <div class="flex items-center justify-between">
@@ -627,18 +749,81 @@ function onCodeInput(event: Event) {
               <label for="forgot-target" class="mb-1.5 block text-sm font-medium text-ink-600">
                 {{ forgot.channel === 'email' ? '邮箱' : '手机号' }}
               </label>
+              <input
+                id="forgot-target"
+                v-model="forgot.target"
+                type="text"
+                :placeholder="forgot.channel === 'email' ? '请输入已绑定的邮箱' : '请输入已绑定的手机号'"
+                class="w-full rounded-lg border bg-white px-3.5 py-2.5 text-sm text-ink-800 outline-none transition placeholder:text-ink-400/70 focus:ring-4"
+                :class="
+                  forgotErrors.target
+                    ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-100'
+                    : 'border-ink-200 focus:border-brand-400 focus:ring-brand-50'
+                "
+              />
+              <p v-if="forgotErrors.target" class="mt-1.5 text-xs text-rose-600">
+                {{ forgotErrors.target }}
+              </p>
+            </div>
+
+            <div>
+              <label for="forgot-captcha" class="mb-1.5 block text-sm font-medium text-ink-600">
+                图形验证码
+              </label>
               <div class="flex gap-2">
                 <input
-                  id="forgot-target"
-                  v-model="forgot.target"
+                  id="forgot-captcha"
+                  v-model="captcha.code"
                   type="text"
-                  :placeholder="forgot.channel === 'email' ? '请输入已绑定的邮箱' : '请输入已绑定的手机号'"
-                  class="w-full rounded-lg border bg-white px-3.5 py-2.5 text-sm text-ink-800 outline-none transition placeholder:text-ink-400/70 focus:ring-4"
+                  autocomplete="off"
+                  maxlength="4"
+                  placeholder="4 位字符"
+                  class="w-full rounded-lg border bg-white px-3.5 py-2.5 text-sm uppercase tracking-[0.3em] text-ink-800 outline-none transition placeholder:tracking-normal placeholder:text-ink-400/70 focus:ring-4"
                   :class="
-                    forgotErrors.target
+                    errors.captcha
                       ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-100'
                       : 'border-ink-200 focus:border-brand-400 focus:ring-brand-50'
                   "
+                  @input="captcha.code = captcha.code.replace(/[^0-9A-Za-z]/g, '').slice(0, 4)"
+                />
+                <button
+                  type="button"
+                  class="h-[44px] w-[132px] shrink-0 overflow-hidden rounded-lg border border-ink-200 bg-white transition hover:border-brand-300 disabled:opacity-60"
+                  title="看不清？点击换一张"
+                  :disabled="captcha.loading"
+                  @click="refreshCaptcha"
+                >
+                  <img
+                    v-if="captcha.image"
+                    :src="captcha.image"
+                    alt="图形验证码"
+                    class="h-full w-full object-contain"
+                  />
+                  <span v-else class="text-xs text-ink-400">加载中…</span>
+                </button>
+              </div>
+              <p v-if="errors.captcha" class="mt-1.5 text-xs text-rose-600">{{ errors.captcha }}</p>
+            </div>
+
+            <div>
+              <label for="forgot-code" class="mb-1.5 block text-sm font-medium text-ink-600">
+                验证码
+              </label>
+              <div class="flex gap-2">
+                <input
+                  id="forgot-code"
+                  v-model="forgot.code"
+                  type="text"
+                  inputmode="numeric"
+                  maxlength="6"
+                  placeholder="6 位数字"
+                  class="w-full rounded-lg border bg-white px-3.5 py-2.5 text-sm tracking-[0.3em] text-ink-800 outline-none transition placeholder:tracking-normal placeholder:text-ink-400/70 focus:ring-4"
+                  :class="
+                    forgotErrors.code
+                      ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-100'
+                      : 'border-ink-200 focus:border-brand-400 focus:ring-brand-50'
+                  "
+                  @input="forgot.code = forgot.code.replace(/\D/g, '').slice(0, 6)"
                 />
                 <button
                   type="button"
@@ -649,30 +834,6 @@ function onCodeInput(event: Event) {
                   {{ codeCooldown > 0 ? `${codeCooldown}s 后重发` : '获取验证码' }}
                 </button>
               </div>
-              <p v-if="forgotErrors.target" class="mt-1.5 text-xs text-rose-600">
-                {{ forgotErrors.target }}
-              </p>
-            </div>
-
-            <div>
-              <label for="forgot-code" class="mb-1.5 block text-sm font-medium text-ink-600">
-                验证码
-              </label>
-              <input
-                id="forgot-code"
-                v-model="forgot.code"
-                type="text"
-                inputmode="numeric"
-                maxlength="6"
-                placeholder="6 位数字"
-                class="w-full rounded-lg border bg-white px-3.5 py-2.5 text-sm tracking-[0.3em] text-ink-800 outline-none transition placeholder:tracking-normal placeholder:text-ink-400/70 focus:ring-4"
-                :class="
-                  forgotErrors.code
-                    ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-100'
-                    : 'border-ink-200 focus:border-brand-400 focus:ring-brand-50'
-                "
-                @input="forgot.code = forgot.code.replace(/\D/g, '').slice(0, 6)"
-              />
               <p v-if="forgotErrors.code" class="mt-1.5 text-xs text-rose-600">
                 {{ forgotErrors.code }}
               </p>

@@ -10,6 +10,7 @@ import (
 	"github.com/omino/omino-sso/internal/api/middleware"
 	"github.com/omino/omino-sso/internal/api/response"
 	"github.com/omino/omino-sso/internal/service"
+	"github.com/omino/omino-sso/internal/service/notification"
 )
 
 // Handler 处理 /api/v1/me/*。
@@ -42,7 +43,7 @@ func NewHandler(
 // Profile GET /api/v1/me
 //
 // @Summary      查询当前用户资料
-// @Description  返回会话所属用户的完整资料，含部门路径、角色与 MFA 状态。
+// @Description  返回会话所属用户的完整资料，含部门路径、角色与 MFA 状态。手机号与邮箱一律脱敏返回（138****8000 / z***@example.com），前端不做二次脱敏；需要向本人联系方式发送验证码时由服务端按会话解析目标，无需浏览器持有完整值。
 // @Tags         我的
 // @Produce      json
 // @Security     cookieAuth
@@ -61,7 +62,17 @@ func (h *Handler) Profile(c *gin.Context) {
 	if err != nil {
 		h.log.Warn("load dept path", "err", err)
 	}
-	response.Success(c, dto.Detail(u, path))
+	detail := dto.Detail(u, path)
+	// 联系方式出服务端前一律脱敏（澄清 Q4）；完整值只在服务端用于校验。
+	if u.Email != nil {
+		masked := notification.MaskEmail(*u.Email)
+		detail.Email = &masked
+	}
+	if u.Phone != nil {
+		masked := notification.MaskPhone(*u.Phone)
+		detail.Phone = &masked
+	}
+	response.Success(c, detail)
 }
 
 // Apps GET /api/v1/me/apps

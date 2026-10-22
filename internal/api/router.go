@@ -31,6 +31,7 @@ func NewRouter(
 	appAuth *service.AppAuthService,
 	fileSvc *service.FileService,
 	notif *notification.Service,
+	captcha *service.CaptchaService,
 	mfaSvc *service.MFAService,
 	audit *service.Auditor,
 	logger *slog.Logger,
@@ -45,7 +46,7 @@ func NewRouter(
 	r.Use(middleware.Trace())
 	r.Use(middleware.RateLimit(st.Redis(), "api", cfg.RateLimitAPIPerMin, time.Minute))
 
-	authH := auth.NewHandler(cfg, users, sessions, notif, audit, logger)
+	authH := auth.NewHandler(cfg, users, sessions, notif, captcha, audit, logger)
 	meH := me.NewHandler(users, sessions, clients, fileSvc, mfaSvc, audit, logger)
 	adminH := admin.NewHandler(users, clients, orgs, appAuth, fileSvc, notif, audit, logger)
 	filesH := files.NewHandler(fileSvc, logger)
@@ -63,6 +64,8 @@ func NewRouter(
 	v1.POST("/auth/login", middleware.RateLimit(st.Redis(), "login", cfg.RateLimitLoginPerMin, time.Minute), authH.Login)
 	v1.POST("/auth/mfa/verify", middleware.RateLimit(st.Redis(), "mfa", cfg.RateLimitLoginPerMin, time.Minute), authH.VerifyMFA)
 	v1.POST("/auth/password/reset", middleware.RateLimit(st.Redis(), "resetpwd", cfg.RateLimitLoginPerMin, time.Minute), authH.ResetPassword)
+	// 图形验证码：未登录的验证码登录与找回密码必须先取图形码（005 边界用例，防刷/防枚举）。
+	v1.GET("/auth/captcha", middleware.RateLimit(st.Redis(), "captcha", cfg.RateLimitLoginPerMin, time.Minute), authH.Captcha)
 	// 验证码发送：未登录可调，但 bind_* / mfa_unbind 场景在处理器内要求会话（OptionalAuth 只做尽力解析）。
 	v1.POST("/auth/code", middleware.RateLimit(st.Redis(), "verify", cfg.RateLimitLoginPerMin, time.Minute),
 		middleware.OptionalAuth(sessions, st, logger), authH.SendCode)

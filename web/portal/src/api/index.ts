@@ -3,6 +3,7 @@ import type {
   AppItem,
   BindEmailResult,
   BindPhoneResult,
+  CaptchaResult,
   ChangePasswordPayload,
   FileRow,
   LoginPayload,
@@ -22,6 +23,11 @@ import type {
 
 export function login(payload: LoginPayload) {
   return request<LoginResult>({ url: '/auth/login', method: 'POST', data: payload })
+}
+
+/** 图形验证码：未登录的验证码登录与找回密码必须先获取（2 分钟有效、一次有效） */
+export function getCaptcha() {
+  return request<CaptchaResult>({ url: '/auth/captcha', method: 'GET' })
 }
 
 export function verifyMfa(payload: MfaVerifyPayload) {

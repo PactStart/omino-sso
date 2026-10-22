@@ -34,6 +34,37 @@ services:
       timeout: 3s
       retries: 20
 
+  sso:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: omino-sso
+    environment:
+      APP_ENV: ${APP_ENV:-dev}
+      OIDC_ISSUER: ${OIDC_ISSUER:-http://localhost:8080}
+      # 容器内固定使用随镜像发布的模板路径（Dockerfile 已 COPY）
+      OIDC_SIGNING_KEY_PATH: /app/configs/dev-signing-key.pem
+      OIDC_SIGNING_KEY_ID: ${OIDC_SIGNING_KEY_ID:-2026-10}
+      OIDC_CRYPTO_KEY: ${OIDC_CRYPTO_KEY:-}
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_USER: ${DB_USER:-root}
+      DB_PASSWORD: ${DB_PASSWORD:-omino_dev_pwd}
+      DB_NAME: ${DB_NAME:-omino_sso}
+      REDIS_ADDR: redis:6379
+      SMS_PROVIDER: ${SMS_PROVIDER:-mock}
+      MAIL_PROVIDER: ${MAIL_PROVIDER:-mock}
+    ports:
+      - "127.0.0.1:${SSO_HOST_PORT:-8080}:8080"
+      - "127.0.0.1:${ADMIN_HOST_PORT:-8081}:8081"
+    volumes:
+      - ./configs/dev-signing-key.pem:/app/configs/dev-signing-key.pem:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 volumes:
   omino-mysql-data:
   omino-redis-data:

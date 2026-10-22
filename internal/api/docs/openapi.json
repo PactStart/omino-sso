@@ -511,6 +511,23 @@
         },
         "type": "object"
       },
+      "auth.CaptchaResult": {
+        "properties": {
+          "captchaId": {
+            "example": "01J9ZK2Q3W5X7Y9A1B3C5D7E9F",
+            "type": "string"
+          },
+          "expiresIn": {
+            "example": 120,
+            "type": "integer"
+          },
+          "image": {
+            "example": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg...",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "auth.LoginRequest": {
         "properties": {
           "captchaCode": {
@@ -648,8 +665,7 @@
         },
         "required": [
           "channel",
-          "scene",
-          "target"
+          "scene"
         ],
         "type": "object"
       },
@@ -6034,9 +6050,72 @@
         "x-auth-level": "admin"
       }
     },
+    "/api/v1/auth/captcha": {
+      "get": {
+        "description": "返回 4 位图形验证码的 id 与可直接用于 \u003cimg src\u003e 的 data URL（2 分钟有效、一次有效）。未登录调用 /auth/code（login、find_password 场景）与 /auth/login（email_code、sms_code）时必须携带该 id 与用户输入值，否则返回 AUTH_CAPTCHA_INVALID。已登录会话不校验图形验证码。",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/auth.CaptchaResult"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "RATE_LIMITED"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "DEPENDENCY_UNAVAILABLE"
+          }
+        },
+        "summary": "获取图形验证码",
+        "tags": [
+          "认证"
+        ]
+      }
+    },
     "/api/v1/auth/code": {
       "post": {
-        "description": "按场景向手机号或邮箱发送 6 位验证码（默认 5 分钟有效，同一目标 60 秒内不可重发）。bind_phone / bind_email 需登录会话且目标已被他人占用时返回 VERIFY_TARGET_IN_USE；login / find_password / mfa_unbind 对未注册或未绑定的目标返回与成功一致的响应但不真实发送（防枚举）。provider=mock 时验证码固定 888888 且不产生真实短信/邮件。\n图形验证码字段（captchaId/captchaCode）为未登录防刷预留，当前与 /auth/login 一致仅做透传。",
+        "description": "按场景向手机号或邮箱发送 6 位验证码（默认 5 分钟有效，同一目标 60 秒内不可重发）。bind_phone / bind_email 需登录会话且目标已被他人占用时返回 VERIFY_TARGET_IN_USE；login / find_password / mfa_unbind 对未注册或未绑定的目标返回与成功一致的响应但不真实发送（防枚举）。provider=mock 时验证码固定 888888 且不产生真实短信/邮件。\n目标解析：已登录会话的 mfa_unbind 与 find_password 场景忽略请求体 target，一律取该账号已绑定的联系方式（脱敏后不回落浏览器）；未登录的 login / find_password 与 bind_* 场景必须传 target。\n图形验证码：未登录调用 login / find_password 场景必须携带 captchaId + captchaCode（先调用 GET /auth/captcha），否则返回 AUTH_CAPTCHA_INVALID；已登录调用不校验。",
         "requestBody": {
           "content": {
             "application/json": {
@@ -6080,7 +6159,7 @@
                 }
               }
             },
-            "description": "VALIDATION_FAILED"
+            "description": "VALIDATION_FAILED / AUTH_CAPTCHA_INVALID"
           },
           "401": {
             "content": {
@@ -6710,7 +6789,7 @@
     },
     "/api/v1/me": {
       "get": {
-        "description": "返回会话所属用户的完整资料，含部门路径、角色与 MFA 状态。",
+        "description": "返回会话所属用户的完整资料，含部门路径、角色与 MFA 状态。手机号与邮箱一律脱敏返回（138****8000 / z***@example.com），前端不做二次脱敏；需要向本人联系方式发送验证码时由服务端按会话解析目标，无需浏览器持有完整值。",
         "responses": {
           "200": {
             "content": {

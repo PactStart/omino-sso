@@ -227,12 +227,13 @@ func TestEmbeddedSpecStructure(t *testing.T) {
 		t.Fatalf("入库产物的接口契约版本应为 1.0，实际 %q（运行版本由运行时注入，不应写入产物）", doc.Info.Version)
 	}
 
-	// 公开端点（未登录可调）不声明 security；005 新增 /auth/code 与 /auth/password/reset。
+	// 公开端点（未登录可调）不声明 security；005 新增 /auth/code、/auth/password/reset 与 /auth/captcha。
 	publicPaths := map[string]bool{
 		"/api/v1/auth/login":          true,
 		"/api/v1/auth/mfa/verify":     true,
 		"/api/v1/auth/code":           true,
 		"/api/v1/auth/password/reset": true,
+		"/api/v1/auth/captcha":        true,
 	}
 
 	ops := 0
@@ -274,8 +275,8 @@ func TestEmbeddedSpecStructure(t *testing.T) {
 			}
 		}
 	}
-	if ops != 55 {
-		t.Fatalf("operation 数为 %d，规范要求 55", ops)
+	if ops != 56 {
+		t.Fatalf("operation 数为 %d，规范要求 56", ops)
 	}
 
 	scheme, ok := doc.Components.SecuritySchemes["cookieAuth"]

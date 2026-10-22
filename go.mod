@@ -14,6 +14,7 @@ require (
 	github.com/zitadel/oidc/v3 v3.28.0
 	go.uber.org/fx v1.23.0
 	golang.org/x/crypto v0.31.0
+	golang.org/x/image v0.20.0
 	gorm.io/driver/mysql v1.5.7
 	gorm.io/gorm v1.25.12
 )

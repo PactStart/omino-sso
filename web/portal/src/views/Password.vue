@@ -41,21 +41,13 @@ const sendingCode = ref(false)
 const cooldown = ref(0)
 let cooldownTimer: number | undefined
 
-const channelTarget = computed(() =>
+/** 已绑定联系方式的展示值（服务端已脱敏，前端不再二次处理） */
+const boundContact = computed(() =>
   form.channel === 'sms' ? (me.value?.phone ?? '') : (me.value?.email ?? ''),
 )
 
 /** 未绑定任何联系方式时，验证码方式不可用 */
 const canUseCode = computed(() => Boolean(me.value?.phone || me.value?.email))
-
-/** 提示里只展示脱敏后的接收方 */
-const maskedTarget = computed(() => {
-  const target = channelTarget.value
-  if (!target) return ''
-  if (form.channel === 'sms') return target.replace(/^(\d{3})\d{4}(\d{4})$/, '$1****$2')
-  const [name, domain] = target.split('@')
-  return domain ? `${name.slice(0, 1)}***@${domain}` : target
-})
 
 onMounted(() => {
   if (!me.value?.phone) form.channel = 'email'
@@ -101,18 +93,15 @@ function startCooldown(seconds: number) {
 
 async function sendVerifyCode() {
   errors.code = ''
-  if (!channelTarget.value) {
+  if (!boundContact.value) {
     errors.code = '当前账号未绑定该联系方式'
     return
   }
   if (sendingCode.value || cooldown.value > 0) return
   sendingCode.value = true
   try {
-    const res = await sendCode({
-      scene: 'find_password',
-      channel: form.channel,
-      target: channelTarget.value,
-    })
+    // 目标由服务端按会话解析，浏览器不持有完整联系方式
+    const res = await sendCode({ scene: 'find_password', channel: form.channel })
     startCooldown(res.resendAfter || 60)
     toast.success('验证码已发送')
   } catch (e) {
@@ -290,7 +279,7 @@ async function submit() {
             </button>
           </div>
           <p v-if="errors.code" class="mt-1.5 text-xs text-rose-600">{{ errors.code }}</p>
-          <p v-else class="mt-1.5 text-xs text-ink-400">验证码将发送至 {{ maskedTarget }}</p>
+          <p v-else class="mt-1.5 text-xs text-ink-400">验证码将发送至 {{ boundContact }}</p>
         </div>
 
         <div>

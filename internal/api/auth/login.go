@@ -23,6 +23,7 @@ type Handler struct {
 	users    *service.UserService
 	sessions *service.SessionService
 	notif    *notification.Service
+	captcha  *service.CaptchaService
 	audit    *service.Auditor
 	log      *slog.Logger
 }
@@ -33,10 +34,14 @@ func NewHandler(
 	users *service.UserService,
 	sessions *service.SessionService,
 	notif *notification.Service,
+	captcha *service.CaptchaService,
 	audit *service.Auditor,
 	logger *slog.Logger,
 ) *Handler {
-	return &Handler{cfg: cfg, users: users, sessions: sessions, notif: notif, audit: audit, log: logger}
+	return &Handler{
+		cfg: cfg, users: users, sessions: sessions, notif: notif,
+		captcha: captcha, audit: audit, log: logger,
+	}
 }
 
 // 登录方式枚举（契约 verification-api.md §2）。
@@ -96,6 +101,10 @@ func (h *Handler) Login(c *gin.Context) {
 		loginType = LoginTypePassword
 	}
 	if loginType != LoginTypePassword {
+		// 未登录的验证码登录先过图形验证码，避免批量试码与账号枚举（005 边界用例）。
+		if !h.verifyCaptcha(c, req.CaptchaID, req.CaptchaCode) {
+			return
+		}
 		h.loginByCode(c, req, loginType, clientID, meta)
 		return
 	}

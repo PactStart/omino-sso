@@ -218,3 +218,39 @@ Task: "T018 在 internal/service/user.go 实现 BindPhone/BindEmail"
 - 验证码同步落库（E1 决策），不可改回异步
 - 唯一索引 `uk_users_phone` 建表前须核对存量重复数据
 - 提交粒度：一个逻辑变更一个提交
+
+---
+
+## Phase 10: Convergence
+
+- [X] T050 为未登录的 `/auth/code`（`login`/`find_password` 场景）与 `/auth/login` 补齐图形验证码校验链路：新增签发/校验服务与端点、对应 DTO 与配置、`AUTH_CAPTCHA_INVALID` 的实际返回，并在 `web/portal/src/views/Login.vue`（含忘记密码流程）渲染与刷新图形验证码，消除当前 `captchaId/captchaCode` 仅透传、错误码无使用点的问题 per spec Edge Cases「未登录防刷」/ Assumptions（missing）
+- [X] T051 验证码登录失败时按 spec 给出统一提示并附绑定指引「如未绑定手机号/邮箱，请用密码登录后到账号中心绑定」，不再复用 `web/portal/src/views/Login.vue` 的「用户名或密码错误」横幅（区分密码登录与验证码登录两条分支，且不泄露账号是否存在）per US2/AC5（partial）
+- [X] T052 让 `GET /api/v1/me` 返回脱敏后的手机号/邮箱（`internal/api/dto` + `internal/api/me/profile.go`，复用 `notification.MaskTarget`），并移除前端二次脱敏（`web/portal/src/views/Password.vue` 的 `maskedTarget`）与明文展示（`web/portal/src/views/Account.vue`）；如坚持返回明文，须在 `spec.md`/`tasks.md` 显式记录该偏离 per Clarifications Q4「联系方式脱敏」（contradicts）
+- [X] T053 新增服务端镜像构建：多阶段 `Dockerfile` 编译 `cmd/sso` 并 `COPY configs/verify-mail.tmpl`（`MAIL_TEMPLATE_PATH` 可命中），`docker-compose.yml` 增加 sso 服务（依赖 mysql/redis 健康检查），使 FR-012 的「镜像构建时一并复制模板」可验证 per FR-012（missing）
+- [X] T054 引入前端测试：`web/portal` 加 `vitest` + `@vue/test-utils`（精确版本并登记 AGENTS.md §2.2）、`npm run test` 脚本与首屏用例（登录方式切换、验证码获取倒计时、忘记密码流程），并接入 `make test` 或 `make lint` 聚合门禁 per plan.md Testing 决策（missing）
+- [X] T055 为未绑定手机号/邮箱的存量账号在账号中心增加一次性、可关闭的绑定引导（「建议绑定联系方式以启用验证码登录与找回」），关闭状态本地持久化、不强制 per spec Assumptions「存量账号绑定引导」（missing）
+- [X] T056 同步任务与目录记录：已登录改密入口已由 `web/portal/src/views/Account.vue` 迁至 `web/portal/src/views/Password.vue`（原密码 / 验证码双方式，`POST /me/password` 与 `POST /me/password/reset`），在本文件实施备注与 AGENTS.md §3 目录说明中更正 T032 的落点描述 per tasks.md T032 / plan.md 结构（contradicts）
+
+**实施备注（Phase 10，2026-10-22）**
+
+- **T032 落点更正**：已登录的「验证码重置密码」入口已从 `web/portal/src/views/Account.vue` 迁至 `web/portal/src/views/Password.vue`（原密码 / 验证码双方式）；Account 页「安全状态」仅保留 MFA 启用/解绑的行内按钮。
+- **T050**：`internal/service/captcha.go`（Redis `captcha:` 前缀、120 秒、`GETDEL` 一次性消费、SVG data URL）＋ `GET /api/v1/auth/captcha`；`/auth/code` 的 `login`/`find_password` 与 `/auth/login` 的 `email_code`/`sms_code` 强制校验，`AUTH_CAPTCHA_INVALID` 已实际返回；portal 的验证码登录与找回密码两处渲染并在失败后自动换图。
+- **T052**：`GET /api/v1/me` 返回 `notification.MaskPhone`/`MaskEmail` 脱敏值；`/auth/code` 已登录的 `mfa_unbind`/`find_password` 忽略请求体 `target`、改由服务端按会话解析；`Password.vue` 删除 `maskedTarget`，`Account.vue` 解绑不再传 `target`。
+- **T053**：`Dockerfile`（`golang:1.26-alpine` → `alpine:3.20`，非 root 用户）COPY `configs/verify-mail.tmpl` 并设 `MAIL_TEMPLATE_PATH`；`docker-compose.yml` 新增 `sso` 服务（依赖 mysql/redis 健康检查）。
+- **T054**：`vitest 3.2.7` + `@vue/test-utils 2.5.1` + `jsdom 25.0.1`（精确版本，已登记 AGENTS.md §2.2）；`Login.spec.ts` 5 条用例覆盖登录方式切换、图形验证码拦截/透传/失效、验证码登录失败提示；`make test` = `test-go` + `test-web`。
+- **T055**：Account 页顶部可关闭引导（`localStorage` 键 `omino.portal.bind-hint-dismissed`），仅在手机号与邮箱均未绑定时出现，含「去绑定」锚点跳转。
+
+---
+
+## Phase 11: Convergence
+
+- [X] T057 让图形验证码无法被脚本直接解析：当前 `internal/service/captcha.go` 把 4 位码以 `<text>` 明文写入 SVG 并 base64 成 data URL，任何脚本解码即可读出答案，未达成「避免批量探测账号」；改为位图（`image/png` 标准库绘制）或路径化字符渲染，禁止在可解析节点中保留明文码，并同步调整 `Login.vue` 的 `<img src>` 取图与 `Login.spec.ts` 断言（不得仅靠 mock 图片证明可用）per spec Edge Cases「未登录防刷」（partial）
+- [X] T058 对齐图形码的一次性消费与前端刷新时机：服务端 `Verify` 每次 `GetDel` 即消费，而 `web/portal/src/views/Login.vue` 的 `ensureCaptcha` 只在 `captcha.id` 为空时拉取、`refreshCaptcha` 只在 `AUTH_CAPTCHA_INVALID` 分支触发，导致发送成功后再重发或验证码登录失败后重试时，第一次提交必然先失败一次；改为「发送成功后刷新」「登录失败（`AUTH_CODE_INVALID`/`AUTH_INVALID_CREDENTIALS`）后刷新」，或在服务端改为仅成功路径消费，并补一条用例覆盖重试路径 per T050（partial）
+- [X] T059 让 `make test` 在干净检出环境可用：`test-web` 目前只跑 `npm run test`，而 `web/portal/node_modules` 不入库（实测缺失时报 `sh: vitest: command not found`）；改为 npm 依赖缺失时按 `$(NPM_INSTALL)` 安装（或把前端依赖安装纳入 `deps`），确保新克隆仓库直接 `make test` 通过 per Constitution「开发工作流与质量门禁」（partial）
+
+**实施备注（Phase 11，2026-10-22）**
+
+- **T057**：`internal/service/captcha.go` 改为 `image/png` 位图输出——`basicfont.Face7x13` 逐字绘制到 7x13 槽位、最近邻放大 2 倍、逐行剪切叠加，再叠 3 条干扰线与 160 个噪点，最终 `data:image/png;base64,…`；响应体不再包含任何可解析的明文码。新增 `TestCaptchaImageCarriesNoPlaintext`（解码 PNG、断言尺寸 120x40、断言原始字节不含验证码字符串、断言深色像素数）。新增依赖 `golang.org/x/image v0.20.0`（仅 `font/basicfont` 与 `math/fixed`），已登记 AGENTS.md §2.1 并说明理由，`go.mod` 其余锁定版本未变动。
+- **T058**：`Login.vue` 在「发送验证码成功」与「验证码登录提交失败」后立即 `refreshCaptcha()`（服务端 `GetDel` 已消费），`AUTH_CAPTCHA_INVALID` 分支改为只提示不重复拉取；新增 2 条用例覆盖「发送成功后换图」「登录失败后换图，重试不再多失败一次」，前端用例共 7 条。
+- **T059**：`make test-web` 增加 `test -d web/portal/node_modules || $(NPM_INSTALL)`，干净检出可直接 `make test`；本机已有依赖时跳过安装，仍走 `npm ci` 的锁文件一致性语义。
+- **T057 缺陷修复（2026-10-22，人工验收反馈「只能看到 3 个字符」）**：原布局用 `slide = 6 + (宽-6-4*字宽)/3` 当字符步长（120 画布下步长 39），第 4 个字符起点落到 x=121，整字被画出画布。改为 `glyphOrigins()` 按真实字宽反推间隙，并新增两条回归：`TestCaptchaGlyphLayoutFitsCanvas`（各字符含右边界必须落在留白内）与图片用例的「最右字符区域必须有笔画」。同时把画布提到 132x44、字模放大 3 倍并加粗，字母表去掉位图下易与 8/5 混淆的 `B`/`S`；前端 `img` 容器改为 `132x44` + `object-contain`（原 `object-cover` 在 120x42 容器里还会横向裁掉约 3px）。

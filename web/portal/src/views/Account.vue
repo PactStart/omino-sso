@@ -32,6 +32,22 @@ const me = computed(() => session.user)
 
 const avatarBroken = ref(false)
 
+/** 存量账号绑定引导：仅在手机号与邮箱都未绑定时出现，可一次性关闭（不强制）。 */
+const BIND_HINT_KEY = 'omino.portal.bind-hint-dismissed'
+const bindHintOpen = ref(localStorage.getItem(BIND_HINT_KEY) !== '1')
+const needBindHint = computed(
+  () => bindHintOpen.value && !!me.value && !me.value.phone && !me.value.email,
+)
+
+function dismissBindHint() {
+  bindHintOpen.value = false
+  localStorage.setItem(BIND_HINT_KEY, '1')
+}
+
+function focusContact() {
+  document.getElementById('contact-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 watch(
   () => me.value?.avatarUrl,
   () => {
@@ -275,15 +291,16 @@ function startUnbindCooldown(seconds: number) {
 
 async function sendUnbindCode() {
   unbindError.value = ''
-  const target = unbindChannel.value === 'sms' ? (me.value?.phone ?? '') : (me.value?.email ?? '')
-  if (!target) {
+  const bound = unbindChannel.value === 'sms' ? (me.value?.phone ?? '') : (me.value?.email ?? '')
+  if (!bound) {
     unbindError.value = '当前账号未绑定该联系方式'
     return
   }
   if (unbindSending.value || unbindCooldown.value > 0) return
   unbindSending.value = true
   try {
-    const res = await sendCode({ scene: 'mfa_unbind', channel: unbindChannel.value, target })
+    // 目标由服务端按会话解析（/me 只返回脱敏值，浏览器不再持有完整联系方式）
+    const res = await sendCode({ scene: 'mfa_unbind', channel: unbindChannel.value })
     startUnbindCooldown(res.resendAfter || 60)
     toast.success('验证码已发送')
   } catch (e) {
@@ -367,6 +384,32 @@ onMounted(() => load())
 
     <!-- 正常 -->
     <div v-else-if="me" class="grid items-start gap-5 lg:grid-cols-[280px_1fr]">
+      <!-- 存量账号引导：手机号与邮箱都未绑定时的建议（可关闭、不强制） -->
+      <div
+        v-if="needBindHint"
+        class="flex flex-wrap items-center justify-between gap-3 rounded-card border border-amber-200 bg-amber-50 px-4 py-3 lg:col-span-2"
+      >
+        <p class="text-sm text-amber-800">
+          建议绑定手机号或邮箱，以启用验证码登录与密码找回；绑定后仍可使用密码登录。
+        </p>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            class="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-amber-700"
+            @click="focusContact"
+          >
+            去绑定
+          </button>
+          <button
+            type="button"
+            class="rounded-lg px-2 py-1.5 text-xs text-amber-700 transition hover:text-amber-900"
+            @click="dismissBindHint"
+          >
+            关闭
+          </button>
+        </div>
+      </div>
+
       <!-- 左：身份卡片 -->
       <section class="rounded-card border border-ink-200 bg-white p-6 text-center">
         <img
@@ -439,7 +482,7 @@ onMounted(() => load())
 
       <!-- 右：信息分组 -->
       <div class="space-y-5">
-        <section class="rounded-card border border-ink-200 bg-white p-6">
+        <section id="contact-section" class="rounded-card border border-ink-200 bg-white p-6">
           <h3 class="text-sm font-semibold text-ink-800">基本信息</h3>
           <dl class="mt-4 grid gap-x-8 gap-y-4 sm:grid-cols-2">
             <div>

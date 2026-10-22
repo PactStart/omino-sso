@@ -69,6 +69,7 @@ func main() {
 			newFileStore,
 			service.NewFileService,
 			service.NewMFAService,
+			service.NewCaptchaService,
 			service.NewCleanupService,
 			newKeyManager,
 			oidc.NewStorage,
@@ -163,12 +164,13 @@ func runServers(
 	appAuth *service.AppAuthService,
 	fileSvc *service.FileService,
 	notif *notification.Service,
+	captcha *service.CaptchaService,
 	mfaSvc *service.MFAService,
 	audit *service.Auditor,
 ) {
 	oidc.NewServer(lc, cfg, provider, oidcStorage, st, users, sessions, clients, audit, logger)
 
-	router := api.NewRouter(cfg, st, users, sessions, clients, orgs, appAuth, fileSvc, notif, mfaSvc, audit, logger)
+	router := api.NewRouter(cfg, st, users, sessions, clients, orgs, appAuth, fileSvc, notif, captcha, mfaSvc, audit, logger)
 	api.NewServer(lc, cfg, router, logger)
 }
 
