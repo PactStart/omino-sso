@@ -6115,7 +6115,7 @@
     },
     "/api/v1/auth/code": {
       "post": {
-        "description": "按场景向手机号或邮箱发送 6 位验证码（默认 5 分钟有效，同一目标 60 秒内不可重发）。bind_phone / bind_email 需登录会话且目标已被他人占用时返回 VERIFY_TARGET_IN_USE；login / find_password / mfa_unbind 对未注册或未绑定的目标返回与成功一致的响应但不真实发送（防枚举）。provider=mock 时验证码固定 888888 且不产生真实短信/邮件。\n目标解析：已登录会话的 mfa_unbind 与 find_password 场景忽略请求体 target，一律取该账号已绑定的联系方式（脱敏后不回落浏览器）；未登录的 login / find_password 与 bind_* 场景必须传 target。\n图形验证码：未登录调用 login / find_password 场景必须携带 captchaId + captchaCode（先调用 GET /auth/captcha），否则返回 AUTH_CAPTCHA_INVALID；已登录调用不校验。",
+        "description": "按场景向手机号或邮箱发送 6 位验证码（默认 5 分钟有效，同一目标 60 秒内不可重发）。bind_phone / bind_email 需登录会话且目标已被他人占用时返回 VERIFY_TARGET_IN_USE；login 场景目标未绑定任何账号时返回 VERIFY_TARGET_NOT_FOUND（2026-10-22 起，为可诊断性放弃该场景的防枚举）；find_password 仍对未注册目标返回与成功一致的响应但不真实发送。provider=mock 时验证码固定 888888 且不产生真实短信/邮件。\n目标解析：已登录会话的 mfa_unbind 与 find_password 场景忽略请求体 target，一律取该账号已绑定的联系方式（脱敏后不回落浏览器）；未登录的 login / find_password 与 bind_* 场景必须传 target。\n图形验证码：未登录调用 login / find_password 场景必须携带 captchaId + captchaCode（先调用 GET /auth/captcha），否则返回 AUTH_CAPTCHA_INVALID；已登录调用不校验。",
         "requestBody": {
           "content": {
             "application/json": {
@@ -6170,6 +6170,16 @@
               }
             },
             "description": "UNAUTHENTICATED（bind 类场景缺少会话）"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VERIFY_TARGET_NOT_FOUND"
           },
           "409": {
             "content": {

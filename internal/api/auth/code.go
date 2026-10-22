@@ -29,7 +29,7 @@ type SendCodeRequest struct {
 // SendCode 发送短信/邮箱验证码。
 //
 // @Summary      发送验证码
-// @Description  按场景向手机号或邮箱发送 6 位验证码（默认 5 分钟有效，同一目标 60 秒内不可重发）。bind_phone / bind_email 需登录会话且目标已被他人占用时返回 VERIFY_TARGET_IN_USE；login / find_password / mfa_unbind 对未注册或未绑定的目标返回与成功一致的响应但不真实发送（防枚举）。provider=mock 时验证码固定 888888 且不产生真实短信/邮件。
+// @Description  按场景向手机号或邮箱发送 6 位验证码（默认 5 分钟有效，同一目标 60 秒内不可重发）。bind_phone / bind_email 需登录会话且目标已被他人占用时返回 VERIFY_TARGET_IN_USE；login 场景目标未绑定任何账号时返回 VERIFY_TARGET_NOT_FOUND（2026-10-22 起，为可诊断性放弃该场景的防枚举）；find_password 仍对未注册目标返回与成功一致的响应但不真实发送。provider=mock 时验证码固定 888888 且不产生真实短信/邮件。
 // @Description  目标解析：已登录会话的 mfa_unbind 与 find_password 场景忽略请求体 target，一律取该账号已绑定的联系方式（脱敏后不回落浏览器）；未登录的 login / find_password 与 bind_* 场景必须传 target。
 // @Description  图形验证码：未登录调用 login / find_password 场景必须携带 captchaId + captchaCode（先调用 GET /auth/captcha），否则返回 AUTH_CAPTCHA_INVALID；已登录调用不校验。
 // @Tags         认证
@@ -39,6 +39,7 @@ type SendCodeRequest struct {
 // @Success      200   {object}  response.Body{data=SendCodeResult}  "已发送（或按防枚举约定静默成功）"
 // @Failure      400   {object}  response.Body  "VALIDATION_FAILED / AUTH_CAPTCHA_INVALID"
 // @Failure      401   {object}  response.Body  "UNAUTHENTICATED（bind 类场景缺少会话）"
+// @Failure      404   {object}  response.Body  "VERIFY_TARGET_NOT_FOUND"
 // @Failure      409   {object}  response.Body  "VERIFY_TARGET_IN_USE"
 // @Failure      429   {object}  response.Body  "RATE_LIMITED"
 // @Failure      500   {object}  response.Body  "INTERNAL_ERROR"
@@ -128,8 +129,17 @@ func (h *Handler) SendCode(c *gin.Context) {
 			return
 		}
 		if owner == nil {
-			// 防枚举：与真实发送成功时的响应完全一致。
-			response.Success(c, SendCodeResult{ExpiresIn: 300, ResendAfter: 60})
+			// login 场景明确告知"未绑定"，否则用户只能看到"发送成功"却永远收不到码
+			// （1600 行日志也查不到记录），代价是放弃该场景的防枚举（规范 §4.1）。
+			// find_password 仍保持静默成功，避免在找回密码流程泄露注册状态。
+			if req.Scene == notification.SceneLogin {
+				response.Fail(c, response.ErrVerifyTargetNotFound.WithMessage(
+					"该"+channelLabel(req.Channel)+"未绑定任何账号，请用密码登录后到账号中心绑定"))
+				return
+			}
+			// 响应形状与真实发送一致，但阈值取自配置，避免前端倒计时与策略脱节。
+			expiresIn, resendAfter := h.notif.Policy()
+			response.Success(c, SendCodeResult{ExpiresIn: expiresIn, ResendAfter: resendAfter})
 			return
 		}
 		in.UserID = owner.ID
@@ -155,6 +165,14 @@ func (h *Handler) failSendCode(c *gin.Context, err error) {
 		h.log.Error("send verification code", "err", err)
 		response.Fail(c, response.ErrInternal)
 	}
+}
+
+// channelLabel 把渠道枚举转成用户可读的称呼，用于错误提示文案。
+func channelLabel(channel string) string {
+	if channel == notification.ChannelSMS {
+		return "手机号"
+	}
+	return "邮箱"
 }
 
 // boundContact 返回账号在该渠道上已绑定的完整联系方式。
