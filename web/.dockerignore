@@ -1,0 +1,12 @@
+# 前端镜像构建上下文（web/）裁剪
+#
+# 上下文只允许：源码 + package-lock + nginx 模板。
+# 排除后镜像里不会出现宿主机的 node_modules、旧产物与本地 .env（避免"本地配置串进镜像"）。
+
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+!**/.env.example
+**/*.log
+**/.DS_Store

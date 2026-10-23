@@ -54,6 +54,14 @@ services:
       REDIS_ADDR: redis:6379
       SMS_PROVIDER: ${SMS_PROVIDER:-mock}
       MAIL_PROVIDER: ${MAIL_PROVIDER:-mock}
+      # 前端 nginx 也是反代的一跳：本地信任 docker 私网网段，审计里才会是真实客户端 IP
+      # （生产按实际 LB / 容器网段填写，见 deploy/env/*.env.example）
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.16.0.0/12}
+      # 初始化管理员：仅在 users 表为空时创建；留空 = 不创建（避免无意中重置口令）
+      ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_BOOTSTRAP_USERNAME:-}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
+      # 便于本地复现「探针不被限流」：RATE_LIMIT_API_PER_MIN=1 docker compose up -d sso
+      RATE_LIMIT_API_PER_MIN: ${RATE_LIMIT_API_PER_MIN:-300}
     ports:
       - "127.0.0.1:${SSO_HOST_PORT:-8080}:8080"
       - "127.0.0.1:${ADMIN_HOST_PORT:-8081}:8081"
@@ -64,6 +72,66 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      # 探针不被限流（middleware 对 /healthz 短路），故可作为编排级存活判定
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+
+  # 前端：与线上同构（nginx 静态托管 + 同源 /api/ 反代），差异只有 API_UPSTREAM 的取值。
+  # 命名提示：ADMIN_HOST_PORT 是后端管理 API（8081），ADMIN_UI_HOST_PORT 才是后台页面（8090）。
+  portal:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      target: portal
+      args:
+        VITE_ADMIN_HOME: http://localhost:${ADMIN_UI_HOST_PORT:-8090}/
+        VITE_PORTAL_HOME: http://localhost:${PORTAL_HOST_PORT:-8088}/account/profile
+        VITE_PORTAL_LOGIN_URL: http://localhost:${PORTAL_HOST_PORT:-8088}/login
+        VITE_SITE_NAME: ${VITE_SITE_NAME:-统一身份认证}
+    container_name: omino-sso-portal
+    environment:
+      # 一体化：直连同一编排里的 sso 管理 API（线上换内网 api 域）
+      API_UPSTREAM: http://sso:8081
+    ports:
+      - "${PORTAL_HOST_PORT:-8088}:80"
+    depends_on:
+      # nginx 启动期解析 upstream：sso 未就绪会让前端容器直接退出并进入重启循环
+      sso:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  admin:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      target: admin
+      args:
+        VITE_PORTAL_HOME: http://localhost:${PORTAL_HOST_PORT:-8088}/account/profile
+        VITE_PORTAL_LOGIN_URL: http://localhost:${PORTAL_HOST_PORT:-8088}/login
+        VITE_SITE_NAME: ${VITE_SITE_NAME:-统一身份认证}
+    container_name: omino-sso-admin
+    environment:
+      API_UPSTREAM: http://sso:8081
+    ports:
+      - "${ADMIN_UI_HOST_PORT:-8090}:80"
+    depends_on:
+      sso:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
 
 volumes:
   omino-mysql-data:

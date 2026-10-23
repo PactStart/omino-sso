@@ -25,7 +25,7 @@ const menus = [
 
 const activeMenu = computed(() => {
   const tab = activeTab.value
-  return menus.some((m) => m.key === tab) ? `/admin/clients/${clientId.value}/${tab}` : `/admin/clients/${clientId.value}/overview`
+  return menus.some((m) => m.key === tab) ? `/clients/${clientId.value}/${tab}` : `/clients/${clientId.value}/overview`
 })
 
 const detail = ref<ClientDetail | null>(null)
@@ -89,7 +89,7 @@ watch(clientId, () => void loadDetail(), { immediate: true })
     <div v-else v-loading="loading" class="sub-body">
       <aside class="sub-aside">
         <el-menu :default-active="activeMenu" router class="sub-menu">
-          <el-menu-item v-for="m in menus" :key="m.key" :index="`/admin/clients/${clientId}/${m.key}`">
+          <el-menu-item v-for="m in menus" :key="m.key" :index="`/clients/${clientId}/${m.key}`">
             {{ m.label }}
           </el-menu-item>
         </el-menu>

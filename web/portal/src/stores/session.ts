@@ -79,6 +79,7 @@ export function useSignOut() {
   const router = useRouter()
   return async () => {
     await session.signOut()
-    await router.replace({ path: '/login' })
+    // FR-023：登出后必须给出"已退出"反馈，靠 ?loggedOut=1 传给登录页
+    await router.replace({ path: '/login', query: { loggedOut: '1' } })
   }
 }

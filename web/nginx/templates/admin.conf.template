@@ -1,0 +1,87 @@
+# admin.<主域>：后台 SPA 静态托管 + 同源 /api/ 反代
+#
+# 与 portal.conf 的差别只有站点产物与注释，nginx 行为必须逐条一致
+# （contracts/nginx-routing.md §2：缓存、超时、透传头、探针、gzip 同样适用）。
+#
+# 关键：后台是**根路径**托管，入口为 https://admin.<主域>/users。
+#   不得出现 `location /admin/`，也不得为旧路径写 redirect（FR-004：MUST NOT 再有 /admin 前缀）。
+#   vite 侧 base 必须是 '/'，nginx 侧只需 SPA fallback 就能让 /clients/<id>/members 刷新 200。
+#
+# 模板机制：本文件是唯一模板源（仓库内 web/nginx/admin.conf 是指向它的链接，
+#   避免两份内容漂移），由官方镜像的 20-envsubst-on-templates.sh 渲染到
+#   /etc/nginx/conf.d/admin.conf。
+
+# LB 终止 TLS 时沿用其传入协议；本机终止（或直连）时退回 $scheme
+map $http_x_forwarded_proto $admin_forwarded_proto {
+    default $http_x_forwarded_proto;
+    ""      $scheme;
+}
+
+server {
+    listen      80;
+    server_name _;
+
+    root  /usr/share/nginx/html;
+    index index.html;
+
+    server_tokens off;
+    client_max_body_size 10m;
+
+    gzip              on;
+    gzip_min_length   1024;
+    gzip_proxied      any;
+    # text/html 恒定压缩，写进 gzip_types 会触发 "duplicate MIME type" 警告
+    gzip_types        text/css application/javascript application/json image/svg+xml;
+
+    # 同源反代：目标来自 API_UPSTREAM，路径原样透传
+    # ^~ 让该前缀优先于下方静态资源正则，避免 /api/v1/...png 之类被当静态文件
+    location ^~ /api/ {
+        proxy_pass ${API_UPSTREAM};
+        proxy_http_version    1.1;
+        proxy_connect_timeout 5s;
+        # 与前端 axios 的 15s 超时错开：让前端先超时，好给友好提示
+        proxy_read_timeout    30s;
+        proxy_send_timeout    30s;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        # 追加而非覆盖：保留 LB 写入的原始客户端 IP
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $admin_forwarded_proto;
+        proxy_set_header X-Forwarded-Host  $host;
+    }
+
+    # 前端容器自身的存活探针（不探后端，因此不配 /readyz）
+    # 缺了这段，容器 healthcheck 会恒 404 → 永远 unhealthy
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        add_header Cache-Control "no-store";
+        return 200 "ok";
+    }
+
+    # /readyz 只服务于容器内 healthcheck；公网必须 404（FR-015）。
+    # 缺这条时 SPA fallback 会把它兜成 200 的 index.html —— 监控会误判"依赖已就绪"。
+    location = /readyz {
+        access_log off;
+        return 404;
+    }
+
+    # 指纹资源长缓存；文件名带 hash，可安全 immutable
+    location ~* \.(js|css|woff2?|png|jpe?g|svg|ico)$ {
+        access_log off;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    # 应用壳不能缓存，否则发布后浏览器仍拿旧 index.html
+    location = /index.html {
+        add_header Cache-Control "no-store";
+    }
+
+    # SPA fallback：/clients/<id>/members 等深链刷新必须 200（根路径，无 /admin 前缀）
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

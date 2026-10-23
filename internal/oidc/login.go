@@ -12,11 +12,13 @@ import (
 	"github.com/pquerna/otp/totp"
 
 	"github.com/omino/omino-sso/internal/config"
+	"github.com/omino/omino-sso/internal/pkg/clientip"
+	"github.com/omino/omino-sso/internal/pkg/cookie"
 	"github.com/omino/omino-sso/internal/service"
 	"github.com/omino/omino-sso/internal/store/model"
 )
 
-const sessionCookie = "sid"
+const sessionCookie = cookie.Name
 
 var loginTmpl = template.Must(template.New("login").Parse(`<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><title>统一登录</title>
@@ -125,7 +127,8 @@ func (h *loginHandler) post(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	clientName := h.clientName(r.Context(), req.ClientID)
-	ip := clientIP(r)
+	// 与 Gin 侧同一套可信代理解析：无条件信任 XFF 会让审计 IP 可被客户端伪造。
+	ip := clientip.FromRequest(r, h.cfg.TrustedProxies)
 	ua := r.UserAgent()
 
 	// 第二步：MFA
@@ -235,10 +238,8 @@ func (h *logoutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookie); err == nil {
 		_ = h.sessions.Revoke(r.Context(), c.Value)
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name: sessionCookie, Value: "", Path: "/", MaxAge: -1,
-		Domain: h.cfg.CookieDomain, HttpOnly: true, Secure: h.cfg.CookieSecure,
-	})
+	// 清除与写入共用同一实现（含 Domain/SameSite），否则只会留下 host-only 空 cookie。
+	cookie.ClearSession(w, h.cfg)
 	next := r.URL.Query().Get("next")
 	if next == "" {
 		next = "/logged-out"
@@ -250,39 +251,6 @@ func (h *logoutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // ---------------- 共享工具 ----------------
 
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		for i := 0; i < len(xff); i++ {
-			if xff[i] == ',' {
-				return xff[:i]
-			}
-		}
-		if xff != "" {
-			return xff
-		}
-	}
-	host := r.RemoteAddr
-	for i := len(host) - 1; i >= 0; i-- {
-		if host[i] == ':' {
-			return host[:i]
-		}
-	}
-	return host
-}
-
 func setSessionCookie(w http.ResponseWriter, cfg *config.Config, sid string, ttl time.Duration) {
-	sameSite := http.SameSiteLaxMode
-	if cfg.CookieSameSite == "Strict" {
-		sameSite = http.SameSiteStrictMode
-	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookie,
-		Value:    sid,
-		Path:     "/",
-		Domain:   cfg.CookieDomain,
-		HttpOnly: true,
-		Secure:   cfg.CookieSecure,
-		SameSite: sameSite,
-		MaxAge:   int(ttl.Seconds()),
-	})
+	cookie.SetSession(w, cfg, sid, ttl)
 }

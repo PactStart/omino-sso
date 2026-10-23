@@ -2,7 +2,6 @@ package me
 
 import (
 	"log/slog"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
 
@@ -10,12 +9,14 @@ import (
 	"github.com/omino/omino-sso/internal/api/dto"
 	"github.com/omino/omino-sso/internal/api/middleware"
 	"github.com/omino/omino-sso/internal/api/response"
+	"github.com/omino/omino-sso/internal/config"
 	"github.com/omino/omino-sso/internal/service"
 	"github.com/omino/omino-sso/internal/service/notification"
 )
 
 // Handler 处理 /api/v1/me/*。
 type Handler struct {
+	cfg      *config.Config
 	users    *service.UserService
 	sessions *service.SessionService
 	clients  *service.ClientService
@@ -31,6 +32,7 @@ type Handler struct {
 
 // NewHandler 构造。
 func NewHandler(
+	cfg *config.Config,
 	users *service.UserService,
 	sessions *service.SessionService,
 	clients *service.ClientService,
@@ -42,7 +44,7 @@ func NewHandler(
 	logger *slog.Logger,
 ) *Handler {
 	return &Handler{
-		users: users, sessions: sessions, clients: clients,
+		cfg: cfg, users: users, sessions: sessions, clients: clients,
 		files: files, mfa: mfaSvc, appAuth: appAuth, appMgmt: appMgmt,
 		audit: audit, log: logger,
 	}
@@ -175,7 +177,10 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 		Type: "password_changed", UserID: u.ID, Username: u.Username,
 		IP: c.ClientIP(), UserAgent: c.Request.UserAgent(), Result: "success",
 	})
-	http.SetCookie(c.Writer, &http.Cookie{Name: "sid", Value: "", Path: "/", MaxAge: -1})
+	// 改密后必须真正清掉共享会话 cookie（服务端会话已由 ChangePassword 全部吊销）。
+	// 这里曾手写 http.Cookie 而漏了 Domain，在新拓扑下只会生成 host-only 空 cookie，
+	// .example.com 上的真 cookie 仍然有效 —— 表现为"改完密码四个域都还登着"。
+	middleware.ClearSessionCookie(c, h.cfg)
 	response.Success(c, nil)
 }
 

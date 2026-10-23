@@ -39,6 +39,9 @@ func NewServer(
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = w.Write([]byte("signed out successfully"))
 	})
+	// 运维探针：与 :8081 共用同一实现；公网仅放行 /healthz（见 web/nginx/api.conf）。
+	mux.HandleFunc("/healthz", newHealthzHandler())
+	mux.HandleFunc("/readyz", newReadyzHandler(sst))
 	// op.Provider 自身实现 http.Handler，挂在根路径，不经过 Gin。
 	mux.Handle("/", withTokenTx(pkceGuard(provider, sst), sst, logger))
 

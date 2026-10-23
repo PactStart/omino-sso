@@ -13,6 +13,15 @@ bin/
 web/*/node_modules/
 web/*/dist/
 web/dist/
+# 按环境构建的前端配置（模板为 web/*/.env*.example，入库）
+web/*/.env.local
+web/*/.env.development
+web/*/.env.test
+web/*/.env.production
+# 部署机真实 env（模板为 deploy/env/*.env.example，入库）
+deploy/env/*.env
+deploy/env/*.env.*
+!deploy/env/*.env.example
 *.log
 .DS_Store
 

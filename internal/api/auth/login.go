@@ -3,13 +3,13 @@ package auth
 import (
 	"errors"
 	"log/slog"
-	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/omino/omino-sso/internal/api/dto"
+	"github.com/omino/omino-sso/internal/api/middleware"
 	"github.com/omino/omino-sso/internal/api/response"
 	"github.com/omino/omino-sso/internal/config"
 	"github.com/omino/omino-sso/internal/service"
@@ -235,10 +235,7 @@ func (h *Handler) Logout(c *gin.Context) {
 			h.log.Error("revoke session", "err", err)
 		}
 	}
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name: "sid", Value: "", Path: "/", MaxAge: -1,
-		Domain: h.cfg.CookieDomain, HttpOnly: true, Secure: h.cfg.CookieSecure,
-	})
+	middleware.ClearSessionCookie(c, h.cfg)
 	if u, ok := currentUser(c); ok {
 		h.audit.Emit(c.Request.Context(), service.Event{
 			Type: model.EventLogout, UserID: u.ID, Username: u.Username,
@@ -248,19 +245,8 @@ func (h *Handler) Logout(c *gin.Context) {
 	response.Success(c, nil)
 }
 
+// setCookie 保留本包内的调用点，实际写 cookie 统一由 middleware 实现，
+// 避免"写入带 Domain、清除不带 Domain"的漂移。
 func setCookie(c *gin.Context, cfg *config.Config, sid string, ttl time.Duration) {
-	sameSite := http.SameSiteLaxMode
-	if cfg.CookieSameSite == "Strict" {
-		sameSite = http.SameSiteStrictMode
-	}
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     "sid",
-		Value:    sid,
-		Path:     "/",
-		Domain:   cfg.CookieDomain,
-		HttpOnly: true,
-		Secure:   cfg.CookieSecure,
-		SameSite: sameSite,
-		MaxAge:   int(ttl.Seconds()),
-	})
+	middleware.SetSessionCookie(c, cfg, sid, ttl)
 }

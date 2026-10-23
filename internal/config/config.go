@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"sort"
 	"strconv"
@@ -36,6 +37,10 @@ type Config struct {
 	CookieDomain   string
 	CookieSecure   bool
 	CookieSameSite string
+
+	// TrustedProxies 可信反代网段（TRUSTED_PROXIES，逗号分隔 CIDR/单 IP）。
+	// 仅这些来源的 X-Forwarded-For 会被采信；为空表示不信任任何代理。
+	TrustedProxies []netip.Prefix
 
 	DB    DBConfig
 	Redis RedisConfig
@@ -232,6 +237,12 @@ func Load() (*Config, error) {
 		},
 	}
 
+	proxies, err := parseTrustedProxies(env("TRUSTED_PROXIES", ""))
+	if err != nil {
+		return nil, err
+	}
+	c.TrustedProxies = proxies
+
 	raw := env("OIDC_CRYPTO_KEY", "")
 	if raw != "" {
 		b, err := decodeKey(raw)
@@ -305,8 +316,58 @@ func (c *Config) validate() error {
 		if !c.CookieSecure {
 			return errors.New("COOKIE_SECURE must be true in prod")
 		}
+		// 多域名部署下 cookie 必须显式挂在主域：host-only 会让"门户登录成功、进后台又要登录"。
+		if strings.TrimSpace(c.CookieDomain) == "" {
+			return errors.New("COOKIE_DOMAIN is required in prod (e.g. .example.com); host-only cookie breaks cross-subdomain SSO")
+		}
+		if !strings.HasPrefix(c.CookieDomain, ".") {
+			return fmt.Errorf("COOKIE_DOMAIN must be a parent domain starting with '.', got %q", c.CookieDomain)
+		}
+		if strings.Contains(c.CookieDomain, "://") || strings.HasSuffix(c.CookieDomain, "/") {
+			return fmt.Errorf("COOKIE_DOMAIN must be a bare domain without scheme or trailing slash, got %q", c.CookieDomain)
+		}
 	}
 	return nil
+}
+
+// TrustedProxyCIDRs 返回可直接喂给 gin.Engine.SetTrustedProxies 的字符串列表。
+// 单 IP 会被规范化为 /32（或 /128），gin 内部同样按 CIDR 解析。
+func (c *Config) TrustedProxyCIDRs() []string {
+	if len(c.TrustedProxies) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(c.TrustedProxies))
+	for _, p := range c.TrustedProxies {
+		out = append(out, p.String())
+	}
+	return out
+}
+
+// parseTrustedProxies 解析 TRUSTED_PROXIES（逗号分隔 CIDR 或单 IP）。
+// 任一非法项都必须导致启动失败，并指出具体值——静默忽略会让审计 IP 悄悄变错。
+func parseTrustedProxies(raw string) ([]netip.Prefix, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]netip.Prefix, 0, len(parts))
+	for _, part := range parts {
+		item := strings.TrimSpace(part)
+		if item == "" {
+			continue
+		}
+		if p, err := netip.ParsePrefix(item); err == nil {
+			out = append(out, p.Masked())
+			continue
+		}
+		addr, err := netip.ParseAddr(item)
+		if err != nil {
+			return nil, fmt.Errorf("TRUSTED_PROXIES: invalid entry %q (want CIDR like 10.0.0.0/8 or a single IP)", item)
+		}
+		out = append(out, netip.PrefixFrom(addr, addr.BitLen()))
+	}
+	return out, nil
 }
 
 // validateNotification 按 provider 校验短信/邮件通道的必填项，并校验验证码策略。

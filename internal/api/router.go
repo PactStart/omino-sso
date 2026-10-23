@@ -42,14 +42,26 @@ func NewRouter(
 	r := gin.New()
 	r.RedirectTrailingSlash = false
 	r.HandleMethodNotAllowed = true
+	// 仅信任配置声明的反代网段；为空则不信任任何代理（ClientIP 退化为 RemoteAddr）。
+	// 多域名部署下 XFF 有多跳，网段漏配会让审计 IP 变成上游容器地址（FR-014）。
+	if err := r.SetTrustedProxies(cfg.TrustedProxyCIDRs()); err != nil {
+		// 配置已在启动时按 CIDR 校验过，这里只可能是 gin 侧的极端输入，直接退化。
+		logger.Error("set trusted proxies failed, fallback to no proxy", "err", err)
+		_ = r.SetTrustedProxies(nil)
+	}
 	r.Use(middleware.Recover(logger))
 	r.Use(middleware.Trace())
 	r.Use(middleware.RateLimit(st.Redis(), "api", cfg.RateLimitAPIPerMin, time.Minute))
 
+	// 运维探针（规范 §4.0）：挂在根路径、不套统一响应、不进 swagger、不参与限流。
+	// 必须在 /api/v1 分组之外注册，否则会落进业务契约。
+	r.GET("/healthz", healthzHandler())
+	r.GET("/readyz", readyzHandler(st))
+
 	authH := auth.NewHandler(cfg, users, sessions, notif, captcha, audit, logger)
 	adminH := admin.NewHandler(users, clients, orgs, appAuth, fileSvc, notif, audit, logger)
 	// 门户的成员/角色/权限端点转交给 adminH（业务逻辑单一实现，006-app-admin-role）。
-	meH := me.NewHandler(users, sessions, clients, fileSvc, mfaSvc, appAuth, adminH, audit, logger)
+	meH := me.NewHandler(cfg, users, sessions, clients, fileSvc, mfaSvc, appAuth, adminH, audit, logger)
 	filesH := files.NewHandler(fileSvc, logger)
 
 	// 接口文档（规范 §4.0）：仅非 prod 注册，且不套统一响应、不挂限流。

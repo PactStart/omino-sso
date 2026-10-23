@@ -4,24 +4,25 @@ import { useSessionStore } from '@/stores/session'
 import Forbidden from '@/views/Forbidden.vue'
 import NotFound from '@/views/NotFound.vue'
 
+// 路由一律挂在根路径：admin 是独立构建产物、独立域名（admin.<主域>/users），
+// dev 的 5174 与 test/prod 的 nginx 静态站点行为一致，地址栏不得出现 /admin 冗余段（007 FR / SC-002）。
 const routes: RouteRecordRaw[] = [
-  { path: '/', redirect: '/admin/users' },
-  { path: '/admin', redirect: '/admin/users' },
+  { path: '/', redirect: '/users' },
   {
-    path: '/admin/users',
+    path: '/users',
     name: 'users',
     component: () => import('@/views/Users.vue'),
     meta: { title: '用户管理', requiresAdmin: true },
   },
   {
-    path: '/admin/clients',
+    path: '/clients',
     name: 'clients',
     component: () => import('@/views/Clients.vue'),
     meta: { title: '应用管理', requiresAdmin: true },
   },
   {
     // 应用子页面：左侧五菜单固定，右侧内容区由子路由渲染（FR-001 / FR-002）
-    path: '/admin/clients/:clientId',
+    path: '/clients/:clientId',
     component: () => import('@/views/client/ClientDetail.vue'),
     meta: { title: '应用详情', requiresAdmin: true },
     children: [
@@ -75,19 +76,19 @@ const routes: RouteRecordRaw[] = [
     ],
   },
   {
-    path: '/admin/audit',
+    path: '/audit',
     name: 'audit',
     component: () => import('@/views/Audit.vue'),
     meta: { title: '审计日志', requiresAdmin: true },
   },
   {
-    path: '/admin/files',
+    path: '/files',
     name: 'files',
     component: () => import('@/views/Files.vue'),
     meta: { title: '文件管理', requiresAdmin: true },
   },
   {
-    path: '/admin/send-records',
+    path: '/send-records',
     name: 'send-records',
     component: () => import('@/views/SendRecords.vue'),
     meta: { title: '发送记录', requiresAdmin: true },

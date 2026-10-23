@@ -7,9 +7,9 @@ import { PORTAL_HOME, portalLoginUrl } from '@/config'
 const route = useRoute()
 const session = useSessionStore()
 
-// 应用子页面（/admin/clients/:id/*）仍高亮「应用管理」一级菜单
+// 应用子页面（/clients/:id/*）仍高亮「应用管理」一级菜单
 const activeMenu = computed(() =>
-  route.path.startsWith('/admin/clients') ? '/admin/clients' : route.path,
+  route.path.startsWith('/clients') ? '/clients' : route.path,
 )
 const displayName = computed(() => session.user?.displayName ?? '-')
 const initial = computed(() => (displayName.value || '?').slice(0, 1))
@@ -51,11 +51,11 @@ async function handleCommand(command: string) {
         :ellipsis="false"
         class="admin-menu"
       >
-        <el-menu-item index="/admin/users">用户管理</el-menu-item>
-        <el-menu-item index="/admin/clients">应用管理</el-menu-item>
-        <el-menu-item index="/admin/audit">审计日志</el-menu-item>
-        <el-menu-item index="/admin/files">文件管理</el-menu-item>
-        <el-menu-item index="/admin/send-records">发送记录</el-menu-item>
+        <el-menu-item index="/users">用户管理</el-menu-item>
+        <el-menu-item index="/clients">应用管理</el-menu-item>
+        <el-menu-item index="/audit">审计日志</el-menu-item>
+        <el-menu-item index="/files">文件管理</el-menu-item>
+        <el-menu-item index="/send-records">发送记录</el-menu-item>
       </el-menu>
 
       <div class="header-right">

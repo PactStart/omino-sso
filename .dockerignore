@@ -1,10 +1,12 @@
 # 构建上下文只需 Go 源码与 configs/（邮件模板随镜像发布，不可排除）
 .git
+.github
 .gitignore
 .specify
 .tmp
 specs
 tools
+deploy
 web
 node_modules
 **/node_modules
