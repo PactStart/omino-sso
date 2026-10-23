@@ -21,16 +21,26 @@ func New(db *gorm.DB, rdb *redis.Client) *Store {
 
 // Ping 供 op.Storage.Health 使用：必须廉价，不开启事务、不获取锁。
 func (s *Store) Ping(ctx context.Context) error {
+	mysqlErr, redisErr := s.PingDetail(ctx)
+	if mysqlErr != nil {
+		return mysqlErr
+	}
+	return redisErr
+}
+
+// PingDetail 分别探测 MySQL 与 Redis，供 /readyz 输出 failing 明细（规范 §4.0 探针）。
+// MySQL 不通时不再探测 Redis：依赖链上游已断，把 Redis 一起标红只会误导排障。
+func (s *Store) PingDetail(ctx context.Context) (mysqlErr, redisErr error) {
 	sqlDB, err := s.db.DB()
 	if err != nil {
-		return err
+		return err, nil
 	}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 	if err := sqlDB.PingContext(ctx); err != nil {
-		return err
+		return err, nil
 	}
-	return s.rdb.Ping(ctx).Err()
+	return nil, s.rdb.Ping(ctx).Err()
 }
 
 // Redis 暴露 redis 客户端给需要直接使用的服务（限流等）。

@@ -37,7 +37,7 @@ async function retry() {
     await router.replace(nextPath.value)
     return
   }
-  await router.replace('/admin/users')
+  await router.replace('/users')
 }
 
 function relogin() {

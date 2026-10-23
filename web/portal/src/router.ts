@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { ADMIN_HOME } from '@/config'
 import { useSessionStore } from '@/stores/session'
+import { resolveNext } from '@/utils/redirect'
 import type { Me } from '@/api/types'
 import Home from '@/views/Home.vue'
 import Forbidden from '@/views/Forbidden.vue'
@@ -117,9 +118,14 @@ router.beforeEach(async (to) => {
     // 已登录访问登录页 -> 直接落地（PRD §4 P1）
     const me = await session.fetchMe({ silent: true })
     if (!me) return true
-    const next = typeof to.query.next === 'string' ? to.query.next : ''
-    if (next.startsWith('/') && !next.startsWith('/login')) {
-      return { path: next, replace: true }
+    // 回跳目标同样过白名单：跨域（admin 域）整页跳转，站内相对路径走路由
+    const next = resolveNext(to.query.next)
+    if (next?.kind === 'relative') {
+      return { path: next.path, replace: true }
+    }
+    if (next?.kind === 'absolute') {
+      window.location.replace(next.url)
+      return false
     }
     const target = landingFor(me)
     if (target === 'admin') {

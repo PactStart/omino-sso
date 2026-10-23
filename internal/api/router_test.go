@@ -26,6 +26,14 @@ import (
 // 因此由真实请求路径验证（CT-7），无需真的停掉 Redis。
 func newTestRouter(t *testing.T, env string) *gin.Engine {
 	t.Helper()
+	return newTestRouterWith(t, env, nil, nil)
+}
+
+// newTestRouterWith 在默认装配上允许注入自定义 store 与配置覆盖。
+// 探针用例需要「可控的依赖失败」（/readyz 的 failing 明细）与「极小的限流配额」
+// （验证探针不被限流），其余装配保持唯一实现，避免测试各自拼出第二套路由。
+func newTestRouterWith(t *testing.T, env string, st *store.Store, mutate func(*config.Config)) *gin.Engine {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 	cfg := &config.Config{
 		AppEnv:               env,
@@ -33,6 +41,9 @@ func newTestRouter(t *testing.T, env string) *gin.Engine {
 		RateLimitLoginPerMin: 60,
 		SessionTTL:           time.Hour,
 		SessionTTLRemember:   7 * 24 * time.Hour,
+	}
+	if mutate != nil {
+		mutate(cfg)
 	}
 	rdb := redis.NewClient(&redis.Options{
 		Addr:        "127.0.0.1:1",
@@ -42,7 +53,9 @@ func newTestRouter(t *testing.T, env string) *gin.Engine {
 	t.Cleanup(func() { _ = rdb.Close() })
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	st := store.New(nil, rdb)
+	if st == nil {
+		st = store.New(nil, rdb)
+	}
 	audit := service.NewAuditor(st, 1, logger)
 	users := service.NewUserService(st, cfg, audit, logger)
 	sessions := service.NewSessionService(st, cfg)

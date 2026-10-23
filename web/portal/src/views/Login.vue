@@ -5,6 +5,7 @@ import { getCaptcha, login, resetPassword, sendCode, verifyMfa } from '@/api'
 import { errorCode, errorMessage } from '@/api/client'
 import { ADMIN_HOME } from '@/config'
 import { useSessionStore } from '@/stores/session'
+import { nextLabel, resolveNext } from '@/utils/redirect'
 import type { LoginType, VerifyChannel } from '@/api/types'
 
 type Step = 'credentials' | 'mfa' | 'forgot'
@@ -76,13 +77,12 @@ const forgotChannels: { value: VerifyChannel; label: string }[] = [
 
 const activeMode = computed(() => modes.find((m) => m.value === loginType.value) ?? modes[0]!)
 
-const nextPath = computed(() => {
-  const raw = route.query.next
-  return typeof raw === 'string' && raw.startsWith('/') ? raw : ''
-})
+// 四域下 admin 传来的 next 是绝对地址（跨域），站内相对路径同样支持；白名单外的目标丢弃（防开放重定向）。
+const nextTarget = computed(() => resolveNext(route.query.next))
+const nextText = computed(() => nextLabel(nextTarget.value))
 
 const subtitle = computed(() =>
-  nextPath.value ? `登录后返回 ${nextPath.value}` : '登录后返回统一门户',
+  nextText.value ? `登录后返回 ${nextText.value}` : '登录后返回统一门户',
 )
 
 const submitLabel = computed(() => {
@@ -95,6 +95,14 @@ const submitLabel = computed(() => {
 onMounted(() => {
   if (route.query.reason === 'password-changed') {
     showToast('密码已修改，请使用新密码重新登录')
+  }
+  // FR-023：登出统一落回门户登录页并提示"已退出"；提示后立即清除参数，
+  // 否则刷新/前进后退会重复弹提示，且参数会被继续带进后续回跳地址。
+  if (route.query.loggedOut === '1') {
+    showToast('已退出登录')
+    const cleared = { ...route.query }
+    delete cleared.loggedOut
+    router.replace({ path: '/login', query: cleared })
   }
 })
 
@@ -149,8 +157,14 @@ async function goAfterAuth() {
   // 登录页进入时探测过会话（结果为 null），成功后必须强制刷新，否则守卫会拿到旧缓存再弹回登录页
   const me = await session.fetchMe({ force: true, silent: true })
 
-  if (nextPath.value) {
-    await router.replace(nextPath.value)
+  const target = nextTarget.value
+  if (target) {
+    // 跨域（admin 域）必须整页跳转；站内相对路径走路由，避免整页刷新
+    if (target.kind === 'relative') {
+      await router.replace(target.path)
+    } else {
+      window.location.assign(target.url)
+    }
     return
   }
   if (me?.roles.includes('admin')) {

@@ -442,3 +442,87 @@ func TestMFABindAndUnbindIntegration(t *testing.T) {
 		t.Fatalf("未绑定状态解绑应返回 ErrMFANotBound，实际 %v", err)
 	}
 }
+
+// ---- 007：会话失效三路径（改密 / 登出 / 验证码重置）----
+//
+// 三者的期望各不相同，混用即缺陷：
+//   改密（ChangePassword）、登出（Revoke）→ 全部会话失效；
+//   已登录的验证码重置（ResetPasswordWithCode）→ 只保留当前会话（上面已有用例）。
+
+// 改密必须吊销该用户全部会话：少一条就会出现"改完密码其他设备还登着"。
+func TestChangePasswordRevokesAllSessions(t *testing.T) {
+	env := newVerifyEnv(t)
+	ctx := context.Background()
+	u := env.seedUser(t, nil, nil, testOldPass)
+
+	first, err := env.sessions.Create(ctx, u, []string{"pwd"}, false, testMetaIP, testMetaAgent)
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
+	second, err := env.sessions.Create(ctx, u, []string{"pwd"}, false, "10.0.0.3", "second-device")
+	if err != nil {
+		t.Fatalf("创建第二个会话失败: %v", err)
+	}
+
+	// 原密码错误：拒绝，且不得动会话（否则会变成"输错密码就把自己踢下线"）。
+	if err := env.users.ChangePassword(ctx, u.ID, "Wrong!pass2026", testNewPass); !errors.Is(err, service.ErrInvalidCredentials) {
+		t.Fatalf("原密码错误应返回 ErrInvalidCredentials，实际 %v", err)
+	}
+	if _, err := env.sessions.Get(ctx, first.SID); err != nil {
+		t.Fatalf("原密码校验失败时不应吊销会话，实际 %v", err)
+	}
+
+	if err := env.users.ChangePassword(ctx, u.ID, testOldPass, testNewPass); err != nil {
+		t.Fatalf("改密失败: %v", err)
+	}
+
+	if _, err := env.sessions.Get(ctx, first.SID); !errors.Is(err, store.ErrSessionNotFound) {
+		t.Fatalf("改密后当前会话应失效（ErrSessionNotFound），实际 %v", err)
+	}
+	if _, err := env.sessions.Get(ctx, second.SID); !errors.Is(err, store.ErrSessionNotFound) {
+		t.Fatalf("改密后其他设备会话应失效（ErrSessionNotFound），实际 %v", err)
+	}
+	list, err := env.sessions.List(ctx, u.ID)
+	if err != nil {
+		t.Fatalf("列出会话失败: %v", err)
+	}
+	if len(list) != 0 {
+		t.Fatalf("改密后不应残留有效会话，实际 %+v", list)
+	}
+
+	// 新密码生效（改密不能只吊销会话不改哈希）。
+	updated, err := env.users.GetByID(ctx, u.ID)
+	if err != nil {
+		t.Fatalf("读取用户失败: %v", err)
+	}
+	if err := crypto.VerifyPassword(testNewPass, updated.PasswordHash); err != nil {
+		t.Fatalf("新密码应可通过校验: %v", err)
+	}
+}
+
+// 登出只吊销当前会话，其他设备不受影响（多设备互踢是多域名部署的常见事故）。
+func TestLogoutRevokesOnlyCurrentSession(t *testing.T) {
+	env := newVerifyEnv(t)
+	ctx := context.Background()
+	u := env.seedUser(t, nil, nil, testOldPass)
+
+	current, err := env.sessions.Create(ctx, u, []string{"pwd"}, false, testMetaIP, testMetaAgent)
+	if err != nil {
+		t.Fatalf("创建会话失败: %v", err)
+	}
+	other, err := env.sessions.Create(ctx, u, []string{"pwd"}, false, "10.0.0.4", "other-device")
+	if err != nil {
+		t.Fatalf("创建第二个会话失败: %v", err)
+	}
+
+	if err := env.sessions.Revoke(ctx, current.SID); err != nil {
+		t.Fatalf("登出失败: %v", err)
+	}
+
+	if _, err := env.sessions.Get(ctx, current.SID); !errors.Is(err, store.ErrSessionNotFound) {
+		t.Fatalf("登出后当前会话应失效，实际 %v", err)
+	}
+	if _, err := env.sessions.Get(ctx, other.SID); err != nil {
+		t.Fatalf("登出不应影响其他设备，实际 %v", err)
+	}
+}

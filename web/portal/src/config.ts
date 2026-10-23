@@ -13,11 +13,14 @@ const env = import.meta.env
 export const API_BASE_URL: string = env.VITE_API_BASE_URL || '/api/v1'
 
 /**
- * admin 是独立构建产物：dev 下是 5174 端口，生产与 portal 同域、挂在 /admin/ 子路径
- * （nginx 单入口方案，见 web/nginx.conf.template）。
+ * admin 是独立构建产物、独立入口，路由挂在**域名根**（FR-004/FR-005：入口为 `admin.<主域>/`，
+ * 由它自己 `/` → `/users` 重定向），三套环境一致：
+ *   - dev：vite 5174，`http://localhost:5174/`
+ *   - test/prod：`https://admin.<主域>/`，由构建期 `VITE_ADMIN_HOME` 注入
+ * 未注入时退化为同域根路径 `/`，仅在一体化演示（同域反代）下成立。
  * 两种情况都用整页跳转，避免 SPA 路由到不存在的路由。
  */
 export const ADMIN_HOME: string =
-  env.VITE_ADMIN_HOME || (IS_DEV ? 'http://localhost:5174/admin/users' : '/admin/users')
+  env.VITE_ADMIN_HOME || (IS_DEV ? 'http://localhost:5174/' : '/')
 
 export const SITE_NAME: string = env.VITE_SITE_NAME || '统一身份认证'

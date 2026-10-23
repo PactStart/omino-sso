@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/omino/omino-sso/internal/api/response"
+	"github.com/omino/omino-sso/internal/pkg/cookie"
 	"github.com/omino/omino-sso/internal/service"
 	"github.com/omino/omino-sso/internal/store"
 	"github.com/omino/omino-sso/internal/store/model"
@@ -17,7 +18,7 @@ import (
 const (
 	CtxUser       = "auth.user"
 	CtxSession    = "auth.session"
-	SessionCookie = "sid"
+	SessionCookie = cookie.Name
 	// CtxClientID 门户应用管理请求的目标应用（006，由 AppAdmin 写入）。
 	CtxClientID = "auth.clientId"
 )

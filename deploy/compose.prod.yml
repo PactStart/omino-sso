@@ -1,0 +1,67 @@
+name: omino-sso-prod
+
+# 生产环境编排：只含三个容器（sso / portal / admin），数据库与 Redis 用云上实例。
+#
+#   docker compose -f deploy/compose.prod.yml --env-file /etc/omino-sso/prod.env up -d
+#
+# 与 deploy/compose.test.yml 的差异只有 env_file 指向与容器名；
+# 同一份 nginx 配置、同一套镜像（差异来自构建期 VITE_* 与运行时 API_UPSTREAM）。
+#
+# 回滚：`IMAGE_TAG=<旧 tag> docker compose ... up -d`，三镜像同 tag 成套切换。
+
+services:
+  sso:
+    image: registry.example.com/omino-sso:${IMAGE_TAG:?必须指定 IMAGE_TAG（三镜像同 tag，形如 2026.10.23-1）}
+    container_name: omino-sso-prod
+    restart: unless-stopped
+    env_file:
+      - /etc/omino-sso/prod.env
+    volumes:
+      - /etc/omino-sso/signing-key.pem:/run/secrets/signing-key.pem:ro
+    ports:
+      # 只绑内网/回环（T029）：8080/8081 绝不允许出现在 0.0.0.0
+      - "${SSO_IDP_BIND_ADDR:-127.0.0.1}:${SSO_IDP_HOST_PORT:-8080}:8080"
+      - "${SSO_API_BIND_ADDR:-127.0.0.1}:${SSO_API_HOST_PORT:-8081}:8081"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+
+  portal:
+    image: registry.example.com/omino-portal:${IMAGE_TAG:?必须指定 IMAGE_TAG}
+    container_name: omino-portal-prod
+    restart: unless-stopped
+    environment:
+      # 运行时注入：生产走内网 api 域，容器网内不可直连 sso:8081
+      API_UPSTREAM: ${API_UPSTREAM:?必须指定 API_UPSTREAM（示例 http://api.example.com）}
+    ports:
+      - "${FRONTEND_BIND_ADDR:-0.0.0.0}:${PORTAL_HOST_PORT:-8088}:80"
+    depends_on:
+      sso:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  admin:
+    image: registry.example.com/omino-admin:${IMAGE_TAG:?必须指定 IMAGE_TAG}
+    container_name: omino-admin-prod
+    restart: unless-stopped
+    environment:
+      API_UPSTREAM: ${API_UPSTREAM:?必须指定 API_UPSTREAM（示例 http://api.example.com）}
+    ports:
+      - "${FRONTEND_BIND_ADDR:-0.0.0.0}:${ADMIN_UI_HOST_PORT:-8090}:80"
+    depends_on:
+      sso:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s

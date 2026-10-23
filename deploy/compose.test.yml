@@ -1,0 +1,73 @@
+name: omino-sso-test
+
+# 测试环境编排：只含三个容器（sso / portal / admin），数据库与 Redis 用云上实例。
+#
+#   docker compose -f deploy/compose.test.yml --env-file /etc/omino-sso/test.env up -d
+#
+# 硬约束（specs/007-deployment/contracts/env-and-build.md）：
+#   1. env_file 指**部署机宿主路径** /etc/omino-sso/test.env（运维创建、chmod 600），不是容器内路径；
+#   2. **不得**声明或 depends_on mysql / redis（云上已有，编排里起本地实例会掩盖真实网络问题）；
+#   3. 三个容器都必须有 healthcheck 与 restart 策略；
+#   4. 前端 nginx 在**启动时**解析 proxy_pass 主机名 → depends_on: service_healthy 是必需品，
+#      否则后端没起来时前端容器会反复重启（排障表已登记该现象）。
+
+services:
+  sso:
+    image: registry.example.com/omino-sso:${IMAGE_TAG:?必须指定 IMAGE_TAG（三镜像同 tag，形如 2026.10.23-1）}
+    container_name: omino-sso-test
+    restart: unless-stopped
+    env_file:
+      - /etc/omino-sso/test.env
+    volumes:
+      # 签名私钥只读挂载；容器内路径必须与 OIDC_SIGNING_KEY_PATH 一致
+      - /etc/omino-sso/signing-key.pem:/run/secrets/signing-key.pem:ro
+    ports:
+      # sso 域（OIDC 端点）：仅回环/内网，公网必须经入口 LB 或宿主机 nginx
+      - "${SSO_IDP_BIND_ADDR:-127.0.0.1}:${SSO_IDP_HOST_PORT:-8080}:8080"
+      # api 域（管理 API）：只给前端 nginx / 内网入口用，禁止 0.0.0.0
+      - "${SSO_API_BIND_ADDR:-127.0.0.1}:${SSO_API_HOST_PORT:-8081}:8081"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+
+  portal:
+    image: registry.example.com/omino-portal:${IMAGE_TAG:?必须指定 IMAGE_TAG}
+    container_name: omino-portal-test
+    restart: unless-stopped
+    environment:
+      # 运行时注入的反代目标：test/prod 走内网 api 域（不是 sso:8081）
+      # 必填：给默认值会在配错时静默指向不存在的地址，容器只会反复重启
+      API_UPSTREAM: ${API_UPSTREAM:?必须指定 API_UPSTREAM（示例 http://api.example.com）}
+    ports:
+      # 公网入口：由 LB 直接转发或宿主机 nginx 反代，两种都要能从其他主机连上
+      - "${FRONTEND_BIND_ADDR:-0.0.0.0}:${PORTAL_HOST_PORT:-8088}:80"
+    depends_on:
+      sso:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  admin:
+    image: registry.example.com/omino-admin:${IMAGE_TAG:?必须指定 IMAGE_TAG}
+    container_name: omino-admin-test
+    restart: unless-stopped
+    environment:
+      API_UPSTREAM: ${API_UPSTREAM:?必须指定 API_UPSTREAM（示例 http://api.example.com）}
+    ports:
+      - "${FRONTEND_BIND_ADDR:-0.0.0.0}:${ADMIN_UI_HOST_PORT:-8090}:80"
+    depends_on:
+      sso:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s

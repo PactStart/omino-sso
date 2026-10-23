@@ -196,10 +196,28 @@ while read -r k; do
 done <"$TMP/env.doc"
 
 # ---------------------------------------------------------------------------
+# 5. 接口文档基线：openapi.json 的 sha256 必须与 007 基线清单一致
+#    （docs-check 只比对「注解 ↔ 文档」，不读 baseline；这里补上"字节未变"这一层）
+# ---------------------------------------------------------------------------
+BASELINE="specs/007-deployment/api-evolve/baseline/manifest.json"
+if [[ -f "$BASELINE" && -f internal/api/docs/openapi.json ]]; then
+	# manifest 是单行 JSON：先截出该文件对应的对象，再取其中的 sha256
+	baseline_sha=$(grep -oE '\{[^{}]*"path":"internal/api/docs/openapi.json"[^{}]*\}' "$BASELINE" |
+		grep -oE '"sha256":"[0-9a-f]{64}"' |
+		head -1 | cut -d'"' -f4)
+	actual_sha=$(shasum -a 256 internal/api/docs/openapi.json | awk '{print $1}')
+	if [[ -z "$baseline_sha" ]]; then
+		report "文档基线" "$BASELINE 中缺少 internal/api/docs/openapi.json 的 sha256"
+	elif [[ "$baseline_sha" != "$actual_sha" ]]; then
+		report "文档基线" "openapi.json 字节已变（baseline=$baseline_sha actual=$actual_sha）；若无 API 变更请回退，有变更请同步 baseline"
+	fi
+fi
+
+# ---------------------------------------------------------------------------
 # 汇总
 # ---------------------------------------------------------------------------
-printf 'check-registry: 路由 %s/%s 条、错误码 %s/%s 个、审计事件 %s/%s 个、环境变量 %s(代码)/%s(example)/%s(AGENTS)\n' \
-	"$routes_code" "$routes_doc" "$codes_code" "$codes_doc" "$events_code" "$events_doc" "$env_code" "$env_example" "$env_doc"
+printf 'check-registry: 路由 %s/%s 条、错误码 %s/%s 个、审计事件 %s/%s 个、环境变量 %s(代码)/%s(example)/%s(AGENTS)、文档基线 sha256 %s\n' \
+	"$routes_code" "$routes_doc" "$codes_code" "$codes_doc" "$events_code" "$events_doc" "$env_code" "$env_example" "$env_doc" "${baseline_sha:-未校验}"
 
 if [[ "$fail" -gt 0 ]]; then
 	printf 'check-registry: %d 处漂移\n' "$fail"

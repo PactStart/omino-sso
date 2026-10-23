@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '@/api/client'
 
@@ -7,14 +7,20 @@ const getCaptchaMock = vi.fn()
 const loginMock = vi.fn()
 const sendCodeMock = vi.fn()
 const replaceMock = vi.fn()
+/** 各用例按需写入 query（登出提示、next 回跳都从这里来） */
+const routeQuery: Record<string, string> = {}
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ replace: replaceMock, push: replaceMock }),
-  useRoute: () => ({ query: {} }),
+  useRoute: () => ({ query: routeQuery }),
 }))
 
 vi.mock('@/stores/session', () => ({
-  useSessionStore: () => ({ reset: vi.fn(), fetchMe: vi.fn() }),
+  // 登录成功后 goAfterAuth 会强制刷新一次会话；返回普通用户，走默认落地分支
+  useSessionStore: () => ({
+    reset: vi.fn(),
+    fetchMe: () => Promise.resolve({ id: 'u1', username: 'alice', displayName: 'Alice', roles: ['user'] }),
+  }),
 }))
 
 vi.mock('@/api', () => ({
@@ -251,5 +257,118 @@ describe('Login 验证码登录失败提示', () => {
     expect(wrapper.text()).toContain('验证码错误或已过期')
     // 首次进入验证码登录 + 提交失败后的刷新（服务端已消费）
     expect(getCaptchaMock).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('Login 登出提示（FR-023）', () => {
+  beforeEach(() => {
+    for (const key of Object.keys(routeQuery)) delete routeQuery[key]
+    replaceMock.mockClear()
+  })
+
+  it('带 ?loggedOut=1 时显示「已退出」并清除该参数', async () => {
+    routeQuery.loggedOut = '1'
+
+    const wrapper = mount(Login)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('已退出登录')
+    // 参数必须被清掉：刷新或前进后退不应重复弹提示，也不能把 loggedOut 带进回跳地址
+    expect(replaceMock).toHaveBeenCalledWith({ path: '/login', query: {} })
+  })
+
+  it('没有该参数时不显示登出提示', async () => {
+    const wrapper = mount(Login)
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('已退出登录')
+    expect(replaceMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('Login 登录后回跳（FR-009 / plan D4）', () => {
+  const realOrigin = window.location.origin
+  const assignMock = vi.fn()
+  const locationReplaceMock = vi.fn()
+  let locationDescriptor: PropertyDescriptor | undefined
+
+  beforeEach(() => {
+    for (const key of Object.keys(routeQuery)) delete routeQuery[key]
+    replaceMock.mockReset()
+    assignMock.mockReset()
+    locationReplaceMock.mockReset()
+    loginMock.mockReset()
+    loginMock.mockResolvedValue({
+      mfaRequired: false,
+      mfaTicket: null,
+      expiresIn: 0,
+      redirectTo: '/account',
+      user: { id: 'u1', username: 'alice', displayName: 'Alice' },
+    })
+
+    // jsdom 把 location.assign 定义为不可重定义的 own property，直接 spy 会抛
+    // "Cannot redefine property: assign"；整体替换 location 才能观察到「整页跳转」分支。
+    locationDescriptor = Object.getOwnPropertyDescriptor(window, 'location')
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      writable: true,
+      value: {
+        origin: realOrigin,
+        href: `${realOrigin}/login`,
+        pathname: '/login',
+        search: '',
+        assign: assignMock,
+        replace: locationReplaceMock,
+      },
+    })
+  })
+
+  afterEach(() => {
+    if (locationDescriptor) Object.defineProperty(window, 'location', locationDescriptor)
+    vi.unstubAllEnvs()
+    vi.resetModules()
+    for (const key of Object.keys(routeQuery)) delete routeQuery[key]
+  })
+
+  async function loginWithPassword(component: typeof Login) {
+    const wrapper = mount(component)
+    await wrapper.find('#username').setValue('alice')
+    await wrapper.find('#password').setValue('S3cure!pass2026')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    return wrapper
+  }
+
+  it('admin 域的绝对 next 走整页跳转，不经过 router.replace（跨域回跳）', async () => {
+    // ADMIN_HOME 决定白名单里第二个 origin，必须在模块加载前注入（config 在求值时读取）
+    vi.stubEnv('VITE_ADMIN_HOME', 'https://admin.example.com/')
+    vi.resetModules()
+    const { default: LoginFresh } = await import('./Login.vue')
+    routeQuery.next = 'https://admin.example.com/clients/01ABC?tab=members'
+
+    await loginWithPassword(LoginFresh as typeof Login)
+
+    expect(assignMock).toHaveBeenCalledWith('https://admin.example.com/clients/01ABC?tab=members')
+    // 绝对地址绝不能进 SPA 路由（门户域上没有该路由）
+    expect(replaceMock).not.toHaveBeenCalled()
+  })
+
+  it('站内相对 next 走 router.replace，不改写成外域', async () => {
+    routeQuery.next = '/account/apps'
+
+    await loginWithPassword(Login)
+
+    expect(replaceMock).toHaveBeenCalledWith('/account/apps')
+    expect(assignMock).not.toHaveBeenCalled()
+    expect(locationReplaceMock).not.toHaveBeenCalled()
+  })
+
+  it('白名单外的绝对 next 被丢弃，落到默认页（防开放重定向）', async () => {
+    routeQuery.next = 'https://evil.example.com/users'
+
+    await loginWithPassword(Login)
+
+    expect(assignMock).not.toHaveBeenCalled()
+    expect(replaceMock).toHaveBeenCalledWith('/account/profile')
   })
 })

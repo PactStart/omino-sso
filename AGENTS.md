@@ -94,9 +94,9 @@
 | Vue+TS 预设 | `@vue/eslint-config-typescript` | `14.9.0` | 组合上述两套 |
 | 全局变量 | `globals` | `17.13.0` | `browser` 全局声明 |
 | 二维码类型 | `@types/qrcode` | `1.5.6` | `qrcode` 的 TS 类型 |
-| 测试运行器 | `vitest` | `3.2.7` | portal 首屏用例（登录方式切换、图形验证码、验证码登录失败提示），接入 `make test`（2026-10-22 新增） |
-| 组件测试 | `@vue/test-utils` | `2.5.1` | 挂载 `Login.vue` 等组件做交互断言（2026-10-22 新增） |
-| DOM 环境 | `jsdom` | `25.0.1` | vitest 的 `environment: 'jsdom'`（2026-10-22 新增） |
+| 测试运行器 | `vitest` | `3.2.7` | **portal + admin** 两套用例：登录方式切换 / 图形验证码 / 失败提示、登录后回跳（相对 / admin 域绝对 / 白名单外拒绝）、登出提示；admin 的菜单 `index`、详情页 tab index、服务不可用页回跳、`portalLoginUrl()`。接入 `make test`（2026-10-22 新增，2026-10-24 扩到 admin） |
+| 组件测试 | `@vue/test-utils` | `2.5.1` | 挂载 `Login.vue` / `AdminLayout.vue` 等组件做交互断言（2026-10-22 新增） |
+| DOM 环境 | `jsdom` | `25.0.1` | vitest 的 `environment: 'jsdom'`（两套前端各自 `vitest.config.ts`；2026-10-22 新增） |
 
 > 上述前端依赖走 `devDependencies`/`dependencies` 的**精确版本**（`npm install --save-exact`），与 §2.1 的锁定策略一致；升级须单独提交。
 
@@ -110,6 +110,7 @@
 | Redis | `7.4` | 单实例 + AOF，不使用 Cluster |
 | 阿里云 OSS | — | 图片对象存储（logo/头像直传）；provider 驱动配置，未配置则不启用 |
 | Docker / Compose | `27.x` / `v2` | 本地与 MVP 部署 |
+| 前端运行时镜像 | `nginx:1.27-alpine` | 2026-10-24（007）：`web/Dockerfile` 的运行阶段；自带 `/docker-entrypoint.d/20-envsubst-on-templates.sh` 渲染 `API_UPSTREAM`（禁止自写裸 `envsubst`）。构建阶段用 `node:22-alpine`（LTS）。两者是部署工具链，不进 §2.2 依赖表 |
 
 ### 2.4 接口文档生成链（构建期依赖）
 
@@ -148,7 +149,10 @@ omino-sso/
 ├── scripts/                           # 交付前自检（§7.4，2026-10-22 新增）
 │   ├── check-registry.sh              # 路由 / 错误码 / 审计事件 / 环境变量 四向一致性
 │   ├── check-docs-commands.sh         # 文档中 `make <target>` 的可执行性
-│   └── ci-local.sh                    # 临时 worktree 复刻干净检出跑全套门禁
+│   ├── ci-local.sh                    # 临时 worktree 复刻干净检出跑全套门禁
+│   └── e2e/                           # 2026-10-23 新增：本地 test 形态端到端验证（make e2e）
+│       ├── run.sh                     # *.lvh.me 四域 HTTPS + 跨子域 SSO/cookie/探针/可信代理断言，退出自动还原数据
+│       └── nginx/                     # portal/admin/api/sso 四个 server 块（容器内固定路径，刻意不做模板替换）
 ├── tools/                             # 构建期工具，独立 module（禁止被业务包 import）
 │   ├── go.mod                         # 独立依赖图，隔离到这份，根 go.mod 不受影响
 │   └── openapi3/
@@ -168,13 +172,16 @@ omino-sso/
 │   │   ├── login.go                   # 登录闭环：AuthRequest 回写 sub/amr/auth_time
 │   │   ├── claims.go                  # SetUserinfoFromScopes / GetPrivateClaimsFromScopes
 │   │   ├── keys.go                    # 签名密钥加载与 kid 轮换
+│   │   ├── health.go                  # 007：:8080 的 /healthz、/readyz（net/http 版，逻辑在 pkg/probe）
 │   │   └── server.go                  # 独立 http.Server(:8080)，挂 op.Provider
 │   ├── api/
 │   │   ├── module.go                  # fx.Module("api")
 │   │   ├── router.go                  # Gin 路由注册 + 中间件顺序
+│   │   ├── health.go                  # 007：:8081 的 /healthz、/readyz（gin 版，逻辑在 pkg/probe）
 │   │   ├── middleware/
 │   │   │   ├── auth.go                # 从 cookie sid 解析会话
-│   │   │   ├── ratelimit.go           # Redis 令牌桶
+│   │   │   ├── cookie.go              # 007：会话 cookie 写/清（gin 薄封装，实现见 pkg/cookie）
+│   │   │   ├── ratelimit.go           # Redis 令牌桶（/healthz、/readyz、/docs 短路）
 │   │   │   ├── trace.go               # traceId 生成与透传
 │   │   │   └── recover.go
 │   │   ├── response/
@@ -185,12 +192,11 @@ omino-sso/
 │   │   │   ├── openapi.json           # 生成物，入库（OpenAPI 3.0.3）
 │   │   │   └── docs_test.go
 │   │   ├── auth/                      # /api/v1/auth/*
-│   │   │   ├── login.go               # 密码 / 验证码登录、失败计数、锁定
+│   │   │   ├── login.go               # 密码 / 验证码登录、失败计数、锁定；**含 Logout**（POST /auth/logout）
 │   │   │   ├── code.go                # 005：验证码发送（未登录强制图形码；已登录目标由服务端解析）
 │   │   │   ├── captcha.go             # 005：图形验证码签发（GET /auth/captcha）
 │   │   │   ├── password.go            # 005：验证码找回密码
-│   │   │   ├── mfa.go                 # TOTP 校验、绑定/确认
-│   │   │   └── logout.go
+│   │   │   └── mfa.go                 # TOTP 校验、绑定/确认
 │   │   ├── me/                        # /api/v1/me/*
 │   │   │   ├── profile.go
 │   │   │   ├── password.go
@@ -251,6 +257,13 @@ omino-sso/
 │       │   └── ulid.go
 │       ├── clock/
 │       │   └── clock.go               # 接口化，便于测试
+│       ├── clientip/
+│       │   └── clientip.go            # 007：可信代理解析（Gin 与协议层同一套判定，采信可信网段的 XFF）
+│       ├── cookie/
+│       │   ├── cookie.go              # 007：会话 cookie 写入/清除的唯一实现（Domain/Path/Secure/SameSite 逐字一致）
+│       │   └── cookie_test.go         # 007：清除属性与写入一致（防 host-only 空 cookie 回归）
+│       ├── probe/
+│       │   └── probe.go               # 007：/healthz、/readyz 响应体（两个 server 共用，不套统一响应）
 │       └── log/
 │           └── log.go
 ├── configs/
@@ -262,7 +275,22 @@ omino-sso/
 │   ├── 0005_verification_auth.up.sql  # 005：send_records + uk_users_phone
 │   ├── 0006_app_admin_role.up.sql     # 006：client_members.is_admin（应用管理员标记）
 │   └── README.md                      # 手写 SQL，禁止 AutoMigrate
+├── deploy/                            # 2026-10-24 新增（007）：分环境编排
+│   ├── compose.test.yml               # sso/portal/admin 三容器，env_file=/etc/omino-sso/test.env；不含本地 DB/Redis
+│   ├── compose.prod.yml               # 同上；sso 的 8080/8081 只绑回环/内网
+│   └── env/
+│       ├── test.env.example           # COOKIE_DOMAIN=.test.example.com；TRUSTED_PROXIES 须含「LB+前端容器+api 入口」三段
+│       └── prod.env.example           # APP_ENV=prod 严格校验；短信/邮件通道非 mock
 └── web/
+    ├── Dockerfile                     # 2026-10-24 新增（007）：portal/admin 两个 target（node:22 构建 + nginx:1.27 运行）
+    ├── .dockerignore                  # 构建上下文裁剪（node_modules / dist / .env*）
+    ├── nginx/                         # 2026-10-24 新增（007）：四域 server 块，契约见 specs/007-deployment/contracts/nginx-routing.md
+    │   ├── portal.conf                # 指向 templates/portal.conf.template 的链接（单一模板源，避免两份内容漂移）
+    │   ├── admin.conf                 # 同上；根路径托管，无 /admin 前缀
+    │   ├── api.conf                   # api.<主域>（内网明文，仅 /api/v1/）+ sso.<主域>（TLS 终止 + OIDC 端点 + = /healthz）；不进前端镜像
+    │   └── templates/
+    │       ├── portal.conf.template   # 含 ${API_UPSTREAM}，由官方模板脚本渲染到 /etc/nginx/conf.d/
+    │       └── admin.conf.template
     ├── portal/                        # 登录页 + 账号中心（Tailwind）
     │   ├── eslint.config.js
     │   ├── vitest.config.ts           # 2026-10-22 新增：jsdom + @ 别名，`npm run test`
@@ -276,23 +304,30 @@ omino-sso/
     │   ├── src/views/Password.vue     # 修改密码：原密码与验证码两种方式（§4.1 的 me/password*）
     │   ├── src/views/Account.vue      # 账号中心：联系方式、MFA、会话
     │   ├── src/api/app.ts             # 006：门户应用管理接口（/me/apps/:id/* 与 /me/orgs/tree）
+    │   ├── src/utils/redirect.ts      # 2026-10-24：登录回跳 next 解析 + origin 白名单（四域下 admin 传绝对地址，防开放重定向）
+    │   ├── src/utils/redirect.spec.ts # 2026-10-24：白名单用例（相对路径 / 本域 / admin 域 / 外部域 / //evil.com / javascript:）
     │   ├── src/views/Apps.vue         # 006：应用管理员可见「管理」按钮（「打开」左侧）
     │   ├── src/views/Apps.spec.ts     # 006：管理按钮可见性 / 跳转用例
     │   ├── src/views/app-admin/       # 006：独立地址的管理页（AppAdminLayout + 应用信息/成员/角色/权限/授权）
     │   ├── src/views/app-admin/Overview.vue  # 应用信息：参考 admin 详情，仅名称/描述/Logo/回调地址可改
     │   └── src/styles/tokens.css      # 品牌变量（主色 / 圆角 / 字体）
-    └── admin/                         # 管理后台（Element Plus）
+    └── admin/                         # 管理后台（Element Plus）；路由挂根路径（/users、/clients…），dev 5174 与 test/prod 一致
         ├── eslint.config.js
+        ├── vitest.config.ts           # 2026-10-24 新增（007）：jsdom + @ 别名，`npm run test`
         ├── index.html
         ├── vite.config.ts
         ├── src/main.ts
-        ├── src/router.ts
-        ├── src/layout/AppLayout.vue
+        ├── src/router.ts              # 根路径路由（/users、/clients/:clientId/:tab、/offline、/403…），无 /admin 前缀
+        ├── src/config.ts              # 运行期常量 + portalLoginUrl()：相对 next 转绝对地址、主动登出带 loggedOut=1
+        ├── src/layouts/AdminLayout.vue        # 一级菜单（index 即路由地址，router 模式）
         ├── src/views/Users.vue        # 左组织树 + 右用户表
         ├── src/views/Clients.vue
-        ├── src/views/AuditLogs.vue
+        ├── src/views/client/ClientDetail.vue  # 左侧五 tab 壳（overview/members/roles/permissions/grants）
+        ├── src/views/Audit.vue
+        ├── src/views/Files.vue
         ├── src/views/SendRecords.vue  # 005 发送记录
-        └── src/views/Settings.vue
+        ├── src/views/Offline.vue      # 服务不可用：重试成功回 /users
+        └── src/**/*.spec.ts           # 2026-10-24 新增（007）：菜单 index / tab index / 离线回跳 / portalLoginUrl
 ```
 
 **分层规则**：`api → service → store`，禁止跨层调用（api 不得直接用 store）；`oidc` 只能通过 `service`/`store` 访问数据，不得直接写 SQL。
@@ -305,11 +340,14 @@ omino-sso/
 
 | 服务 | 地址 | 路径前缀 | 响应格式 |
 |---|---|---|---|
-| IdP（`net/http`） | `:8080` | `/oauth2/*`、`/.well-known/*`、`/login`、`/logout` | **RFC 原生格式**，禁止套统一响应 |
+| IdP（`net/http`） | `:8080` | `/oauth2/*`、`/.well-known/*`、`/login`、`/logout`、`/logged-out` | **RFC 原生格式**，禁止套统一响应 |
 | 管理 API（Gin） | `:8081` | `/api/v1/*` | 统一响应（§5） |
+| 运维探针（两个 server 各自提供） | `:8080` / `:8081` | `/healthz`、`/readyz` | **原始 JSON**（`{"status":...}`），不套统一响应、不进 swagger、**不参与限流** |
 | 接口文档（Gin，仅非 prod） | `:8081` | `/docs/*` | **原始 HTML / JSON / 静态字节**，禁止套统一响应 |
 
 > `/oauth2/*` 与 `/.well-known/*` 的报文由 `zitadel/oidc/v3` 生成，**不得包装、不得改写字段名**。
+
+**探针的暴露面**：公网仅放行 `sso.<主域>/healthz`（供外部 LB 判存活，响应只含 `{"status":"ok"}`）；`/readyz` 会暴露 MySQL/Redis 连通性，**公网必须 404**，只在容器内/内网由 healthcheck 打 `127.0.0.1`。容器 healthcheck 统一打 `:8081/healthz`。
 
 **`/docs/*` 的三条硬性约定**
 
@@ -1060,10 +1098,15 @@ omino-sso/
 | 命令 | 覆盖 |
 |---|---|
 | `make build` | 编译 + `docs-check`（OpenAPI 漂移）+ 运行时资源存在性 |
-| `make test` | Go 单测（集成用例默认 `t.Skip`）+ portal vitest |
+| `make test` | Go 单测（集成用例默认 `t.Skip`）+ portal / admin 两套 vitest |
 | `make lint` | golangci-lint + 两套前端 eslint（缺 `node_modules` 时自动安装） |
 | `make check` | 注册表一致性（路由/错误码/审计事件/环境变量 四向比对）+ 文档命令可执行性 |
 | `make ci-local` | 临时 `git worktree` 复刻干净检出跑上述全套，专治「本地绿、CI 红」 |
+| `make images` | 构建三个镜像（同 tag；前端绝对地址由 `DOMAIN` 派生，`IMAGE_TAG`/`DOMAIN` 缺失即失败） |
+| `make image-check` | 镜像自检：两个前端镜像 `nginx -t`、镜像内无官方 `default.conf`、产物不串环境（`FOREIGN_DOMAIN` 反证） |
+| `make e2e` | **非门禁**，需 docker：本地 test 形态（四域 HTTPS）验证跨子域 SSO、cookie 属性与失效、探针暴露面、多跳 XFF |
+
+**`make e2e` 的边界（2026-10-23）**：单测只能证明"属性拼对了"，证明不了"四个子域下登录态真的通、真的失效"——`COOKIE_DOMAIN` 生效后，清除漏 `Domain` 这类缺陷在 dev（host-only）里根本复现不出来。因此把该验证固化为脚本：用 `*.lvh.me`（天然解析 127.0.0.1）+ 自签证书 + `nginx:1.27-alpine` 容器复刻 test/prod 域名拓扑，另起 `:9080/:9081`（`REDIS_DB=1`）实例，**不碰 dev 的 `:8080/:8081`**。三条约束：① 会临时改演示账号密码与 portal 客户端回调，`trap` 必须幂等还原（回调固定回 dev 基线，不从当前值反推）；② `.env` 的 `APP_ENV=prod` 或 `DB_HOST` 非本机时拒绝执行；③ 端口被占用直接失败，**不杀任何既有进程**。
 
 **两条硬约束**
 
@@ -1077,7 +1120,7 @@ omino-sso/
 **规则（已代码化，不是口头约定）**
 
 - 集成测试的 DSN 库名**必须以 `_test` 结尾**（如 `omino_sso_test`）。`internal/service/org_integration_test.go` 的 `requireTestDatabase` 有两道护栏：`openTestDB` 首次运行即 `t.Fatalf`，`recreateTestDB` 在真正 `DROP DATABASE` 前再校验一次。指向开发库会**直接失败**而不是跳过或照做。
-- 跑集成测试用 `make test-integration`，并先导出 `TEST_MYSQL_DSN`；`make test` 中的集成用例默认 `t.Skip`，不碰任何数据库。
+- 跑集成测试用 `make test-integration`，并先导出 `TEST_MYSQL_DSN`（**另需 `TEST_REDIS_ADDR`**：`internal/api/me` 的会话失效用例要真 Redis 建会话）；`make test` 中的集成用例默认 `t.Skip`，不碰任何数据库。
 - 测试库可自动创建（`CREATE DATABASE`），无需手工建；每次运行会重建，库内不需要也不允许放有价值数据。
 
 **关联事实**：开发库的 `admin` 账号由 `bootstrap.Seed` 在 `users` 表为空时创建，用户名/密码来自 `ADMIN_BOOTSTRAP_USERNAME` / `ADMIN_BOOTSTRAP_PASSWORD`（`.env`，当前 `admin` / `Admin@12345`）。因此"清空 users 后重启服务"会把管理员密码重置回 bootstrap 值——这是重建而非改密，排查时先看 `users` 是否为空。
@@ -1121,8 +1164,11 @@ make test                     # 单元测试（集成用例默认 t.Skip）
 make lint                     # golangci-lint + eslint
 make check                    # 注册表一致性 + 文档命令可执行性
 make ci-local                 # 临时 worktree 复跑全套（模拟干净检出）
-make build-web                # 两个前端产物 -> web/dist
+make build-web                # 两个前端产物 -> web/dist（prod：vite 默认 mode，加载 .env.production）
+make build-web WEB_MODE=test  # 按 test 构建（加载 .env.test）；模板见 web/{portal,admin}/.env.*.example
 ```
+
+> **前端按环境构建（2026-10-24）**：同一份代码 + 不同 `VITE_*` 构建出 test/prod 产物，不做运行时 `config.js` 注入。每个前端三份模板：`.env.example`（dev，默认可用）、`.env.test.example`、`.env.production.example`；真实 `.env` / `.env.test` / `.env.production` 已被 `.gitignore` 排除。**四域部署必须注入** `VITE_ADMIN_HOME`（portal）与 `VITE_PORTAL_HOME` / `VITE_PORTAL_LOGIN_URL`（admin）的**绝对地址**，否则退化为同域 `/users`、`/login`，跨域回跳与"返回门户"都会打到错误站点。
 
 > **改动自测纪律（强制）**：任何改动在提交前必须主动执行 `make test` 与 `make lint`，不得依赖 pre-commit 兜底。新增/修改业务逻辑、端点或数据访问层时，必须同步新增或更新对应单元测试。新增/删除路由或改动 DTO 字段后，必须执行 `make docs` 重新生成 `openapi.json`，并全局搜索、同步更新依赖 operation 数 / 字段结构的硬编码测试断言（如 `internal/api/docs/docs_test.go`、`internal/api/router_test.go`）。改动前端后执行 `npm run typecheck`（`web/admin` 与 `web/portal`）。
 
@@ -1137,9 +1183,25 @@ docker run --rm -p 8080:8080 \
 
 ### 8.6 部署（MVP）
 
+**本地一体化**（mysql + redis + sso + portal + admin 五个服务，端口代替域名）：
+
 ```bash
-docker compose up -d --build   # mysql + redis + sso + nginx(静态托管两套前端)
+docker compose up -d --build     # 门户 :8088，后台 :8090，IdP :8080，管理 API :8081
 ```
+
+**test / prod 四域名拓扑**（`deploy/compose.{test,prod}.yml`，用云上 MySQL/Redis，编排里不含 DB/Redis）：
+
+| 域名 | 公网 | 内容 | 容器端口 |
+|---|:--:|---|---|
+| `portal.<主域>` | ✔ | SPA + `location ^~ /api/` 同源反代 | 80 |
+| `admin.<主域>` | ✔ | SPA（**根路径**，无 `/admin`）+ 同上反代 | 80 |
+| `api.<主域>` | ✘ **仅 VPC 内 DNS** | `/api/v1/` → `sso:8081`（明文，不配证书） | 8081 |
+| `sso.<主域>` | ✔ | `/oauth2/`、`/.well-known/`、`/login`、`/logout`、`/logged-out`、`= /healthz` → `sso:8080` | 8080 |
+
+- **不引入 CORS**：浏览器只访问 `portal`/`admin`/`sso` 三个源，XHR 恒为同源相对 `/api/v1`，由各自 nginx 反代到 `api` 域；出现 `Access-Control-*` 即为缺陷。
+- `api` 域只是「谁被允许作为入口」的命名约定，**真实隔离靠内网 DNS + 安全组/网络 ACL**（`sso` 容器同网络内的 `:8081` 仍可达），不得以域名是否存在作为安全验收依据。
+- 反代目标 `API_UPSTREAM` 运行时注入（一体化 `http://sso:8081`，test/prod `http://api.<主域>`）；镜像内不写域名。
+- 验收一条命令：`DOMAIN=<主域> ./scripts/smoke-deploy.sh`（只读：探针暴露面、`api` 域公网不可达、深链与缓存、同源反代）。
 
 ---
 
@@ -1164,9 +1226,10 @@ docker compose up -d --build   # mysql + redis + sso + nginx(静态托管两套�
 | `OIDC_AUTH_CODE_TTL` | 否 | `60` | 秒，上限 60 |
 | `SESSION_TTL` | 否 | `28800` | 秒，8 小时 |
 | `SESSION_TTL_REMEMBER` | 否 | `604800` | 秒，7 天 |
-| `COOKIE_DOMAIN` | 是 | — | 例 `sso.example.com` |
-| `COOKIE_SECURE` | 否 | `true` | 本地 http 调试可设 false |
+| `COOKIE_DOMAIN` | 是 | — | 主域，形如 `.example.com`（prod 强制校验：必须非空、以 `.` 开头、不带 scheme/结尾斜杠）；写入与清除必须用同一值 |
+| `COOKIE_SECURE` | 否 | `true` | 本地 http 调试可设 false；prod 强制 true |
 | `COOKIE_SAME_SITE` | 否 | `Lax` | `Lax` / `Strict` |
+| `TRUSTED_PROXIES` | 否 | 空 | 可信反代网段，逗号分隔 CIDR 或单 IP；仅这些来源的 `X-Forwarded-For` 会被采信（Gin 与协议层共用同一判定），留空表示不信任任何代理。非法值启动即失败 |
 | `DB_HOST` | 是 | `127.0.0.1` | |
 | `DB_PORT` | 否 | `3306` | |
 | `DB_USER` | 是 | — | |

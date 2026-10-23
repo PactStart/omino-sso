@@ -21,6 +21,12 @@ func RateLimit(rdb *redis.Client, scope string, limit int, window time.Duration)
 			c.Next()
 			return
 		}
+		// 探针不参与限流：健康检查是运维动作、不是业务请求，被业务配额化后
+		// 一旦配额调小（或多探针共用出口 IP）就会 429 → 容器被判 unhealthy → 重启风暴。
+		if isProbePath(c.Request.URL.Path) {
+			c.Next()
+			return
+		}
 		if limit <= 0 {
 			c.Next()
 			return
@@ -50,4 +56,9 @@ func clientKey(c *gin.Context) string {
 		return sid
 	}
 	return c.ClientIP()
+}
+
+// isProbePath 判断是否为运维探针路径（固定匹配，不做前缀匹配以免被路径穿越利用）。
+func isProbePath(path string) bool {
+	return path == "/healthz" || path == "/readyz"
 }
