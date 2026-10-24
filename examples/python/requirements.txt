@@ -1,0 +1,27 @@
+# Python 接入示例依赖（精确版本，FR-023）
+# 验证环境：CPython 3.12.14 / macOS x86_64 / 2026-10-24
+# 安装：python3.12 -m venv venv && ./venv/bin/python -m pip install -r requirements.txt
+# 说明：cryptography 钉 44.0.0 而非最新版——50.x 在 macOS x86_64 无可用 wheel，
+#      会退化成本地 Rust 编译（cargo 不在演示前置条件里），启动即失败。
+fastapi==0.115.6
+starlette==0.41.3
+pydantic==2.14.1
+pydantic-core==2.50.1
+typing-extensions==4.16.0
+typing-inspection==0.4.4
+annotated-types==0.8.0
+authlib==1.4.1
+cryptography==44.0.0
+cffi==2.1.1
+pycparser==3.12
+httpx==0.28.1
+httpcore==1.0.9
+h11==0.16.0
+anyio==4.15.1
+idna==3.20
+certifi==2026.10.23
+uvicorn==0.34.0
+click==8.5.0
+jinja2==3.1.5
+markupsafe==3.0.4
+itsdangerous==2.2.0

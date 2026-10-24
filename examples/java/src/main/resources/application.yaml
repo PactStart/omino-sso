@@ -1,0 +1,47 @@
+server:
+  port: ${APP_PORT:8001}
+  servlet:
+    session:
+      timeout: 12h
+      cookie:
+        # 默认名是 JSESSIONID，必须显式改成契约要求的 sid_java：
+        # 三个示例与 IdP 同处 localhost，而 HTTP cookie 不按端口隔离，重名会互相覆盖。
+        name: sid_java
+        http-only: true
+        same-site: lax
+        # 本地 http 演示关闭 Secure；生产必须开启（examples/README.md「仅演示」）。
+        secure: false
+
+spring:
+  application:
+    name: omino-sso-example-java
+  security:
+    oauth2:
+      client:
+        registration:
+          omino:
+            client-id: ${SSO_CLIENT_ID}
+            client-secret: ${SSO_CLIENT_SECRET}
+            client-name: omino-sso
+            authorization-grant-type: authorization_code
+            # 与注册值逐字符一致，不做尾斜杠归一化；必须与 SecurityConfig 的
+            # redirectionEndpoint("/callback") 同时对齐，否则 code 会打到 404。
+            redirect-uri: ${SSO_REDIRECT_URI}
+            scope:
+              - openid
+              - profile
+              - email
+              - offline_access
+        provider:
+          omino:
+            issuer-uri: ${SSO_ISSUER}
+
+app:
+  # 仅调试：覆盖 userinfo 地址，用于验证降级；不得成为关闭校验的开关。
+  userinfo-url-override: ${SSO_USERINFO_URL_OVERRIDE:}
+  session-secret: ${SESSION_SECRET}
+
+logging:
+  level:
+    root: info
+    com.example.ssoexample: info

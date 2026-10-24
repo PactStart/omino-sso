@@ -152,6 +152,11 @@ omino-sso/
 ├── .dockerignore                      # 2026-10-22 新增：构建上下文裁剪（排除 web/、specs/、.env）
 ├── .env.example                       # 环境变量模板（§9）
 ├── .tmp/                              # 文档生成中间产物（gitignore，不入库）
+├── examples/                          # 2026-10-24 新增：三语言接入示例（008），各自独立工程，依赖不进根 go.mod
+│   ├── README.md                      # 端口/环境变量/运行/验证/日志/三语言对照/版本矩阵/仅演示声明
+│   ├── go/                            # 独立 module（go.mod）；net/http + go-oidc + x/oauth2，cookie 名 sid_go
+│   ├── java/                          # Spring Boot 3.5.3 + oauth2-client + thymeleaf，cookie 名 sid_java
+│   └── python/                        # FastAPI + Authlib；venv/ 与 requirements.txt（精确 ==），cookie 名 sid_py
 ├── scripts/                           # 交付前自检（§7.4，2026-10-22 新增）
 │   ├── check-registry.sh              # 路由 / 错误码 / 审计事件 / 环境变量 四向一致性
 │   ├── check-docs-commands.sh         # 文档中 `make <target>` 的可执行性
@@ -162,6 +167,9 @@ omino-sso/
 │   │   └── pre-push                   # 2026-10-24 新增：push 边界跑 full 档（`make hooks-install` 安装）
 │   └── e2e/                           # 2026-10-23 新增：本地 test 形态端到端验证（make e2e）
 │       ├── run.sh                     # *.lvh.me 四域 HTTPS + 跨子域 SSO/cookie/探针/可信代理断言，退出自动还原数据
+│       ├── examples.sh                # 2026-10-24 新增：三语言示例 A0–A16 端到端断言（--keep / --self-test）
+│       ├── lib/
+│       │   └── admin.sh               # 2026-10-24 新增：客户端复用 / 密钥缓存 / 专用账号，被 examples.sh source
 │       └── nginx/                     # portal/admin/api/sso 四个 server 块（容器内固定路径，刻意不做模板替换）
 ├── tools/                             # 构建期工具，独立 module（禁止被业务包 import）
 │   ├── go.mod                         # 独立依赖图，隔离到这份，根 go.mod 不受影响
