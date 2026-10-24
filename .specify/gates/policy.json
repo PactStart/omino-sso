@@ -1,9 +1,9 @@
 {
-  "_comment": "omino-sso 质量门禁策略（user-owned，/speckit.gates.init 的 seed 经人工裁剪）。Schema: .specify/gates/policy.schema.json。设计取舍：① 不启用 prettier / markdownlint / shellcheck —— 仓库未固定这三套工具链，且宪法明令『不批量格式化』，强制格式化会与中文文档风格与既有排版冲突；② verify-quality 走 custom，直接复用项目既有 Make 目标，保证 agent / git / CI 三个边界执行的是同一份『宪法要求的交付检查』；③ 文档防腐化由 make build 内的 docs-check 承担（plan E1）。",
+  "_comment": "omino-sso 质量门禁策略（user-owned，/speckit.gates.init 的 seed 经人工裁剪）。Schema: .specify/gates/policy.schema.json。设计取舍：① 不启用 prettier / markdownlint / shellcheck —— 仓库未固定这三套工具链，且宪法明令『不批量格式化』，强制格式化会与中文文档风格与既有排版冲突；② verify-quality 走 custom，直接复用项目既有 Make 目标，保证 agent / git / CI 三个边界执行的是同一份『宪法要求的交付检查』；③ 文档防腐化由 docs-check 承担（plan E1）；④ 2026-10-24 分档：git 边界（pre-commit）跑 `make verify-fast`（lint + check + 单测，约 30s），full 档 `make verify-full`（+ make build / docs 漂移）下沉到 pre-push（scripts/git-hooks/pre-push，`make hooks-install` 安装，且已挂进 `make deps`）；CI 因没有 pre-push，由 .github/workflows/gates.yml 显式补跑 `make build`——分档只改变『在哪一步失败』，不减少检查项。",
   "hooks": {
     "verify-quality": {
       "orchestrator": "custom",
-      "custom_command": "make build && make test && make lint && make check",
+      "custom_command": "make verify-fast",
       "severity": "error"
     }
   },

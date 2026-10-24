@@ -63,9 +63,12 @@ docker compose ps             # 两者 healthy 后再继续
 ### 5.2 配置环境变量与签名密钥
 
 ```bash
+make deps                     # 拉 Go 依赖 + 安装 pre-push 钩子（克隆后跑一次）
 cp .env.example .env          # 按需修改；变量含义见文件内注释
 make keys                     # 生成 configs/dev-signing-key.pem
 ```
+
+> `make deps` 里带 `hooks-install`：`.git/hooks` 不入库，漏装会让 push 边界的 full 档门禁形同不存在（分档见 §8）。
 
 `.env` 中的必填项（缺失会启动失败）：`OIDC_ISSUER`、`OIDC_SIGNING_KEY_PATH`、`OIDC_CRYPTO_KEY`（32 字节）、`DB_USER`、`DB_PASSWORD`、`REDIS_ADDR`。
 
@@ -165,7 +168,7 @@ make docs-serve               # 生成后启动服务，回显文档地址
 完整说明（判档反例、七步细节、入口分流、轻量化原则、质量门禁、文档分工）见
 **[`开发流程规范.md`](./开发流程规范.md)**。
 
-日常只需记住门禁三条命令与分级判档；工具链、扩展按需启用等内容都在该文件中。
+日常只需记住两个门禁档位（提交 `make verify-fast`、离开本机 `make verify-full`）与分级判档；工具链、扩展按需启用等内容都在该文件中。
 
 ## 9. 生产部署要点
 
