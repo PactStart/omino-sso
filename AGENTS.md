@@ -2,7 +2,7 @@
 
 > 本文件是项目的**唯一权威规范**，所有开发会话（人类或 AI）必须先读本文件再动手。
 > 与本文件冲突的实现一律视为缺陷；确需变更规范时，先改本文件并写明理由，再改代码。
-> 配套文档：`技术选型报告.md`（背景与决策依据，不作为实现约束）。
+> 配套文档：`docs/tech-stack-report.md`（背景与决策依据，不作为实现约束）。其余交付文档（部署、接入、PRD、流程）统一在 `docs/`。
 
 ---
 
@@ -137,8 +137,14 @@
 
 ```
 omino-sso/
-├── AGENTS.md                          # 本文件
-├── 技术选型报告.md
+├── AGENTS.md                          # 本文件（唯一权威规范）
+├── README.md                          # 仓库入口：快速开始 + 文档索引
+├── docs/                              # 2026-10-24 新增：交付文档（不作为实现约束，规范只在本文件）
+│   ├── deployment.md                  # 四域拓扑、域名/端口矩阵、迁移与回滚
+│   ├── integration-guide.md           # 接入方（SP）OIDC 接入指引
+│   ├── prd.md                         # 前端交互契约（页面、路由、接口）
+│   ├── development-workflow.md        # 交付流程（判档、七步、门禁）
+│   └── tech-stack-report.md           # 选型背景与决策依据
 ├── go.mod
 ├── Makefile
 ├── docker-compose.yml                 # mysql + redis + sso + portal + admin
@@ -149,7 +155,11 @@ omino-sso/
 ├── scripts/                           # 交付前自检（§7.4，2026-10-22 新增）
 │   ├── check-registry.sh              # 路由 / 错误码 / 审计事件 / 环境变量 四向一致性
 │   ├── check-docs-commands.sh         # 文档中 `make <target>` 的可执行性
+│   ├── check-artifact-refs.sh         # 2026-10-24 新增：AGENTS §3 目录树 + tasks.md 引用路径必须存在
+│   ├── check-build-env.sh             # 007：镜像产物不串环境（FOREIGN_DOMAIN 反证）
 │   ├── ci-local.sh                    # 临时 worktree 复刻干净检出跑全套门禁
+│   ├── git-hooks/
+│   │   └── pre-push                   # 2026-10-24 新增：push 边界跑 full 档（`make hooks-install` 安装）
 │   └── e2e/                           # 2026-10-23 新增：本地 test 形态端到端验证（make e2e）
 │       ├── run.sh                     # *.lvh.me 四域 HTTPS + 跨子域 SSO/cookie/探针/可信代理断言，退出自动还原数据
 │       └── nginx/                     # portal/admin/api/sso 四个 server 块（容器内固定路径，刻意不做模板替换）
@@ -166,7 +176,6 @@ omino-sso/
 │   │   ├── config.go                  # Config 结构体 + 加载/校验
 │   │   └── config_test.go
 │   ├── oidc/
-│   │   ├── module.go                  # fx.Module("oidc")
 │   │   ├── provider.go                # newProvider: op.NewProvider 包装（变长参数）
 │   │   ├── storage.go                 # op.Storage 完整实现（唯一适配点）
 │   │   ├── login.go                   # 登录闭环：AuthRequest 回写 sub/amr/auth_time
@@ -175,8 +184,8 @@ omino-sso/
 │   │   ├── health.go                  # 007：:8080 的 /healthz、/readyz（net/http 版，逻辑在 pkg/probe）
 │   │   └── server.go                  # 独立 http.Server(:8080)，挂 op.Provider
 │   ├── api/
-│   │   ├── module.go                  # fx.Module("api")
-│   │   ├── router.go                  # Gin 路由注册 + 中间件顺序
+│   │   ├── router.go                  # Gin 路由注册 + 中间件顺序（fx 装配在 cmd/sso/main.go）
+│   │   ├── server.go                  # :8081 的 http.Server 生命周期
 │   │   ├── health.go                  # 007：:8081 的 /healthz、/readyz（gin 版，逻辑在 pkg/probe）
 │   │   ├── middleware/
 │   │   │   ├── auth.go                # 从 cookie sid 解析会话
@@ -198,12 +207,11 @@ omino-sso/
 │   │   │   ├── password.go            # 005：验证码找回密码
 │   │   │   └── mfa.go                 # TOTP 校验、绑定/确认
 │   │   ├── me/                        # /api/v1/me/*
-│   │   │   ├── profile.go
-│   │   │   ├── password.go
+│   │   │   ├── profile.go             # /me、/me/apps、/me/sessions（会话列表与撤销）、改密
+│   │   │   ├── password.go            # /me/password/reset（验证码重置，保留当前会话）
 │   │   │   ├── contact.go             # 005：绑定/修改手机号与邮箱（POST /me/phone、/me/email）
 │   │   │   ├── mfa.go                 # 005：MFA 绑定 / 确认 / 解绑（/me/mfa/*）
-│   │   │   ├── apps.go
-│   │   │   ├── sessions.go
+│   │   │   ├── avatar.go              # 004：头像直传
 │   │   │   ├── app_admin.go           # 006：门户应用管理摘要 + 15 个转调 admin.Handler 的薄 wrapper
 │   │   │   └── organizations.go       # 006：只读组织树（GET /me/orgs/tree）
 │   │   └── admin/                     # /api/v1/admin/*
@@ -228,8 +236,7 @@ omino-sso/
 │   │       ├── mock.go                # 模拟发送（固定 888888）
 │   │       └── service.go             # 签发 / 校验 / 发送记录 / 审计
 │   ├── store/
-│   │   ├── module.go                  # fx.Module("store")，Provide 接口绑定
-│   │   ├── db.go                      # gorm.Open + 连接池 + 健康检查
+│   │   ├── db.go                      # gorm.Open + 连接池 + 健康检查（fx 装配在 cmd/sso/main.go）
 │   │   ├── tx.go                      # tx-in-context（§7 约束 3）
 │   │   ├── model/
 │   │   │   ├── user.go
@@ -252,7 +259,7 @@ omino-sso/
 │       ├── crypto/
 │       │   ├── password.go            # argon2id 编码/校验（常量时间）
 │       │   ├── random.go              # 256bit 随机串
-│       │   └── hash.go                # SHA-256 -> []byte(32)
+│       │   └── secret.go              # 密钥/敏感字段的对称加解密
 │       ├── id/
 │       │   └── ulid.go
 │       ├── clock/
@@ -269,12 +276,19 @@ omino-sso/
 ├── configs/
 │   ├── dev-signing-key.pem            # 开发用签名私钥（不入仓库）
 │   └── verify-mail.tmpl               # 005：验证码邮件模板（html/template）
-├── migrations/
+├── migrations/                        # 手写 SQL，禁止 AutoMigrate
 │   ├── 0001_init.up.sql
 │   ├── 0001_init.down.sql
+│   ├── 0002_clients_meta.up.sql
+│   ├── 0002_clients_meta.down.sql
+│   ├── 0003_app_auth.up.sql
+│   ├── 0003_app_auth.down.sql
+│   ├── 0004_files.up.sql
+│   ├── 0004_files.down.sql
 │   ├── 0005_verification_auth.up.sql  # 005：send_records + uk_users_phone
+│   ├── 0005_verification_auth.down.sql
 │   ├── 0006_app_admin_role.up.sql     # 006：client_members.is_admin（应用管理员标记）
-│   └── README.md                      # 手写 SQL，禁止 AutoMigrate
+│   └── 0006_app_admin_role.down.sql
 ├── deploy/                            # 2026-10-24 新增（007）：分环境编排
 │   ├── compose.test.yml               # sso/portal/admin 三容器，env_file=/etc/omino-sso/test.env；不含本地 DB/Redis
 │   ├── compose.prod.yml               # 同上；sso 的 8080/8081 只绑回环/内网
@@ -1113,6 +1127,30 @@ omino-sso/
 - **行为取舍必须落纸**：实现期临时决定的取舍（如 005 把 `login` 场景改成 `404`、而 `find_password` 保持静默）必须在同一提交内写入 `spec.md` Edge Cases + `contracts/` + 本节相关条款，不得留到 converge 阶段再补。
 - **文档里的命令必须可执行**：`specs/**`、`AGENTS.md` 中出现的 `` `make <target>` `` 由 `make check` 逐条用 `make -n` 验证；确需引用历史废弃目标时，在该行加 `docs-commands:ignore` 注释。
 
+#### 任务书格式与勾选纪律（2026-10-24 起；007 及更早的任务不追溯）
+
+**为什么加这一条**：007 的 68 项任务里有 15 项（22%）来自 4 轮 `/speckit.converge`，其中 3–4 条是「勾了但没交付」——T051 声称补好了 `internal/api/me/profile_test.go`，该文件直到 Phase 10 的 T065 才真正落盘。收敛因此在验证"上一轮的声称"而不是"规格是否满足"，这才是多轮不收敛的主因，不是 spec 写得不细。
+
+**`tasks.md` 的格式（新特性强制）**
+
+- 一条任务 = 一行窄标题 + 一行 `DoD:`；设计说明留在 `spec.md` / `contracts/`。任务行超过两行，说明粒度太粗或该先补契约。
+
+  ```markdown
+  - [ ] T012 会话失效：改密/登出必须清共享域 cookie，验证码重置不清
+    DoD: go test ./internal/api/me/ ./internal/api/auth/ -run 'TestChangePassword|TestLogout|TestReset' -v
+    DoD: 文件 internal/api/me/profile_test.go 存在，且断言 Set-Cookie 含 Domain=example.com
+  ```
+
+- `DoD:` **必须是命令，或可用 `test -f` / `grep` 判真假的文件事实**。写不出 DoD 的任务意味着"完成"还没定义清楚——先回去把验收点拆开，不要开工。
+- `DoD:` 行里点名的仓库路径由 `scripts/check-artifact-refs.sh`（已挂进 `make check`）校验存在性；`specs/*/tasks.md` 正文里路径限定的 `*_test.go` / `scripts/*` 同样校验。历史失效引用只允许登记在脚本的 `LEGACY_ALLOW`，且登记项一旦真实成立，脚本会提示删除该行。
+
+**勾选纪律（`/speckit.implement` 与人工同样适用）**
+
+- `[X]` 的唯一合法来源是**跑过该任务的 DoD 并看到通过**；不得以"已经写好了""看起来没问题"勾选。
+- DoD 失败时任务保持 `[ ]`，并在同一次提交内修到绿；**不许**把 DoD 改写成更容易通过的形式来凑绿。
+- `/speckit.converge` 只审三类：① 未勾选任务；② 已勾选但 DoD / 引用路径不存在的任务；③ 自上次收敛后被改动的文件。全量对照 spec 只在 PR 前跑一次。
+- 收敛**最多一轮**：第二轮仍报 `missing` / `contradicts`，说明是实现纪律问题——先修流程（补 DoD、补检查脚本），不要继续追加 Phase。确需追加时，新 Phase 必须写明"上一轮为何漏判"。
+
 ### 7.5 集成测试库隔离（006-app-admin-role 事故）
 
 **2026-10-22 事故**：调试 006 时把 `TEST_MYSQL_DSN` 指向了开发库 `omino_sso`，而集成测试脚手架会 `DROP DATABASE` 重建 schema（`recreateTestDB`），导致开发库连同管理员账号、组织、审计记录一起被删除，只能靠 `bootstrap.Seed` 重建。
@@ -1171,6 +1209,20 @@ make build-web WEB_MODE=test  # 按 test 构建（加载 .env.test）；模板�
 > **前端按环境构建（2026-10-24）**：同一份代码 + 不同 `VITE_*` 构建出 test/prod 产物，不做运行时 `config.js` 注入。每个前端三份模板：`.env.example`（dev，默认可用）、`.env.test.example`、`.env.production.example`；真实 `.env` / `.env.test` / `.env.production` 已被 `.gitignore` 排除。**四域部署必须注入** `VITE_ADMIN_HOME`（portal）与 `VITE_PORTAL_HOME` / `VITE_PORTAL_LOGIN_URL`（admin）的**绝对地址**，否则退化为同域 `/users`、`/login`，跨域回跳与"返回门户"都会打到错误站点。
 
 > **改动自测纪律（强制）**：任何改动在提交前必须主动执行 `make test` 与 `make lint`，不得依赖 pre-commit 兜底。新增/修改业务逻辑、端点或数据访问层时，必须同步新增或更新对应单元测试。新增/删除路由或改动 DTO 字段后，必须执行 `make docs` 重新生成 `openapi.json`，并全局搜索、同步更新依赖 operation 数 / 字段结构的硬编码测试断言（如 `internal/api/docs/docs_test.go`、`internal/api/router_test.go`）。改动前端后执行 `npm run typecheck`（`web/admin` 与 `web/portal`）。
+
+**门禁分档（2026-10-24 复盘）**：全职门禁 ~35s 挂在每次提交上并不划算——它会把"文档漂移"这类与当前改动无关的问题变成提交阻塞，也让 flake 的代价放大一倍。分档后**检查项不减，只改失败时机**：
+
+| 边界 | 命令 | 内容 | 实测 |
+|---|---|---|---|
+| pre-commit（每次提交） | `make verify-fast` | `lint` + `check` + `test` | ≈30s（lint 10s / check 5s / test 14s，热缓存） |
+| pre-push（离开本机） | `make verify-full` | 上者 + `build`（含 docs 漂移检查） | ≈35s |
+| PR / 干净检出 | `make ci-local` | 临时 worktree 复刻全套 | 分钟级 |
+| 环境型（按需） | `make test-integration`、`make e2e` | 真 MySQL+Redis / 四域 HTTPS | 分钟级，不进内环 |
+
+- 安装：`make hooks-install` 把 `scripts/git-hooks/pre-push` 装到 `.git/hooks/pre-push`（`.git` 不入库，克隆后需重装一次）。pre-commit 由 `.specify/gates` 的 stub 管理，**不要**把两档塞进同一个钩子文件。
+- `pre-commit` 档由 `.specify/gates/policy.json` 的 `verify-quality.custom_command` 决定，改档位就改那一行。
+- 逃生门：`GATES_SKIP=1`（两个钩子同名同义）。
+- **flake 一律当缺陷修**，不许重跑蒙过：一次偶发的 `make test` 红会让 pre-commit 白跑一轮，代价高于修它（例：portal `Members.spec.ts` 的 teardown 期 `requestAnimationFrame`，改用 `enableAutoUnmount` 根治）。
 
 ### 8.5 合规验收（门禁，不可跳过）
 
@@ -1306,3 +1358,5 @@ docker compose up -d --build     # 门户 :8088，后台 :8090，IdP :8080，管
 - [ ] 新增/删除路由或改动 DTO 后已执行 `make docs`，并同步更新 operation 数等硬编码测试断言
 - [ ] 新增带鉴权的端点前已界定访问者与可写范围（防越权）；前端筛选/搜索控件与后端实际过滤字段一致
 - [ ] 新增第三方依赖前已按 §2.0 提案并取得确认，引入后已登记到 §2.1 / §2.2 并锁定精确版本，`go mod tidy` 未造成既有依赖被动升级
+- [ ] 任务书里的每个 `[X]` 都有对应的 `DoD:` 且已实际跑过；`DoD:` 与正文引用的文件真实存在（`make check` 的 `check-artifact-refs` 会拦）
+- [ ] 提交走 `make verify-fast`（pre-commit 自动），离开本机前 `make verify-full`（pre-push 自动；新克隆需 `make hooks-install`）

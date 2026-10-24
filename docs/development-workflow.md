@@ -1,8 +1,8 @@
 # 开发流程规范（Spec Kit / SDD）
 
 > 本文件是开发流程的**唯一说明**，`README.md` 只做引用。原则层约束见
-> [`.specify/memory/constitution.md`](./.specify/memory/constitution.md)，
-> 实现细节（版本、端口、字段、错误码、非目标）以 [`AGENTS.md`](./AGENTS.md) 为唯一权威。
+> [`.specify/memory/constitution.md`](../.specify/memory/constitution.md)，
+> 实现细节（版本、端口、字段、错误码、非目标）以 [`AGENTS.md`](../AGENTS.md) 为唯一权威。
 
 规格驱动开发（SDD）的核心只有一句：**先写清「做什么 / 为什么」，再定技术方案，最后才写代码**。
 但流程强度必须与改动规模匹配——见下一节，这是本文件最重要的一节。
@@ -19,7 +19,7 @@
 
 | 档位 | 判定 | 流程 | 流程耗时 |
 |---|---|---|---|
-| **L0 直改** | ①否 ②否 ③能；单文件，< 1 天 | 直接改代码 → `make build && make test` → 提交 | 分钟级 |
+| **L0 直改** | ①否 ②否 ③能；单文件，< 1 天 | 直接改代码 → `make verify-full` → 提交 | 分钟级 |
 | **L1 轻量** | ①否 或 边界清晰；1–3 天 | 一页 spec + 手写 tasks → implement → converge | 0.5–1 小时 |
 | **L2 全套** | ①是 或 ②是；> 3 天；或多人 | 第 4 节完整七步 + 按需 critique | 2–3 小时 |
 
@@ -157,7 +157,7 @@ git switch -c 002-mfa-self-binding   # 与后续 spec 目录编号一致
 管理员可将指定用户标记为强制 MFA，被强制且未绑定的用户登录成功后先被引导到绑定页。
 
 边界：不改变现有 /oauth2/* 协议流程与 /api/v1/** 统一响应结构；
-不实现短信/邮件/备用码；前端交互契约参考 PRD.md 对应页面章节。
+不实现短信/邮件/备用码；前端交互契约参考 [`prd.md`](./prd.md) 对应页面章节。
 ```
 
 ---
@@ -217,21 +217,23 @@ prod 404 同构），收益为正；但流程侧有三处明显浪费，据此�
 
 ## 9. 质量门禁
 
-三个边界执行**同一份**检查（`.specify/gates/policy.json` 的 `verify-quality`），因此「本地绿 = CI 绿」：
+四个边界执行**同一批检查**（`.specify/gates/policy.json` 的 `verify-quality` 是 `make verify-fast`，属于 full 档的子集），分档只改变"在哪一步失败"：
 
-| 边界 | 触发 | 命令 |
-|---|---|---|
-| 本地命令行 | 手动 | `make build && make test && make lint` |
-| git | `pre-commit` / `commit-msg` 钩子 | `bash .specify/gates/verify.sh --boundary git` |
-| CI | GitHub Actions（PR 与 push main） | `bash .specify/gates/verify.sh --boundary ci` |
+| 边界 | 触发 | 命令 | 内容 |
+|---|---|---|---|
+| 本地提交 | `pre-commit` 钩子 | `bash .specify/gates/verify.sh --boundary git` → `make verify-fast` | `lint` + `check` + `test`（≈30s） |
+| 离开本机 | `pre-push` 钩子（`make hooks-install`） | `make verify-full` | 上者 + `build`（含 docs-check） |
+| 本地命令行 | 手动 | `make verify-full` | 同上 |
+| CI | GitHub Actions（PR 与 push main） | `verify.sh --boundary ci` + `make build` | 同上（`make build` 由工作流显式补回） |
 
-日常只需记住三条命令：
+日常只需记住两个档位：
 
 ```bash
-make build        # 编译 + docs-check（文档漂移即失败）
-make test         # 单元测试
-make lint         # golangci-lint，失败即失败（不再 || true）
+make verify-fast  # 提交档：lint + 一致性 + 单测（pre-commit 自动跑）
+make verify-full  # 交付档：+ make build（docs 漂移即失败），pre-push / PR 前跑
 ```
+
+> 分档的理由（2026-10-24 复盘）：文档漂移这类与当前改动无关的失败不该阻塞每次 WIP 提交，但**检查项一个都不少**——它们被移到 push。`GATES_SKIP=1` 是逃逸阀，`make ci-local` 仍是"干净检出全绿"的最终判据。
 
 两个约定：
 
@@ -250,8 +252,11 @@ make lint         # golangci-lint，失败即失败（不再 || true）
 |---|---|---|
 | `.specify/memory/constitution.md` | 不可协商的原则（5 条） | 每次 `plan` / `analyze` |
 | `AGENTS.md` | 实现细节唯一权威（版本、字段、错误码、非目标） | 写 spec / plan 的输入 |
-| `PRD.md` | 前端交互契约（页面、路由、接口） | 前端类特性的 spec 输入 |
-| 本文件 | 流程说明（分级路径、七步节奏、门禁） | 开工前判档、提交前自查 |
+| [`docs/prd.md`](./prd.md) | 前端交互契约（页面、路由、接口） | 前端类特性的 spec 输入 |
+| 本文件（`docs/development-workflow.md`） | 流程说明（分级路径、七步节奏、门禁） | 开工前判档、提交前自查 |
+| [`docs/deployment.md`](./deployment.md) | 部署拓扑、域名/端口矩阵、迁移与回滚 | 交付、发布、排障 |
+| [`docs/integration-guide.md`](./integration-guide.md) | 接入方（SP）怎么接 OIDC | 对外交付接入 |
+| [`docs/tech-stack-report.md`](./tech-stack-report.md) | 选型背景与决策依据（不作为实现约束） | 追溯"为什么这么选" |
 | `specs/NNN-xxx/` | 本次变更的过程记录 | 逐阶段产出 |
 
 ---

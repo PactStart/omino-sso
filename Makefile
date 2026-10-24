@@ -23,10 +23,10 @@ BACKEND_IMAGE := $(REGISTRY)/omino-sso:$(IMAGE_TAG)
 PORTAL_IMAGE := $(REGISTRY)/omino-portal:$(IMAGE_TAG)
 ADMIN_IMAGE := $(REGISTRY)/omino-admin:$(IMAGE_TAG)
 
-.PHONY: help deps keys assets dev build test test-go test-web test-integration lint lint-go lint-web check check-registry check-docs-commands check-build-env ci-local build-web images image-backend image-portal image-admin image-push image-check nginx-check e2e docs docs-check docs-serve migrate-up migrate-down clean
+.PHONY: help deps keys assets dev build test test-go test-web test-integration lint lint-go lint-web check check-registry check-docs-commands check-artifact-refs check-build-env verify-fast verify-full hooks-install ci-local build-web images image-backend image-portal image-admin image-push image-check nginx-check e2e docs docs-check docs-serve migrate-up migrate-down clean
 
 help:
-	@echo "deps        下载依赖"
+	@echo "deps        下载依赖 + 安装 git 钩子（pre-push）"
 	@echo "assets      校验运行时资源（邮件验证码模板）存在"
 	@echo "keys        生成开发用 RSA 签名密钥"
 	@echo "dev         启动服务（:8080 协议层 / :8081 管理 API）"
@@ -47,8 +47,14 @@ help:
 	@echo "nginx-check 入口 nginx（api/sso 域）配置语法自检（临时自签证书，不需要镜像）"
 	@echo "image-push  推送三个镜像到 \$$REGISTRY"
 	@echo "e2e         本地 test 形态端到端验证（四域 HTTPS；需 docker + bin/sso + 两个 dist）"
+	@echo "check       一致性门禁：注册表 + 文档命令 + 制品引用 + 串环境"
+	@echo "verify-fast 提交边界门禁（lint + check + 单测），pre-commit 用"
+	@echo "verify-full 交付边界门禁（build + test + lint + check），pre-push / PR 用"
+	@echo "hooks-install 安装 git 钩子（pre-push -> verify-full）"
 
-deps:
+# 一步到位的上手：拉依赖 + 装 push 边界钩子（漏装会让 full 档门禁形同不存在，
+# 而 `.git/hooks` 不入库，克隆后必须重装一次）。
+deps: hooks-install
 	$(GO) mod download
 
 keys:
@@ -138,13 +144,37 @@ lint-web:
 # 复盘（2026-10-22）：注册表与文档命令都是确定性检查，前移到提交前，
 # 避免再出现「代码改了、AGENTS/契约没跟着改」与「文档教用户跑不存在的目标」。
 # 两者都只读仓库文件，不访问网络、不依赖 node_modules。
-check: check-registry check-docs-commands check-build-env
+check: check-registry check-docs-commands check-artifact-refs check-build-env
 
 check-registry:
 	bash scripts/check-registry.sh
 
 check-docs-commands:
 	bash scripts/check-docs-commands.sh
+
+# 制品引用（2026-10-24）：AGENTS §3 目录树里的路径、tasks.md 里 `DoD:` 行与被引用的
+# 测试/脚本路径必须真实存在。007 的 4 轮 converge 里 3–4 条 finding 是「任务声称写了
+# 某个测试，文件不存在」，属确定性检查，前移到提交前（详见 scripts/check-artifact-refs.sh）。
+check-artifact-refs:
+	bash scripts/check-artifact-refs.sh
+
+# 门禁分档（2026-10-24 复盘）：
+#   fast —— 提交边界。lint + 一致性 + 单测，约 30s（实测 lint 10s / check 5s / test 14s），
+#           不含 make build（docs 生成与漂移检查留给 push），让 WIP 提交不被文档类问题卡住。
+#   full —— 交付边界。pre-push 与 PR 前跑全套，与宪法「交付检查」口径一致。
+# 注意：fast 档不是"弱化门禁"，`make build` 覆盖的 docs-check 由 pre-push 兜底；
+# 该扩展的 golden rule（git 边界通过 ⇒ CI 通过）在本仓库由 `make ci-local` 独立保证。
+verify-fast: lint check test
+
+verify-full: build test lint check
+
+# .git/hooks 不入库，克隆后需重装（`make deps` 会带上）；pre-commit 由 .specify/gates 的 stub
+# 负责，这里只接管它不管理的 pre-push。非 git 检出（发布包/worktree 拷贝）直接跳过。
+hooks-install:
+	@git rev-parse --git-dir >/dev/null 2>&1 || { echo "hooks-install: skip（非 git 检出）"; exit 0; }
+	@mkdir -p .git/hooks
+	@install -m 0755 scripts/git-hooks/pre-push .git/hooks/pre-push
+	@echo "hooks-install: .git/hooks/pre-push -> make verify-full"
 
 # 串环境检查（007）：需要 PORTAL_IMAGE/ADMIN_IMAGE 才真正执行，未提供时打印 skip 并以 0 退出，
 # 保证无 docker 的开发机上 `make check` 仍然可跑。用法见 DEPLOYMENT.md §5。

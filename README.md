@@ -4,8 +4,9 @@
 
 - 协议层：`github.com/zitadel/oidc/v3`，授权码 + PKCE（仅 S256）
 - 浏览器侧只持有 `HttpOnly` 的 `sid` 会话 cookie，**前端代码不接触任何 token**
-- 规范与文档：实现细节以 [`AGENTS.md`](./AGENTS.md) 为唯一权威；前端交互契约见 [`PRD.md`](./PRD.md)；
-  开发流程（含分级路径与门禁）见 [`开发流程规范.md`](./开发流程规范.md)
+- 文档：实现细节以 [`AGENTS.md`](./AGENTS.md) 为唯一权威；部署运维见 [`docs/deployment.md`](./docs/deployment.md)，
+  接入方见 [`docs/integration-guide.md`](./docs/integration-guide.md)，前端交互见 [`docs/prd.md`](./docs/prd.md)，
+  开发流程（分级路径与门禁）见 [`docs/development-workflow.md`](./docs/development-workflow.md)
 
 ## 1. 功能
 
@@ -63,9 +64,12 @@ docker compose ps             # 两者 healthy 后再继续
 ### 5.2 配置环境变量与签名密钥
 
 ```bash
+make deps                     # 拉 Go 依赖 + 安装 pre-push 钩子（克隆后跑一次）
 cp .env.example .env          # 按需修改；变量含义见文件内注释
 make keys                     # 生成 configs/dev-signing-key.pem
 ```
+
+> `make deps` 里带 `hooks-install`：`.git/hooks` 不入库，漏装会让 push 边界的 full 档门禁形同不存在（分档见 §8）。
 
 `.env` 中的必填项（缺失会启动失败）：`OIDC_ISSUER`、`OIDC_SIGNING_KEY_PATH`、`OIDC_CRYPTO_KEY`（32 字节）、`DB_USER`、`DB_PASSWORD`、`REDIS_ADDR`。
 
@@ -163,19 +167,19 @@ make docs-serve               # 生成后启动服务，回显文档地址
 | **L2 全套** | 触及对外契约 / 多方协作 / > 3 天 | 规范 §4 的完整七步 |
 
 完整说明（判档反例、七步细节、入口分流、轻量化原则、质量门禁、文档分工）见
-**[`开发流程规范.md`](./开发流程规范.md)**。
+**[`docs/development-workflow.md`](./docs/development-workflow.md)**。
 
-日常只需记住门禁三条命令与分级判档；工具链、扩展按需启用等内容都在该文件中。
+日常只需记住两个门禁档位（提交 `make verify-fast`、离开本机 `make verify-full`）与分级判档；工具链、扩展按需启用等内容都在该文件中。
 
 ## 9. 生产部署要点
 
-1. 反向代理把协议层与管理 API 置于同一域名下（否则 `sid` cookie 无法共享）：
-   - `/oauth2/*`、`/.well-known/*`、`/login`、`/logout` → `:8080`
-   - `/api/*` → `:8081`
-   - `/` → `web/dist/portal`，`/admin/*` → `web/dist/admin`
-2. `APP_ENV=prod` 时强制校验：`OIDC_ISSUER` 必须 `https://`、`COOKIE_SECURE=true`。
-3. 管理后台产物默认使用 `base: '/'`，挂到 `/admin/` 子路径时需要在 `vite.config.ts` 调整 `base` 并同步 `createWebHistory`。
-4. 数据库与 Redis 密码、`OIDC_CRYPTO_KEY`、签名私钥须通过密钥管理下发，不要提交进仓库。
+完整的四域拓扑（`portal` / `admin` / `api` / `sso`）、域名与端口矩阵、迁移清单、回滚与排障见
+**[`docs/deployment.md`](./docs/deployment.md)**。这里只留四条底线：
+
+1. 浏览器只面向 `portal.<主域>` 与 `admin.<主域>`；`api.<主域>` 只放行 `/api/v1/*`，`sso.<主域>` 只放行 OIDC 端点与 `/healthz`（`/readyz` 公网 404）
+2. 会话 cookie 为 `Domain=<主域>` + `Secure` + `SameSite=Lax`，写入与清除必须用同一份配置（`internal/pkg/cookie` 是唯一实现）
+3. `APP_ENV=prod` 强制校验：`OIDC_ISSUER` 为 `https://`、`COOKIE_SECURE=true`、`COOKIE_DOMAIN` 为主域形态、短信/邮件通道非 mock，否则拒绝启动
+4. 数据库与 Redis 密码、`OIDC_CRYPTO_KEY`、签名私钥走密钥管理下发；迁移为手写 SQL 手工执行，禁止 `AutoMigrate`
 
 ## 10. 目录速览
 
@@ -190,6 +194,7 @@ migrations/        # 手写 SQL（禁止 AutoMigrate）
 tools/             # 构建期工具（独立 module）：Swagger 2.0 -> OpenAPI 3.0.3 转换与漂移比对
 web/portal         # 门户（Tailwind）
 web/admin          # 管理后台（Element Plus）
+docs/              # 部署 / 接入 / PRD / 开发流程 / 选型报告
 .specify/          # Spec Kit 配置：宪法（memory/）、模板、脚本、质量门禁运行时（gates/）
 specs/             # 每个功能的规格/计划/任务（由 /speckit.specify 生成）
 .codebuddy/        # AI 斜杠命令（speckit.*）

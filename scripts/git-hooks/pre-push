@@ -1,0 +1,25 @@
+#!/usr/bin/env sh
+# push 边界门禁（2026-10-24 新增）。
+#
+# 分层依据（AGENTS §8.5）：pre-commit 只跑 fast 档（lint + check + 单测），
+# 让 WIP 提交不被 `make build` / docs 生成 / 前端产物构建卡住；
+# 离开本机前的最后一道闸放在 push：这里跑 full 档，即
+# `make build && make test && make lint && make check`。
+#
+# 安装：`make hooks-install`（写入 .git/hooks/pre-push；.git 不入库，克隆后需重装一次）
+# 逃生门：`GATES_SKIP=1 git push`（与 pre-commit 的逃生门同名同义）
+set -eu
+
+if [ "${GATES_SKIP:-}" = "1" ]; then
+    echo "pre-push: GATES_SKIP=1，跳过 full 档门禁" >&2
+    exit 0
+fi
+
+root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+    echo "pre-push: 无法定位仓库根目录，拒绝静默跳过" >&2
+    exit 1
+}
+cd "$root"
+
+echo "pre-push: 运行 full 档门禁（make verify-full）…" >&2
+exec make verify-full

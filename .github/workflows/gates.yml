@@ -53,6 +53,11 @@ jobs:
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: Run quality gates
         run: bash .specify/gates/verify.sh --boundary ci
+      # 2026-10-24：policy 的 verify-quality 在 git 边界切到了 fast 档（`make verify-fast`
+      # = lint + check + 单测），full 档由 pre-push 兜底。CI 没有 pre-push，必须自己补回
+      # `make build`（其中含 docs-check 的 OpenAPI 漂移比对），否则文档腐化将没有任何边界拦得住。
+      - name: Enforce the full delivery gate
+        run: make build
       # PR title/description against the commit-message rules, Protected-Change
       # declarations across the PR's commits, and the pre-commit secret and
       # forbidden-file scan over each of them (commits made by cherry-pick, rebase,
