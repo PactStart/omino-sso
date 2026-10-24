@@ -46,7 +46,11 @@ allow_hit() { # allow_hit <tasks.md> <被引用路径>
 
 ignored() { # ignored <路径>：被 .gitignore 排除且尚未生成（如开发私钥、.tmp 中间产物）
 	git rev-parse --git-dir >/dev/null 2>&1 || return 1
-	git check-ignore -q --no-index -- "$1" 2>/dev/null
+	# 目录型规则（`.tmp/`）只匹配"目录"，而不存在的路径会被 git 当成普通文件，
+	# 于是干净检出（CI）上 `git check-ignore -- .tmp` 判不中、误报成"树里少了一个目录"。
+	# 开发机因为跑过 make docs 恰好存在 `.tmp/`，这个盲区一直藏着 —— 所以两种形态都探。
+	git check-ignore -q --no-index -- "$1" 2>/dev/null && return 0
+	git check-ignore -q --no-index -- "${1%/}/" 2>/dev/null
 }
 
 # ---------------------------------------------------------------------------
