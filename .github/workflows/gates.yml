@@ -51,6 +51,17 @@ jobs:
           # golangci-lint is lower than the targeted Go version (1.26.0)").
           go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Diagnose lint
+        run: |
+          free -m || true
+          nproc || true
+          golangci-lint --version || true
+          echo '--- first run ---'
+          make lint-go
+          echo "lint-go exit=$?"
+          echo '--- second run (warm) ---'
+          make lint-go
+          echo "lint-go rerun exit=$?"
       - name: Run quality gates
         run: bash .specify/gates/verify.sh --boundary ci
       # 2026-10-24：policy 的 verify-quality 在 git 边界切到了 fast 档（`make verify-fast`
