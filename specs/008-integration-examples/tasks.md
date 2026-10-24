@@ -139,6 +139,19 @@ description: "Task list for 008-integration-examples"
 | SC-010 | `A16 PASS` 三个 `Set-Cookie` 名恰为 `sid_go`/`sid_java`/`sid_py` 且互不相同；`A11 PASS` 期间 IdP `/api/v1/me` 仍 200 且示例未写 `sid=` |
 | T031 | `SSO_USERINFO_URL_OVERRIDE` 仅出现在 `examples/README.md §2` 与 A15 的临时环境；`.tmp/e2e-examples/clients.env` 权限 `0600`；`examples/` 已在 `.dockerignore` 中排除，未被任何镜像/构建产物引用 |
 
+### 收敛证据（2026-10-25，Phase 7 T032–T038）
+
+| 项 | 证据 |
+|---|---|
+| T032 | `report.txt` 新增 `A4-TIMING 启动→首次 200：go=7s java=8s python=10s`（两轮一致）；`examples/README.md §4.2` 固定「实测用时」表并写明冷/热缓存口径与数据来源 |
+| T033 | `stage_a0_build` 在缺 `venv` 时自动 `python3 -m venv` + `pip install -r requirements.txt`（受 `E2E_NET_TIMEOUT` 约束）；`--self-test` PASS，两轮实跑 A0 均 PASS |
+| T034 | 选择「记录上调」路线：`plan.md` 技术上下文改为 Go `1.26+` 并注明 `x/oauth2 v0.37.0 → 1.26.0`、`go-oidc v3.21.0 → 1.25.0`；`examples/README.md §3` 同步标注 |
+| T035 | `with_timeout` 三级兜底（`timeout` → `gtimeout` → bash 计时 + `kill`，超时返回 124）；本机无 coreutils，两轮 A0 均走兜底分支且未误杀 |
+| T036 | 两轮日志均为 `已按原值恢复三个客户端的 accessTokenTtl：go=900 java=900 python=900`（值来自 `GET /api/v1/admin/clients/{id}` 回读，非硬编码） |
+| T037 | `plan.md` 的 Source Code 结构已对齐实际文件：新增 `examples/go/handlers.go`，Java 包名更正为 `com/example/ssoexample` 并列出 9 个类 |
+| T038 | 2026-10-25 连续两轮 `PASS=17 FAIL=0`、第二轮 `ELAPSED=103s EXIT=0`；`A3`（go=1s/java=5s/python=1s）与 `A15`（200 + `degraded=[userinfo]`）行为未变 |
+| 门禁 | `make verify-fast` = lint + check + 单测，`EXIT=0`；`bash scripts/e2e/examples.sh --self-test` PASS；api-evolve gate PASS（无 breaking/removal 声明，契约 sha256 仍为 `7a5cb8d1…ede41`） |
+
 ## Dependencies
 
 ```text
@@ -209,3 +222,18 @@ Task: "examples/go/session.go（T010）"
 - 勾选前必须有冒烟或断言证据，不接受「代码写完了」作为完成依据。
 - 示例依赖只落在 `examples/*` 清单；任何让根 `go.mod` 出现变化的改动都视为缺陷（FR-016）。
 - 端到端脚本会留下客户端与专用账号（用户已允许），清理是手工动作，见 `examples/README.md`。
+
+---
+
+## Phase 7: Convergence
+
+**Purpose**: `/speckit.converge` 复核（2026-10-25）发现 7 项「规格/契约/计划 vs 现有实现」的差距。以下任务只做补齐，不改动 Phase 1–6 的既有条目。
+
+- [x] T032 补齐 SC-001 的可量化证据两处：① `scripts/e2e/examples.sh` 在 A3 之后额外记录「示例启动→首次 `/api/me` 200」耗时并写入 `.tmp/e2e-examples/report.txt`（当前 `A3-TIMING` 只记到首次 401）；② `examples/README.md` 固定一行「实测用时」写明三语言数值与测量条件（含冷/热缓存口径） per SC-001 (partial)
+- [x] T033 让 A0 自行准备 Python 依赖：`scripts/e2e/examples.sh` 在缺 `examples/python/venv` 时用 `python3 -m venv` + `pip install -r requirements.txt` 创建（受 `E2E_NET_TIMEOUT` 约束），失败再 `exit 2` 并打印最后一屏错误；使干净检出上「一条命令」成立 per contracts/e2e-examples-cli.md A0、FR-011、SC-002 (partial)
+- [x] T034 消除 Go 示例的版本矛盾：`examples/go/go.mod` 的 `go 1.26.0` 由 `golang.org/x/oauth2 v0.37.0`（`gover=1.26.0`）与 `go-oidc v3.21.0`（`gover=1.25.0`）强制，与 plan「Go 1.23+」及 T006 的 `go 1.23` 冲突——要么把这两个依赖降到支持 1.23 的精确版本，要么在 plan 的技术上下文与 `examples/README.md` 前置条件里显式记录上调到 1.26 并说明理由 per plan: Go 1.23+ (contradicts)
+- [x] T035 给 `scripts/e2e/examples.sh` 的 `with_timeout` 补 macOS 兜底：优先 `timeout`，其次 `gtimeout`，都没有时用 bash 自带计时 + `kill` 实现同等上限，使 `E2E_NET_TIMEOUT` 在无 coreutils 的机器上真正生效（当前静默裸跑，A0 的 `go build`/`mvn package` 可无限挂起） per contracts/e2e-examples-cli.md 行为约束（超时兜底）、E2E_NET_TIMEOUT (partial)
+- [x] T036 `scripts/e2e/examples.sh` 的 `stage_a9_a10_refresh` 先回读并保存三个客户端原 `accessTokenTtl`，结束时按原值恢复，不再硬编码 `900`（否则会留下被脚本改过的客户端配置） per FR-012、contracts/e2e-examples-cli.md 行为约束（不碰既有配置） (partial)
+- [x] T037 对齐 Java 示例的结构性清单：plan 与 T013/T014 写的是 `com/example/demo/{DemoApplication,SecurityConfig,AuthController}.java`，实现为 `com/example/ssoexample/{DemoApplication,SecurityConfig,PageController,MeService,LoginSuccessHandler,OAuthFailureHandler,IdTokenOnlyUserService,SessionKeys,StartupCheck}.java`——更新 plan 的 Source Code 结构与 tasks 中的文件引用（或按原命名重构），使产物与代码可逐项对照 per plan: Source Code structure、T013–T014 (partial)
+- [x] T038 重跑并刷新 SC-007 证据：`416643c` 把三示例启动改为 `env` 数组传参后，tasks.md「连跑两次 17/17」的证据早于该改动——连续执行两轮 `bash scripts/e2e/examples.sh` 全绿，并确认 A3（启动基线）、A15（降级重启）行为未变，把新 report 的关键行回填到本文件「完成证据」 per SC-007、T024 (partial)
+

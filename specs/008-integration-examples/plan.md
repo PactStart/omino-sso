@@ -11,14 +11,16 @@
 关键取舍（详见 [research.md](./research.md)）：
 1. `examples/go` 用**独立 Go module**（同 `tools/go.mod` 范式），根 `go.mod` 与 §2.1 锁定表零改动，示例依赖锁精确版本；
 2. 三示例的令牌一律存**服务端会话**，不落浏览器 cookie——指南的 Go 示例把 token 塞进 `gorilla/sessions` CookieStore，那会把令牌明文（仅签名）送到浏览器，与宪法 IV 冲突；连带去掉 `gorilla/sessions`（D11）；
-3. Java 侧 Spring Boot 由指南的 `3.2.5` 上调（本地仅 JDK 23，Boot 3.2 只支持到 Java 21），Python 侧钉住支持 3.14 的版本；
+3. Java 侧 Spring Boot 由指南的 `3.2.5` 上调到 `3.5.3`（本地仅 JDK 23，Boot 3.2 只支持到 Java 21），Python 侧钉住可装轮的精确版本组合（实测落在 CPython 3.12.14，`fastapi 0.115.6`）；
 4. 会话 cookie 名固定 `sid_go`/`sid_java`/`sid_py`——三示例与 IdP 同处 `localhost` 且 cookie 不按端口隔离，重名会覆盖 IdP 的 `sid`（critique E1）；
 5. `docs/integration-guide.md §9` 的三语言代码收敛为索引，`examples/` 是接入代码唯一权威（D12）；
 6. 端到端用**专用示例账号**而非演示账号 `zhangsan`，避免登录失败计数把演示账号锁死（D13）。
 
 ## Technical Context
 
-**Language/Version**: 主站 `Go 1.26.0`（**不改**）；示例：Go `1.23+`、Java `17+`（本地 JDK 23，按 `release 21` 编译）、Python `3.11+`（本地 3.14）
+**Language/Version**: 主站 `Go 1.26.0`（**不改**）；示例：Go `1.26+`、Java `17+`（本地 JDK 23，按 `release 21` 编译）、Python `3.11+`（本地 3.12 验证）
+
+> **2026-10-25 收敛修正（T034）**：原写「Go `1.23+`」与实现不符——`examples/go` 的两个精确锁定依赖已经抬高门槛：`golang.org/x/oauth2 v0.37.0` 要求 Go `1.26.0`、`go-oidc v3.21.0` 要求 Go `1.25.0`，故 `examples/go/go.mod` 的 `go` 指令为 `1.26.0`。按 spec Assumptions「版本不满足时由实现阶段记录最小可用升级」选择**记录上调**而非降级依赖（降级会退到更旧的 OIDC 实现，与 §2.0「优先成熟轮子」相悖）。Python 侧同理：`fastapi 0.115.6` 早于 3.14，实测矩阵落在 CPython 3.12.14，见 `examples/README.md §6.3`。
 
 **Primary Dependencies**（全部锁精确版本，仅存在于 `examples/*` 清单）：
 - Go 示例：`github.com/coreos/go-oidc/v3`、`golang.org/x/oauth2`、`html/template`（标准库）；**不需要** `gorilla/sessions`（D11）
@@ -89,14 +91,21 @@ examples/
 │   ├── main.go                   # 路由装配 + 启动校验
 │   ├── oidc.go                   # 发现/JWKS/验签/换令牌/刷新（库调用）
 │   ├── session.go                # 服务端会话存储（token 不出服务端）
+│   ├── handlers.go               # /login /callback /api/me /logout / 的 HTTP 处理
 │   └── templates/index.html      # 演示首页（html/template）
 ├── java/
 │   ├── pom.xml
 │   └── src/main/
-│       ├── java/com/example/demo/
+│       ├── java/com/example/ssoexample/
 │       │   ├── DemoApplication.java
-│       │   ├── SecurityConfig.java   # PKCE、回调对齐、登出
-│       │   └── AuthController.java   # /api/me、userinfo、首页
+│       │   ├── SecurityConfig.java          # PKCE、回调对齐、登出
+│       │   ├── StartupCheck.java            # 启动期校验 + [start] 日志
+│       │   ├── PageController.java          # 首页与 /logout、错误契约
+│       │   ├── MeService.java               # /api/me、userinfo、降级、单飞刷新
+│       │   ├── LoginSuccessHandler.java     # 回调成功后写服务端会话
+│       │   ├── OAuthFailureHandler.java     # 回调失败的错误契约
+│       │   ├── IdTokenOnlyUserService.java  # 仅供降级路径取本地令牌声明
+│       │   └── SessionKeys.java             # 会话键常量
 │       └── resources/
 │           ├── application.yaml
 │           └── templates/index.html  # 演示首页（Thymeleaf）

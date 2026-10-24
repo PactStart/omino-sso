@@ -46,7 +46,7 @@ export SSO_ISSUER=http://localhost:8080 \
        SESSION_SECRET=$(openssl rand -base64 32)
 ```
 
-**Go**
+**Go**（Go **1.26+**：`examples/go/go.mod` 的 `go` 指令为 `1.26.0`，由精确锁定的 `golang.org/x/oauth2 v0.37.0`（要求 1.26.0）与 `go-oidc v3.21.0`（要求 1.25.0）决定，见 §6.3）
 
 ```bash
 cd examples/go
@@ -61,7 +61,7 @@ mvn -B -DskipTests package
 java -jar target/omino-sso-example-java-0.0.1-SNAPSHOT.jar
 ```
 
-**Python**（示例目录内已带 `venv/`，被 gitignore）
+**Python**（CPython 3.11+，实测 3.12；示例目录内已带 `venv/`，被 gitignore）
 
 ```bash
 cd examples/python
@@ -96,13 +96,25 @@ bash scripts/e2e/examples.sh --self-test  # 只校验脚本自身（不连 IdP�
 
 | 项 | 说明 |
 |---|---|
-| 前置 | IdP 在跑、管理员账号可用、端口空闲（默认 `8000/8001/8002`，可用 `E2E_*_PORT` 改）、`go`/`mvn`/`python3` 就绪；不满足则 `exit 2` 且**不开始**断言 |
+| 前置 | IdP 在跑、管理员账号可用、端口空闲（默认 `8000/8001/8002`，可用 `E2E_*_PORT` 改）、`go`/`mvn`/`python3` 就绪；**Python 依赖由脚本自行准备**（缺 `examples/python/venv` 时自动 `python3 -m venv` + `pip install -r requirements.txt`，受 `E2E_NET_TIMEOUT` 约束）；不满足则 `exit 2` 且**不开始**断言 |
 | 退出码 | `0` 全绿 / `1` 有断言失败（已打印 got/want 并附日志尾部）/ `2` 前置不满足 |
 | 产物 | `.tmp/e2e-examples/`：`report.txt`（逐项结果）、`clients.env`（`0600`，可 `source` 后手工起示例）、`go.log`/`java.log`/`python.log` |
-| A9 的判据 | 脚本把三个客户端的 `accessTokenTtl` 临时改成 60 秒并重新登录，等令牌过期后访问 `/api/me`，以日志 `[refresh] ok rotated=1` 判定轮换（令牌本身不出服务端，脚本无法直接比对 refresh_token），跑完恢复 900 |
+| A9 的判据 | 脚本先回读三个客户端原 `accessTokenTtl`，临时改成 60 秒并重新登录，等令牌过期后访问 `/api/me`，以日志 `[refresh] ok rotated=1` 判定轮换（令牌本身不出服务端，脚本无法直接比对 refresh_token），跑完按**原值**恢复 |
+| 超时 | 每步 HTTP 用 `E2E_CURL_TIMEOUT`（默认 10s）；A0 的依赖准备/构建用 `E2E_NET_TIMEOUT`（默认 300s）。机器上没有 coreutils 的 `timeout` 时，脚本退到 `gtimeout`，再没有就用 bash 计时 + `kill` 兜底，不会静默裸跑 |
 | A11 的判据 | 用同一 `sid` 直接查 `{API}/api/v1/me` 是否仍 200，不依赖门户 dev server 是否在跑；同时断言示例响应里没有 `Set-Cookie: sid=` |
-| 幂等 | 连跑两次都全绿（客户端按 `clientName` 复用、密钥复用缓存，已存在即通过）；2026-10-24 实测连续两轮 17/17 PASS |
+| 幂等 | 连跑两次都全绿（客户端按 `clientName` 复用、密钥复用缓存，已存在即通过）；2026-10-24 与 2026-10-25 各实测连续两轮 17/17 PASS |
 | 已知限制 | `refresh_token` 不出服务端，`E2E_STRICT_REFRESH=1` 的「重放旧令牌应得 invalid_grant」在示例侧无法执行，脚本会明确打印这条限制而不是假装通过 |
+
+### 4.2 实测用时（2026-10-25，macOS x86_64）
+
+| 项 | 实测 |
+|---|---|
+| 示例进程启动 → 首次 `/api/me` **200** | **Go 7s / Java 8s / Python 10s**（热缓存；`report.txt` 的 `A4-TIMING` 行） |
+| 进程启动 → 首次 `/api/me` 401（未登录基线） | Go 1s / Java 5s / Python 1s（`A3-TIMING` 行） |
+| 一条命令整体（连续第二次起） | **103s**，`PASS=17 FAIL=0` |
+
+口径：上表两轮均为**热缓存**（`venv/` 已装、Maven 依赖已下载），只代表「后续执行」；冷缓存首次会在 A0 多出 `mvn` 依赖下载与 `pip install -r requirements.txt` 的耗时（受 `E2E_NET_TIMEOUT` 约束）。
+数据来源固定为 `.tmp/e2e-examples/report.txt` 的 `A3-TIMING` / `A4-TIMING` 两行，重跑即刷新。
 
 ## 5. 日志
 

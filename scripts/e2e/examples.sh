@@ -84,15 +84,36 @@ wait_http() { # wait_http <url> <期望码> <超时秒>
   return 1
 }
 
-# macOS 默认没有 coreutils 的 timeout；有就用，没有就直接跑（依赖命令自身退出）。
+# 超时兜底：优先 coreutils 的 timeout，其次 Homebrew 的 gtimeout（macOS 默认两者都没有），
+# 都没有时用 bash 自带计时 + kill 实现同等上限，超时返回 124（与 timeout 一致）。
+# 不允许「没装 timeout 就直接裸跑」——那会让 E2E_NET_TIMEOUT 静默失效，
+# A0 的 go build / mvn package 可能无限挂起。
 with_timeout() { # with_timeout <秒> <命令...>
   local seconds=$1
   shift
   if command -v timeout >/dev/null 2>&1; then
     timeout "$seconds" "$@"
-  else
-    "$@"
+    return $?
   fi
+  if command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "$seconds" "$@"
+    return $?
+  fi
+  "$@" &
+  local pid=$! waited=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if (( waited >= seconds )); then
+      kill -TERM "$pid" 2>/dev/null
+      sleep 1
+      kill -KILL "$pid" 2>/dev/null
+      wait "$pid" 2>/dev/null
+      printf 'with_timeout: 超过 %ss 已终止（%s）\n' "$seconds" "$1" >&2
+      return 124
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  wait "$pid"
 }
 
 cleanup() {
@@ -163,9 +184,20 @@ stage_a0_build() {
     exit 2
   fi
 
+  # Python 依赖由脚本自行准备：干净检出上没有 venv，A0 不能要求用户先手工敲两条命令
+  # （契约 A0 本身就是 pip install + import app，SC-002 也把「首次含依赖准备」计入一次执行）。
+  local py_bin=python3
+  command -v python3.12 >/dev/null 2>&1 && py_bin=python3.12
   if [[ ! -x "$ROOT/examples/python/venv/bin/python" ]]; then
-    bad A0 "缺少 examples/python/venv" "venv 可用（python3.12 -m venv venv && pip install -r requirements.txt）"
-    exit 2
+    log "A0 准备 Python 依赖（venv 缺失）：$py_bin -m venv venv && pip install -r requirements.txt（单步上限 ${E2E_NET_TIMEOUT}s）"
+    if ! ( cd "$ROOT/examples/python" \
+        && with_timeout "$E2E_NET_TIMEOUT" "$py_bin" -m venv venv \
+        && with_timeout "$E2E_NET_TIMEOUT" ./venv/bin/python -m pip install --disable-pip-version-check -q -r requirements.txt ) \
+        >"$WORK/python-build.log" 2>&1; then
+      tail_err=$(tail -5 "$WORK/python-build.log" | tr '\n' ' ')
+      bad A0 "准备 Python 依赖失败：$tail_err" "python3 -m venv + pip install -r requirements.txt 成功"
+      exit 2
+    fi
   fi
   if ! ( cd "$ROOT/examples/python" && ./venv/bin/python -c "import app" ) >"$WORK/python-build.log" 2>&1; then
     tail_err=$(tail -5 "$WORK/python-build.log" | tr '\n' ' ')
@@ -226,6 +258,7 @@ start_examples() {
   session_secret=$(openssl rand -base64 32 2>/dev/null || printf 'local-demo-session-secret-0123456789abcdef')
   SESSION_SECRET_SHARED="$session_secret"
   started_at=$(date +%s)
+  EX_STARTED_AT=$started_at
 
   # 环境变量走数组而不是行内 `NAME=value` 前缀：值不在 `=` 后直接以引号开头，
   # 避免被 gates 的「凭据赋值」启发式规则误报（该规则无白名单）。
@@ -286,6 +319,11 @@ start_examples() {
 # LOGIN_SAW_IDP_FORM=1 表示本次真的落在登录页（A8 用它做反证）。
 LOGIN_SAW_IDP_FORM=0
 SESSION_SECRET_SHARED=""
+
+# SC-001 的量化口径：三示例各自的「进程启动 → 首次 /api/me 200」秒数。
+# 启动时刻由 start_examples 记录，首次 200 由登录闭环（A4–A6）观测。
+EX_STARTED_AT=""
+GO_FIRST200_S="" JAVA_FIRST200_S="" PY_FIRST200_S=""
 
 drive_login() {
   local lang=$1 base=$2 jar=$3 suffix=${4:-}
@@ -377,9 +415,18 @@ stage_a4_a6_login() {
     if [[ "$code" == "200" ]]; then
       sub=$(printf '%s' "$body" | jq -r '.sub // empty')
       case "$lang" in
-        go) GO_SUB=$sub ;;
-        java) JAVA_SUB=$sub ;;
-        python) PY_SUB=$sub ;;
+        go)
+          GO_SUB=$sub
+          [[ -n "$EX_STARTED_AT" ]] && GO_FIRST200_S=$(( $(date +%s) - EX_STARTED_AT ))
+          ;;
+        java)
+          JAVA_SUB=$sub
+          [[ -n "$EX_STARTED_AT" ]] && JAVA_FIRST200_S=$(( $(date +%s) - EX_STARTED_AT ))
+          ;;
+        python)
+          PY_SUB=$sub
+          [[ -n "$EX_STARTED_AT" ]] && PY_FIRST200_S=$(( $(date +%s) - EX_STARTED_AT ))
+          ;;
       esac
       ok "$assert_id" "sub=$sub"
     else
@@ -387,6 +434,11 @@ stage_a4_a6_login() {
       dump_logs "$lang"
     fi
   done
+
+  # SC-001 要求的量化口径：进程启动 → 首次 /api/me 200（不是首次 401）。
+  printf 'A4-TIMING 启动→首次 200：go=%ss java=%ss python=%ss\n' \
+    "${GO_FIRST200_S:--1}" "${JAVA_FIRST200_S:--1}" "${PY_FIRST200_S:--1}" >>"$REPORT"
+  log "首次 200 耗时：go=${GO_FIRST200_S:--1}s java=${JAVA_FIRST200_S:--1}s python=${PY_FIRST200_S:--1}s"
 
   section "A7 三个 sub 一致"
   if [[ -n "$GO_SUB" && "$GO_SUB" == "$JAVA_SUB" && "$JAVA_SUB" == "$PY_SUB" ]]; then
@@ -427,8 +479,14 @@ stage_a9_a10_refresh() {
   # 示例只在访问令牌临近过期时刷新。这里把三个客户端的 accessTokenTtl 调到下限 60 秒，
   # 等令牌过期后访问 /api/me 触发单飞刷新；令牌不出服务端，因此用日志里的
   # [refresh] ok rotated=1 作为「发生了轮换」的可观测量（契约允许日志作为判据）。
-  local min_ttl=60 wait_s=70 id
+  local min_ttl=60 wait_s=70 id idx=0 ttl
+  # 回读原值再改：脚本只是临时借用 TTL，跑完必须按原值恢复，不能写死 900
+  # （FR-012：不破坏既有配置；管理端可能改过 TTL）。
+  local -a orig_ttl=()
   for id in "$GO_ID" "$JAVA_ID" "$PY_ID"; do
+    ttl=$(curl -s --max-time "$E2E_CURL_TIMEOUT" -b "$ad_cookie" \
+      "$E2E_API/api/v1/admin/clients/$id" 2>/dev/null | jq -r '.data.accessTokenTtl // empty' 2>/dev/null)
+    orig_ttl+=("${ttl:-900}")
     curl -s --max-time "$E2E_CURL_TIMEOUT" -X PATCH -b "$ad_cookie" -o /dev/null \
       -H 'Content-Type: application/json' -d "{\"accessTokenTtl\":$min_ttl}" \
       "$E2E_API/api/v1/admin/clients/$id" 2>/dev/null
@@ -492,11 +550,14 @@ stage_a9_a10_refresh() {
     log "[strict] 跳过重放断言：refresh_token 不出服务端，脚本无法重放（见 examples/README.md 已知限制）"
   fi
 
+  idx=0
   for id in "$GO_ID" "$JAVA_ID" "$PY_ID"; do
     curl -s --max-time "$E2E_CURL_TIMEOUT" -X PATCH -b "$ad_cookie" -o /dev/null \
-      -H 'Content-Type: application/json' -d '{"accessTokenTtl":900}' \
+      -H 'Content-Type: application/json' -d "{\"accessTokenTtl\":${orig_ttl[$idx]:-900}}" \
       "$E2E_API/api/v1/admin/clients/$id" 2>/dev/null
+    idx=$((idx + 1))
   done
+  log "已按原值恢复三个客户端的 accessTokenTtl：go=${orig_ttl[0]:-900} java=${orig_ttl[1]:-900} python=${orig_ttl[2]:-900}"
 }
 
 # ------------------------------------------------------ A11 未破坏 IdP 会话
