@@ -62,6 +62,9 @@ jobs:
           echo '--- second run (warm) ---'
           make lint-go
           echo "lint-go rerun exit=$?"
+          echo '--- verify-fast ---'
+          make verify-fast 2>&1 | tail -60
+          echo "verify-fast exit=${PIPESTATUS[0]}"
       - name: Run quality gates
         run: bash .specify/gates/verify.sh --boundary ci
       # 2026-10-24：policy 的 verify-quality 在 git 边界切到了 fast 档（`make verify-fast`
