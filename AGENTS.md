@@ -2,7 +2,7 @@
 
 > 本文件是项目的**唯一权威规范**，所有开发会话（人类或 AI）必须先读本文件再动手。
 > 与本文件冲突的实现一律视为缺陷；确需变更规范时，先改本文件并写明理由，再改代码。
-> 配套文档：`技术选型报告.md`（背景与决策依据，不作为实现约束）。
+> 配套文档：`docs/tech-stack-report.md`（背景与决策依据，不作为实现约束）。其余交付文档（部署、接入、PRD、流程）统一在 `docs/`。
 
 ---
 
@@ -137,8 +137,14 @@
 
 ```
 omino-sso/
-├── AGENTS.md                          # 本文件
-├── 技术选型报告.md
+├── AGENTS.md                          # 本文件（唯一权威规范）
+├── README.md                          # 仓库入口：快速开始 + 文档索引
+├── docs/                              # 2026-10-24 新增：交付文档（不作为实现约束，规范只在本文件）
+│   ├── deployment.md                  # 四域拓扑、域名/端口矩阵、迁移与回滚
+│   ├── integration-guide.md           # 接入方（SP）OIDC 接入指引
+│   ├── prd.md                         # 前端交互契约（页面、路由、接口）
+│   ├── development-workflow.md        # 交付流程（判档、七步、门禁）
+│   └── tech-stack-report.md           # 选型背景与决策依据
 ├── go.mod
 ├── Makefile
 ├── docker-compose.yml                 # mysql + redis + sso + portal + admin

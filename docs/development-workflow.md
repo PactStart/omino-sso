@@ -1,8 +1,8 @@
 # 开发流程规范（Spec Kit / SDD）
 
 > 本文件是开发流程的**唯一说明**，`README.md` 只做引用。原则层约束见
-> [`.specify/memory/constitution.md`](./.specify/memory/constitution.md)，
-> 实现细节（版本、端口、字段、错误码、非目标）以 [`AGENTS.md`](./AGENTS.md) 为唯一权威。
+> [`.specify/memory/constitution.md`](../.specify/memory/constitution.md)，
+> 实现细节（版本、端口、字段、错误码、非目标）以 [`AGENTS.md`](../AGENTS.md) 为唯一权威。
 
 规格驱动开发（SDD）的核心只有一句：**先写清「做什么 / 为什么」，再定技术方案，最后才写代码**。
 但流程强度必须与改动规模匹配——见下一节，这是本文件最重要的一节。
@@ -157,7 +157,7 @@ git switch -c 002-mfa-self-binding   # 与后续 spec 目录编号一致
 管理员可将指定用户标记为强制 MFA，被强制且未绑定的用户登录成功后先被引导到绑定页。
 
 边界：不改变现有 /oauth2/* 协议流程与 /api/v1/** 统一响应结构；
-不实现短信/邮件/备用码；前端交互契约参考 PRD.md 对应页面章节。
+不实现短信/邮件/备用码；前端交互契约参考 [`prd.md`](./prd.md) 对应页面章节。
 ```
 
 ---
@@ -252,8 +252,11 @@ make verify-full  # 交付档：+ make build（docs 漂移即失败），pre-pus
 |---|---|---|
 | `.specify/memory/constitution.md` | 不可协商的原则（5 条） | 每次 `plan` / `analyze` |
 | `AGENTS.md` | 实现细节唯一权威（版本、字段、错误码、非目标） | 写 spec / plan 的输入 |
-| `PRD.md` | 前端交互契约（页面、路由、接口） | 前端类特性的 spec 输入 |
-| 本文件 | 流程说明（分级路径、七步节奏、门禁） | 开工前判档、提交前自查 |
+| [`docs/prd.md`](./prd.md) | 前端交互契约（页面、路由、接口） | 前端类特性的 spec 输入 |
+| 本文件（`docs/development-workflow.md`） | 流程说明（分级路径、七步节奏、门禁） | 开工前判档、提交前自查 |
+| [`docs/deployment.md`](./deployment.md) | 部署拓扑、域名/端口矩阵、迁移与回滚 | 交付、发布、排障 |
+| [`docs/integration-guide.md`](./integration-guide.md) | 接入方（SP）怎么接 OIDC | 对外交付接入 |
+| [`docs/tech-stack-report.md`](./tech-stack-report.md) | 选型背景与决策依据（不作为实现约束） | 追溯"为什么这么选" |
 | `specs/NNN-xxx/` | 本次变更的过程记录 | 逐阶段产出 |
 
 ---
