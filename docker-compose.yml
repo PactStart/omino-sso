@@ -42,6 +42,8 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-dev}
       OIDC_ISSUER: ${OIDC_ISSUER:-http://localhost:8080}
+      # 未登录 SSO 的落点；本地默认留空 = 回落内置登录页（填 http://localhost:5173/login 可验证跳门户）
+      PORTAL_LOGIN_URL: ${PORTAL_LOGIN_URL:-}
       # 容器内固定使用随镜像发布的模板路径（Dockerfile 已 COPY）
       OIDC_SIGNING_KEY_PATH: /app/configs/dev-signing-key.pem
       OIDC_SIGNING_KEY_ID: ${OIDC_SIGNING_KEY_ID:-2026-10}
@@ -89,6 +91,7 @@ services:
       target: portal
       args:
         VITE_ADMIN_HOME: http://localhost:${ADMIN_UI_HOST_PORT:-8090}/
+        VITE_SSO_BASE_URL: http://localhost:${SSO_HOST_PORT:-8080}
         VITE_PORTAL_HOME: http://localhost:${PORTAL_HOST_PORT:-8088}/account/profile
         VITE_PORTAL_LOGIN_URL: http://localhost:${PORTAL_HOST_PORT:-8088}/login
         VITE_SITE_NAME: ${VITE_SITE_NAME:-统一身份认证}

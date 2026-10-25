@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -314,6 +315,12 @@ func (c *Config) validate() error {
 	if err := c.validateNotification(); err != nil {
 		return err
 	}
+	if err := validateCookieSameSite(c.CookieSameSite); err != nil {
+		return err
+	}
+	if err := validatePortalLoginURL(c.AppEnv, c.PortalLoginURL); err != nil {
+		return err
+	}
 	if c.AppEnv == "prod" {
 		if !strings.HasPrefix(c.Issuer, "https://") {
 			return errors.New("OIDC_ISSUER must use https in prod")
@@ -331,6 +338,44 @@ func (c *Config) validate() error {
 		if strings.Contains(c.CookieDomain, "://") || strings.HasSuffix(c.CookieDomain, "/") {
 			return fmt.Errorf("COOKIE_DOMAIN must be a bare domain without scheme or trailing slash, got %q", c.CookieDomain)
 		}
+	}
+	return nil
+}
+
+// validateCookieSameSite 把 COOKIE_SAME_SITE 收敛为白名单（009-portal-login-redirect）。
+//
+// 只允许 Lax（大小写不敏感，空视为 Lax）。Strict 在「接入方 → IdP → 门户 → IdP」
+// 的跨站整页跳转链上不携带会话，表现为"刚登录又被要求登录"；其它取值多半是拼写错误。
+func validateCookieSameSite(raw string) error {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "lax":
+		return nil
+	case "strict":
+		return errors.New("COOKIE_SAME_SITE=Strict is not allowed: cross-site redirects would drop the session (use Lax)")
+	default:
+		return fmt.Errorf("unsupported COOKIE_SAME_SITE: %q (only Lax is allowed)", raw)
+	}
+}
+
+// validatePortalLoginURL 校验未登录 SSO 的落点（PORTAL_LOGIN_URL，009）。
+//
+//	空值      → prod 启动失败（宪法：必填项缺失不得静默降级），dev/test 允许（回落内置登录页）
+//	非空值    → 必须是带 scheme+host 的绝对地址、无 fragment
+//	test/prod → 必须 https（dev 允许 http，便于本地 vite 5173）
+func validatePortalLoginURL(appEnv, raw string) error {
+	p := strings.TrimSpace(raw)
+	if p == "" {
+		if appEnv == "prod" {
+			return errors.New("PORTAL_LOGIN_URL is required in prod (e.g. https://portal.example.com/login); it is the landing page for unauthenticated SSO")
+		}
+		return nil
+	}
+	u, err := url.Parse(p)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.Fragment != "" {
+		return fmt.Errorf("PORTAL_LOGIN_URL must be an absolute URL like https://portal.example.com/login, got %q", raw)
+	}
+	if appEnv != "dev" && u.Scheme != "https" {
+		return fmt.Errorf("PORTAL_LOGIN_URL must use https in %s, got %q", appEnv, raw)
 	}
 	return nil
 }

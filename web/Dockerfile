@@ -33,12 +33,17 @@ ARG VITE_ADMIN_HOME
 ARG VITE_PORTAL_HOME
 ARG VITE_PORTAL_LOGIN_URL
 ARG VITE_SITE_NAME
+# 统一身份登录域（必填：缺失会让门户丢弃未登录 SSO 的回跳，用户"登录成功却回不到应用"）
+ARG VITE_SSO_BASE_URL
 # VITE_API_BASE_URL 刻意不传：保持代码内默认 /api/v1（同源反代）
 RUN test -n "$VITE_ADMIN_HOME" || { \
       echo "缺少 --build-arg VITE_ADMIN_HOME（示例：https://admin.example.com/users）"; exit 1; }
+RUN test -n "$VITE_SSO_BASE_URL" || { \
+      echo "缺少 --build-arg VITE_SSO_BASE_URL（示例：https://sso.example.com）"; exit 1; }
 ENV VITE_ADMIN_HOME=${VITE_ADMIN_HOME} \
     VITE_PORTAL_HOME=${VITE_PORTAL_HOME} \
     VITE_PORTAL_LOGIN_URL=${VITE_PORTAL_LOGIN_URL} \
+    VITE_SSO_BASE_URL=${VITE_SSO_BASE_URL} \
     VITE_SITE_NAME=${VITE_SITE_NAME}
 COPY portal/ ./portal/
 # build = vue-tsc --noEmit && vite build，类型错误会让镜像构建失败（不产出坏产物）

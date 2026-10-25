@@ -29,6 +29,10 @@ server {
     server_tokens off;
     client_max_body_size 10m;
 
+    # 登录页 URL 含来源应用名（?app=，009 FR-022）：限制 Referer 只发给同源，
+    # 避免从门户跳到 IdP / 跳到第三方资源时把内部系统名带出去。
+    add_header Referrer-Policy "same-origin" always;
+
     gzip              on;
     gzip_min_length   1024;
     gzip_proxied      any;

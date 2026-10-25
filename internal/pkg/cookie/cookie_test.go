@@ -13,6 +13,7 @@ import (
 // 只写 Name+Path 会生成 host-only 空 cookie，主域上的真 cookie 依然有效，
 // 表现为"登出/改密后其它子域仍保持登录"。
 func TestClearSessionMatchesSetSessionAttributes(t *testing.T) {
+	// 故意把配置写成 Strict：cookie 包已不再按配置分支（009），应恒为 Lax。
 	cfg := &config.Config{
 		CookieDomain:   ".example.com",
 		CookieSecure:   true,
@@ -43,6 +44,23 @@ func TestClearSessionMatchesSetSessionAttributes(t *testing.T) {
 	}
 	if clear.SameSite != set.SameSite {
 		t.Fatalf("cleared SameSite = %v, want %v", clear.SameSite, set.SameSite)
+	}
+	if set.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("SameSite = %v, want Lax regardless of config (cross-site redirect would drop the session with Strict)", set.SameSite)
+	}
+}
+
+// TestSameSiteAlwaysLax 锁住 009 的约束：无论 COOKIE_SAME_SITE 配成什么，发出的一律是 Lax。
+// 配置侧的白名单校验（Strict 启动失败）在 internal/config 里，这里只保证运行期不会分支。
+func TestSameSiteAlwaysLax(t *testing.T) {
+	for _, v := range []string{"", "Lax", "lax", "Strict"} {
+		cfg := &config.Config{CookieDomain: ".example.com", CookieSameSite: v}
+		c := parseSessionCookie(t, func(rec *httptest.ResponseRecorder) {
+			SetSession(rec, cfg, "sid-value", time.Minute)
+		})
+		if c.SameSite != http.SameSiteLaxMode {
+			t.Fatalf("COOKIE_SAME_SITE=%q → SameSite = %v, want Lax", v, c.SameSite)
+		}
 	}
 }
 

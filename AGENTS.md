@@ -186,7 +186,8 @@ omino-sso/
 │   ├── oidc/
 │   │   ├── provider.go                # newProvider: op.NewProvider 包装（变长参数）
 │   │   ├── storage.go                 # op.Storage 完整实现（唯一适配点）
-│   │   ├── login.go                   # 登录闭环：AuthRequest 回写 sub/amr/auth_time
+│   │   ├── login.go                   # 登录闭环：AuthRequest 回写 sub/amr/auth_time；/login 三态落点（009）
+│   │   ├── login_flow.go              # 2026-10-25 新增：登录落点判定（LoginStep 六态）+ 门户回跳 URL 构造（纯函数）
 │   │   ├── claims.go                  # SetUserinfoFromScopes / GetPrivateClaimsFromScopes
 │   │   ├── keys.go                    # 签名密钥加载与 kid 轮换
 │   │   ├── health.go                  # 007：:8080 的 /healthz、/readyz（net/http 版，逻辑在 pkg/probe）

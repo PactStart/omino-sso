@@ -55,10 +55,10 @@ description: "Task list for 未登录 OIDC 授权统一跳转门户登录页"
 
 **Purpose**：共享的判定纯函数、cookie 属性收敛、一体化编排变量。完成后各故事可并行开工。
 
-- [ ] T003 [P] 在 `internal/pkg/cookie/cookie.go` 删除 `sameSiteMode` 分支，恒发 `http.SameSiteLaxMode`（注释写明：`Strict` 会让跨站整页跳转丢会话）；同步改 `internal/pkg/cookie/cookie_test.go`：删除「Strict 配置 → StrictMode」的旧断言，改为「无论入参如何都返回 Lax」；验收：`go test ./internal/pkg/cookie/...` 全绿
-- [ ] T004 [P] 新建 `internal/oidc/login_flow.go`：定义 `type LoginStep int` 与 `StepComplete / StepPortal / StepTemplate / StepTemplateDegraded / StepRequestExpired / StepBadRequest` 六态，实现 `func decideStep(reqExists, hasSession, portalConfigured, portalMarker bool) LoginStep`（判定顺序：`!reqExists` → `hasSession` → `!portalConfigured` → `portalMarker`）与 `func portalRedirectURL(base, issuer, reqID, clientName string) (string, error)`（`next` 只做一次 URL-encode；保留 base 已有查询串；`clientName` 为空则不下发 `app`）；**同时在本任务内**于 `AGENTS.md §3` 的 `internal/oidc/` 段登记该文件（描述：登录落点判定纯函数 + 对应单测），避免目录树漂移
-- [ ] T005 为 `internal/oidc/login_flow.go` 新增**同目录单元测试**（`_test.go`，表驱动）：覆盖 `decideStep` 全 16 种输入组合（重点：`hasSession && portalMarker` 必须为 `StepComplete`）、`portalRedirectURL` 的 5 条断言（`next` 形如 `<issuer>/login?id=X&portal=1`、`app` 缺失不下发、base 带 `?from=sso` 时保留、`id` 含特殊字符只编码一次、非法 base 报错）；验收：`go test ./internal/oidc/ -run 'TestDecideStep|TestPortalRedirectURL'` 全绿
-- [ ] T006 [P] 在 `docker-compose.yml` 的 `sso` 服务 `environment` 增加 `PORTAL_LOGIN_URL=${PORTAL_LOGIN_URL:-}`（与 `.env.example`、`deploy/env/*.example` 对齐）；验收：`docker compose config` 解析通过、`make check` 无新增漂移
+- [X] T003 [P] 在 `internal/pkg/cookie/cookie.go` 删除 `sameSiteMode` 分支，恒发 `http.SameSiteLaxMode`（注释写明：`Strict` 会让跨站整页跳转丢会话）；同步改 `internal/pkg/cookie/cookie_test.go`：删除「Strict 配置 → StrictMode」的旧断言，改为「无论入参如何都返回 Lax」；验收：`go test ./internal/pkg/cookie/...` 全绿
+- [X] T004 [P] 新建 `internal/oidc/login_flow.go`：定义 `type LoginStep int` 与 `StepComplete / StepPortal / StepTemplate / StepTemplateDegraded / StepRequestExpired / StepBadRequest` 六态，实现 `func decideStep(reqExists, hasSession, portalConfigured, portalMarker bool) LoginStep`（判定顺序：`!reqExists` → `hasSession` → `!portalConfigured` → `portalMarker`）与 `func portalRedirectURL(base, issuer, reqID, clientName string) (string, error)`（`next` 只做一次 URL-encode；保留 base 已有查询串；`clientName` 为空则不下发 `app`）；**同时在本任务内**于 `AGENTS.md §3` 的 `internal/oidc/` 段登记该文件（描述：登录落点判定纯函数 + 对应单测），避免目录树漂移
+- [X] T005 为 `internal/oidc/login_flow.go` 新增**同目录单元测试**（`_test.go`，表驱动）：覆盖 `decideStep` 全 16 种输入组合（重点：`hasSession && portalMarker` 必须为 `StepComplete`）、`portalRedirectURL` 的 5 条断言（`next` 形如 `<issuer>/login?id=X&portal=1`、`app` 缺失不下发、base 带 `?from=sso` 时保留、`id` 含特殊字符只编码一次、非法 base 报错）；验收：`go test ./internal/oidc/ -run 'TestDecideStep|TestPortalRedirectURL'` 全绿
+- [X] T006 [P] 在 `docker-compose.yml` 的 `sso` 服务 `environment` 增加 `PORTAL_LOGIN_URL=${PORTAL_LOGIN_URL:-}`（与 `.env.example`、`deploy/env/*.example` 对齐）；验收：`docker compose config` 解析通过、`make check` 无新增漂移
 
 **Checkpoint**：判定逻辑已被纯函数单测锁定；`config.go`/`cookie`/`compose` 就绪，三条故事线可并行。
 
@@ -70,13 +70,13 @@ description: "Task list for 未登录 OIDC 授权统一跳转门户登录页"
 
 **Independent Test**：清空 cookie 打开 `examples/go` → 落在门户登录页（副标题显示应用名）→ 登录 → 自动回到示例且已登录；再构造 `portal=1` 无会话访问 `/login` → 出现内置页而非再次跳门户。
 
-- [ ] T007 [US1] 在 `internal/oidc/login.go` 的 `GET /login` 处理器接入 `decideStep`：`StepComplete` 走既有 `CompleteLogin` + 302 回调；`StepPortal` 调 `portalRedirectURL` 并 302；`StepTemplate` 渲染原模板；`StepTemplateDegraded` 渲染模板并写一条 `slog.Warn`（字段固定 `reason=portal_roundtrip_without_session`、`client_id`、`request_id`，**不含任何凭据**）；`StepBadRequest` 保持既有 400；验收：单测断言不含凭据、`LoginURL`（`internal/oidc/storage.go`）未被改动
-- [ ] T008 [US1] 在 `internal/oidc/login.go` 实现 `StepRequestExpired`（contracts/login-entry.md C1b）：渲染过期提示页，含「返回接入系统重新发起」与「重新登录」两个可点击入口，**不自动跳门户**、不出现 `pending`/`TTL`/`sameSite` 等内部词；`StepBadRequest`（无 `portal=1`）仍返回既有 400 文本；验收：单测断言两分支响应码与文案差异
-- [ ] T009 [US1] 在 `internal/oidc/login.go` 的**内置登录页（降级态）**数据中增加 `Degraded bool`，模板（`login.go` 内的 HTML 模板）在 `Degraded` 时渲染一行「登录状态未能在跳转中延续，请在此直接登录」；验收：C3（未配置门户地址）不出现该文案、C4（带 `portal=1` 回跳）出现
-- [ ] T010 [US1] 把模板渲染抽成可测函数（如 `renderLoginTemplate(w io.Writer, data loginData) error`），并新增**同目录单元测试**（`_test.go`）：断言 ① C3 输出含 `<form` 且不含降级文案 ② C4 含降级文案 ③ C1b 含重新发起入口 ④ 三种输出都不含 `/login` 技术路径字样（SC-008）；验收：`go test ./internal/oidc/ -run TestLoginTemplate` 全绿
-- [ ] T011 [P] [US1] 门户白名单：`web/portal/src/config.ts` 新增 `SSO_BASE_URL`（`VITE_SSO_BASE_URL`，dev 缺省 `http://localhost:8080`，解析失败视为空）；`web/portal/src/utils/redirect.ts` 的 `allowedOrigins()` 加入该 origin（解析失败则不加入）；新增/扩展 `web/portal/src/utils/redirect.spec.ts`：断言 IdP 域被允许、`//evil.com`/`javascript:`/白名单外域名仍被拒
-- [ ] T012 [P] [US1] `web/portal/src/views/Login.vue`：`next` 指向 IdP 登录域时副标题显示「登录后返回 <应用名>」（取 `app`，`trim` 后 >64 截断、含控制字符则丢弃、缺失回落「所访问的应用」），其它情况保持现状；`app` 仅文本渲染；扩展 `web/portal/src/views/Login.spec.ts` 覆盖三种分支；验收：`cd web/portal && npm run test` 全绿
-- [ ] T013 [US1] 门户构建链与安全响应头：① `web/portal/.env.example` 增 `VITE_SSO_BASE_URL=http://localhost:8080`、`.env.test.example` / `.env.production.example` 增对应 https 值；② `web/Dockerfile` 的 portal target 增 `ARG VITE_SSO_BASE_URL` + `ENV` + **构建期强制**（`test -n "$VITE_SSO_BASE_URL" || { echo "VITE_SSO_BASE_URL is required"; exit 1; }`）；③ `web/nginx/templates/portal.conf.template` 增 `add_header Referrer-Policy "same-origin" always;`（**FR-022**：登录页 URL 含 `app`，不得经 `Referer` 泄露给第三方），并确认登录页不把含 `app` 的完整地址写入应用日志/埋点；④ `docker-compose.yml` portal `build.args` 与 `Makefile` 的 `image-portal` 同步传入并从 `DOMAIN` 派生 `sso.<DOMAIN>`；验收：省略该参数构建应失败；`curl -sI http://<portal>/login` 含 `Referrer-Policy: same-origin`
+- [X] T007 [US1] 在 `internal/oidc/login.go` 的 `GET /login` 处理器接入 `decideStep`：`StepComplete` 走既有 `CompleteLogin` + 302 回调；`StepPortal` 调 `portalRedirectURL` 并 302；`StepTemplate` 渲染原模板；`StepTemplateDegraded` 渲染模板并写一条 `slog.Warn`（字段固定 `reason=portal_roundtrip_without_session`、`client_id`、`request_id`，**不含任何凭据**）；`StepBadRequest` 保持既有 400；验收：单测断言不含凭据、`LoginURL`（`internal/oidc/storage.go`）未被改动
+- [X] T008 [US1] 在 `internal/oidc/login.go` 实现 `StepRequestExpired`（contracts/login-entry.md C1b）：渲染过期提示页，含「返回接入系统重新发起」与「重新登录」两个可点击入口，**不自动跳门户**、不出现 `pending`/`TTL`/`sameSite` 等内部词；`StepBadRequest`（无 `portal=1`）仍返回既有 400 文本；验收：单测断言两分支响应码与文案差异
+- [X] T009 [US1] 在 `internal/oidc/login.go` 的**内置登录页（降级态）**数据中增加 `Degraded bool`，模板（`login.go` 内的 HTML 模板）在 `Degraded` 时渲染一行「登录状态未能在跳转中延续，请在此直接登录」；验收：C3（未配置门户地址）不出现该文案、C4（带 `portal=1` 回跳）出现
+- [X] T010 [US1] 把模板渲染抽成可测函数（如 `renderLoginTemplate(w io.Writer, data loginData) error`），并新增**同目录单元测试**（`_test.go`）：断言 ① C3 输出含 `<form` 且不含降级文案 ② C4 含降级文案 ③ C1b 含重新发起入口 ④ 三种输出都不含 `/login` 技术路径字样（SC-008）；验收：`go test ./internal/oidc/ -run TestLoginTemplate` 全绿
+- [X] T011 [P] [US1] 门户白名单：`web/portal/src/config.ts` 新增 `SSO_BASE_URL`（`VITE_SSO_BASE_URL`，dev 缺省 `http://localhost:8080`，解析失败视为空）；`web/portal/src/utils/redirect.ts` 的 `allowedOrigins()` 加入该 origin（解析失败则不加入）；新增/扩展 `web/portal/src/utils/redirect.spec.ts`：断言 IdP 域被允许、`//evil.com`/`javascript:`/白名单外域名仍被拒
+- [X] T012 [P] [US1] `web/portal/src/views/Login.vue`：`next` 指向 IdP 登录域时副标题显示「登录后返回 <应用名>」（取 `app`，`trim` 后 >64 截断、含控制字符则丢弃、缺失回落「所访问的应用」），其它情况保持现状；`app` 仅文本渲染；扩展 `web/portal/src/views/Login.spec.ts` 覆盖三种分支；验收：`cd web/portal && npm run test` 全绿
+- [X] T013 [US1] 门户构建链与安全响应头：① `web/portal/.env.example` 增 `VITE_SSO_BASE_URL=http://localhost:8080`、`.env.test.example` / `.env.production.example` 增对应 https 值；② `web/Dockerfile` 的 portal target 增 `ARG VITE_SSO_BASE_URL` + `ENV` + **构建期强制**（`test -n "$VITE_SSO_BASE_URL" || { echo "VITE_SSO_BASE_URL is required"; exit 1; }`）；③ `web/nginx/templates/portal.conf.template` 增 `add_header Referrer-Policy "same-origin" always;`（**FR-022**：登录页 URL 含 `app`，不得经 `Referer` 泄露给第三方），并确认登录页不把含 `app` 的完整地址写入应用日志/埋点；④ `docker-compose.yml` portal `build.args` 与 `Makefile` 的 `image-portal` 同步传入并从 `DOMAIN` 派生 `sso.<DOMAIN>`；验收：省略该参数构建应失败；`curl -sI http://<portal>/login` 含 `Referrer-Policy: same-origin`
 - [ ] T014 [US1] 四域端到端 `scripts/e2e/run.sh`：`start_backend` 增 `PORTAL_LOGIN_URL="https://portal.$DOMAIN:$HOST_PORT/login"`；场景 7 改为「authorize → 302 门户登录页（断言 `next` 指回 sso 域登录入口）→ 门户页 200 → api 域登录建立会话 → GET `next` → 回调」；**保留一条表单 POST 登录断言**；新增 loop guard 断言（空 jar 访问带 `portal=1` 的 `/login` → 200 HTML，不 302 回门户）；按 `contracts/e2e-a18-a19.md §3.1` 记录「门户点击登录 → 收到 SP 回调 302」的耗时与跳转次数（目标 ≤3 秒 / ≤2 跳）；验收：`make e2e` 全绿且计时值打印在日志里
 
 **Checkpoint**：US1 可独立演示——手动走 quickstart 场景 1/2/3 全部成立。
@@ -89,9 +89,9 @@ description: "Task list for 未登录 OIDC 授权统一跳转门户登录页"
 
 **Independent Test**：已登录完成一次授权 → 审计新增 1 条且 `detail` 为 `{"amr":[…],"entry":"portal"}`；表单登录仍只产生 `login_success`。
 
-- [ ] T015 [US2] 在 `internal/oidc/login.go` 的 `StepComplete` 分支发审计：`service.Auditor` 发 `model.EventSSOLoginSuccess`，`result=success`，`detail={entry, amr}`（`entry` 由是否带 `portal=1` 决定 `portal`/`template`），`user_id`/`username`/`client_id`/`ip`/`user_agent` 取当前请求上下文；发失败只 `slog.Error`，**不得阻断 302**；验收：`grep -rn "EventSSOLoginSuccess" internal/` 仅出现在 `login.go` 与 `model`
-- [ ] T016 [P] [US2] 在 `web/admin/src/utils/format.ts` 的 `EVENT_LABEL` 增加 `sso_login_success: 'SSO 快捷登录'`（审计页筛选下拉由此表生成，无需改 `Audit.vue`）；验收：`npm run build`（admin）通过、审计页筛选出现该项
-- [ ] T017 [US2] 为 `internal/oidc/login.go` 的审计分支新增**同目录单元测试**（`_test.go`）：用内存 sink（或 `service.NewAuditor` 注入可捕获实现）断言「一次 `StepComplete` 恰好产生 1 条事件」「`detail` 不含 token/密码/验证码字段」「连续两次产生 2 条不合并」；验收：`go test ./internal/oidc/ -run TestSSOLoginAudit` 全绿
+- [X] T015 [US2] 在 `internal/oidc/login.go` 的 `StepComplete` 分支发审计：`service.Auditor` 发 `model.EventSSOLoginSuccess`，`result=success`，`detail={entry, amr}`（`entry` 由是否带 `portal=1` 决定 `portal`/`template`），`user_id`/`username`/`client_id`/`ip`/`user_agent` 取当前请求上下文；发失败只 `slog.Error`，**不得阻断 302**；验收：`grep -rn "EventSSOLoginSuccess" internal/` 仅出现在 `login.go` 与 `model`
+- [X] T016 [P] [US2] 在 `web/admin/src/utils/format.ts` 的 `EVENT_LABEL` 增加 `sso_login_success: 'SSO 快捷登录'`（审计页筛选下拉由此表生成，无需改 `Audit.vue`）；验收：`npm run build`（admin）通过、审计页筛选出现该项
+- [X] T017 [US2] 为 `internal/oidc/login.go` 的审计分支新增**同目录单元测试**（`_test.go`）：用内存 sink（或 `service.NewAuditor` 注入可捕获实现）断言「一次 `StepComplete` 恰好产生 1 条事件」「`detail` 不含 token/密码/验证码字段」「连续两次产生 2 条不合并」；验收：`go test ./internal/oidc/ -run TestSSOLoginAudit` 全绿
 - [ ] T018 [US2] 端到端核对：在 `scripts/e2e/examples.sh` 的 A4 之后，复用 `scripts/e2e/lib/admin.sh` 的管理员客户端（脚本已缓存管理员令牌）查询审计接口，断言「最近一次 `sso_login_success` 的 `client_id` 等于本次示例客户端且 `detail.entry` 为 `portal`」，且条数较 A3 时 **+1**；`examples.sh` 不引入 MySQL 客户端（无连接参数），审计查询一律走管理 API；验收：断言失败时打印实际条数与最近一条的 detail
 
 **Checkpoint**：US2 独立可验——审计页可单独筛出「SSO 快捷登录」，与「登录成功」分开计数。
@@ -104,11 +104,11 @@ description: "Task list for 未登录 OIDC 授权统一跳转门户登录页"
 
 **Independent Test**：按 quickstart 场景 5 逐条启动，5 种错配全部非零退出且日志点名变量；正例正常启动。
 
-- [ ] T019 [US3] 在 `internal/config/config.go` 的 `validate()` 实现门户地址矩阵（contracts/config-and-env.md）：非空须为带 scheme+host 的绝对 URL、不允许 fragment；`prod` 必填 + 必须 https；`test` 非空必须 https；`dev` 允许 http；错误信息必须包含变量名与期望形态
-- [ ] T020 [US3] 在 `internal/config/config_test.go` 增表驱动用例：空(dev/test 通过、prod 失败)、`http://`(test/prod 失败)、无 scheme、无 host、含 fragment、合法 https（三环境全通过）；验收：`go test ./internal/config/...` 全绿且每条错误断言变量名
-- [ ] T021 [US3] 在 `internal/config/config.go` 把 `COOKIE_SAME_SITE` 收敛为白名单（`Lax` 大小写不敏感、空视为 Lax）；`Strict` 与未知值启动失败并给出明确文案；`internal/config/config_test.go` 增 `Strict`/`None`/`laxx`/空 四例；验收：`go test ./internal/config/...` 全绿
-- [ ] T022 [US3] 扩展 `scripts/check-build-env.sh`：断言 portal 镜像内出现 `sso.<本环境域>` ≥1 次、`sso.<外来环境域>` 0 次（参数命名与既有 `EXPECT_DOMAIN`/`FOREIGN_DOMAIN` 风格一致）；验收：故意用错环境构建时脚本非零退出
-- [ ] T023 [US3] **只做核对，不再改构建参数**（构建参数归 T013）：确认 `Makefile` 的 `images` / `image-portal` 已从 `DOMAIN` 派生 `VITE_SSO_BASE_URL`（与 `VITE_ADMIN_HOME` 同款），并核对 `docs/deployment.md` §8 三步与 `quickstart.md` §9 表述一致；验收：`make images DOMAIN=test.example.com` 构建出的 portal 产物含 `sso.test.example.com`（来源：critique E7/E9）
+- [X] T019 [US3] 在 `internal/config/config.go` 的 `validate()` 实现门户地址矩阵（contracts/config-and-env.md）：非空须为带 scheme+host 的绝对 URL、不允许 fragment；`prod` 必填 + 必须 https；`test` 非空必须 https；`dev` 允许 http；错误信息必须包含变量名与期望形态
+- [X] T020 [US3] 在 `internal/config/config_test.go` 增表驱动用例：空(dev/test 通过、prod 失败)、`http://`(test/prod 失败)、无 scheme、无 host、含 fragment、合法 https（三环境全通过）；验收：`go test ./internal/config/...` 全绿且每条错误断言变量名
+- [X] T021 [US3] 在 `internal/config/config.go` 把 `COOKIE_SAME_SITE` 收敛为白名单（`Lax` 大小写不敏感、空视为 Lax）；`Strict` 与未知值启动失败并给出明确文案；`internal/config/config_test.go` 增 `Strict`/`None`/`laxx`/空 四例；验收：`go test ./internal/config/...` 全绿
+- [X] T022 [US3] 扩展 `scripts/check-build-env.sh`：断言 portal 镜像内出现 `sso.<本环境域>` ≥1 次、`sso.<外来环境域>` 0 次（参数命名与既有 `EXPECT_DOMAIN`/`FOREIGN_DOMAIN` 风格一致）；验收：故意用错环境构建时脚本非零退出
+- [X] T023 [US3] **只做核对，不再改构建参数**（构建参数归 T013）：确认 `Makefile` 的 `images` / `image-portal` 已从 `DOMAIN` 派生 `VITE_SSO_BASE_URL`（与 `VITE_ADMIN_HOME` 同款），并核对 `docs/deployment.md` §8 三步与 `quickstart.md` §9 表述一致；验收：`make images DOMAIN=test.example.com` 构建出的 portal 产物含 `sso.test.example.com`（来源：critique E7/E9）
 
 **Checkpoint**：US3 独立可验——三类配置错配全部启动失败，镜像串环境被脚本拦下。
 
