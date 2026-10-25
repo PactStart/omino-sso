@@ -1249,8 +1249,8 @@ self_test() {
   local bad_count=0 fn bin
   for fn in preflight stage_a0_build stage_a1_clients stage_a2_account \
     stage_portal_prestep portal_preflight start_examples \
-    url_query url_base pkce_verifier pkce_challenge authorize_probe idp_form_login next_id a19_token portal_resume \
-    admin::audit_count admin::audit_wait_increment admin::audit_latest \
+    ms url_query url_base pkce_verifier pkce_challenge authorize_probe idp_form_login next_id a19_token portal_resume \
+    admin::audit_count admin::audit_wait_increment admin::audit_wait_total admin::audit_latest \
     drive_login example_base interruptible_sleep stage_a4_a6_login stage_a8_sso stage_a9_a10_refresh stage_a11_idp_session \
     stage_a14_no_secret stage_a12_logout stage_a13_after_logout stage_a15_degraded stage_a16_cookie_prefix \
     stage_a17_refresh_rejected stage_a18_portal_redirect stage_a19_loop_guard; do

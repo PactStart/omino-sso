@@ -399,7 +399,10 @@ GET {issuer}/logout?next=/logged-out
 
 - 环境变量、运行命令、日志说明、排障表、**已验证版本矩阵**：见 [`examples/README.md`](../examples/README.md)；
 - 一条命令跑完全部断言（A0–A19，含门户前置、未登录跳门户、循环防护降级、跨示例 SSO、刷新轮换、刷新被拒回落、降级、cookie 前缀）：`bash scripts/e2e/examples.sh`，
-  断言清单在 [`specs/008-integration-examples/contracts/e2e-examples-cli.md`](../specs/008-integration-examples/contracts/e2e-examples-cli.md)。
+  断言清单分两份契约：[`specs/008-integration-examples/contracts/e2e-examples-cli.md`](../specs/008-integration-examples/contracts/e2e-examples-cli.md)（A0 到 A17）与
+  [`specs/009-portal-login-redirect/contracts/e2e-a18-a19.md`](../specs/009-portal-login-redirect/contracts/e2e-a18-a19.md)（门户前置 + A18/A19）。
+- 前置硬约束：被测 IdP 的 `PORTAL_LOGIN_URL` 必须与脚本的 `E2E_PORTAL_LOGIN_URL`（默认 `http://localhost:5173/login`）一致；
+  未配置或不一致时脚本以退出码 `2` 中止并打印实际跳转地址，**不会**把 A18/A19 标成 SKIP 后以 `0` 退出。
 
 ### 9.2 与本文档历史示例的四处差异（照抄旧片段会踩）
 
@@ -476,7 +479,8 @@ curl -s -H "Authorization: Bearer $ACCESS_TOKEN" "$ISSUER/oauth2/userinfo"
 ```
 
 > 验证"接入示例能不能跑通"时不要手抄上面的 curl：在 omino-sso 仓库里执行 `bash scripts/e2e/examples.sh`，
-> 它会自行拉起三个示例并跑完 A0–A19（门户前置、未登录跳门户、循环防护降级、跨示例 SSO、刷新轮换、刷新被拒回落、userinfo 降级、cookie 前缀），见 §9.1。
+> 它会自行拉起三个示例并跑完 A0–A19（门户前置、未登录跳门户、循环防护降级、跨示例 SSO、刷新轮换、刷新被拒回落、userinfo 降级、cookie 前缀），见 §9.1；
+> 被测 IdP 需配置 `PORTAL_LOGIN_URL` 并与 `E2E_PORTAL_LOGIN_URL` 一致，否则脚本以退出码 `2` 中止（见 `specs/009-portal-login-redirect/contracts/e2e-a18-a19.md`）。
 
 ## 13. 需要 IdP 侧改造时
 

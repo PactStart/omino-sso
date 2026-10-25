@@ -243,3 +243,17 @@ Task: "T022 [US3] check-build-env.sh sso 域断言（脚本文件独立）"
 - [X] T037 **LOW** 修正 `scripts/e2e/examples.sh` 头部 12–16 行注释：现仍写「先跑门户前置……再把它复制成各语言 jar」，而实现已是空 jar 走门户往返（A4–A6 段与 `contracts/e2e-a18-a19.md §2` 均已改），需与实现对齐以免误导后续维护 per T024（partial）
 
 - [X] T038 **LOW** 记录改造前基线：在 `43ac6cf`（008 完成态）与当前 HEAD 各跑一次 `bash scripts/e2e/examples.sh`，比较单次执行耗时并确认 ≤120%，把两个数值与测量条件写入 `contracts/e2e-a18-a19.md §3.1` 或 `quickstart.md` per SC-006（partial）
+
+## Phase 9: Convergence
+
+**Purpose**：第二次收敛（`/speckit.converge`，用户要求**忽略 T032**——一致性套件镜像在本环境不可获得，已由 quickstart §6 记录补做口径）。Phase 8 的 T033–T038 已全部落地并有实测证据；本轮只剩一处「新增 helper 未登记进自检清单」的小缺口。
+
+- [X] T039 把 `ms` 与 `admin::audit_wait_total` 补进 `scripts/e2e/examples.sh` 的 `--self-test` 函数清单，并保持「清单内任一函数缺失即报错」的语义（新增 helper 必须登记，否则自检对 T033/T035 新引入的依赖失效） per T027（partial）
+
+## Phase 10: Convergence
+
+**Purpose**：第三次收敛（`/speckit.converge`，继续**忽略 T032**——一致性套件镜像在本环境不可获得，补做口径见 `quickstart.md` §6）。代码侧无缺口：`make check` 四向注册表全绿（路由 78/78、错误码 33/33、事件 38/38、变量 72/72/72，文档基线 sha256 未变）、`internal/oidc|config|pkg/cookie` 单测通过、`examples.sh --self-test` 通过。余项集中在**示例工程文档**仍停在 008 的「A0–A17 / 18 条断言」口径。
+
+- [X] T040 **MEDIUM** 更新 `examples/README.md` 的 §4.1 / §4.2：把「跑 A0–A17」改为 A0–A19，前置行补 `E2E_PORTAL_LOGIN_URL`（默认 `http://localhost:5173/login`，必须与被测 IdP 的 `PORTAL_LOGIN_URL` 一致；未配置或不一致即退出码 2）与 A18/A19 的判据行，幂等与实测表按 2026-10-26 的 20 条断言刷新（T038 记录 176s），断言清单引用同时指向 008 契约与 `specs/009-portal-login-redirect/contracts/e2e-a18-a19.md`；验收：`grep -n "A0–A17\|PASS=18" examples/README.md` 无输出 per FR-015 / US4-AC1 / T027（partial）
+
+- [X] T041 **LOW** 在 `docs/integration-guide.md` §9.1（及 §12 的提示句）把「断言清单在 `specs/008-integration-examples/contracts/e2e-examples-cli.md`」补为同时指向 `specs/009-portal-login-redirect/contracts/e2e-a18-a19.md`，并补一句「被测 IdP 的 `PORTAL_LOGIN_URL` 必须与 `E2E_PORTAL_LOGIN_URL` 一致，否则脚本以退出码 2 中止」；验收：该文档中 009 契约路径出现 ≥1 次、`E2E_PORTAL_LOGIN_URL` 出现 ≥1 次 per FR-015 / T027（partial）

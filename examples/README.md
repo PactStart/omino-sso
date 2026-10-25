@@ -86,37 +86,46 @@ curl -i http://localhost:8000/api/me            # 未登录：401 {"error":"unau
 ### 4.1 一条命令做自动验证
 
 ```bash
-bash scripts/e2e/examples.sh              # 跑 A0–A17 并打印逐项 PASS/FAIL
+bash scripts/e2e/examples.sh              # 跑 A0–A19 并打印逐项 PASS/FAIL
 bash scripts/e2e/examples.sh --keep       # 结束后保留三个示例进程，便于接着手工点
 bash scripts/e2e/examples.sh --self-test  # 只校验脚本自身（不连 IdP、不起进程）
 ```
 
-断言清单与行为约束见
-[`specs/008-integration-examples/contracts/e2e-examples-cli.md`](../specs/008-integration-examples/contracts/e2e-examples-cli.md)。
+断言清单分两份契约（A0–A19）：
+
+- [`specs/008-integration-examples/contracts/e2e-examples-cli.md`](../specs/008-integration-examples/contracts/e2e-examples-cli.md)：覆盖 A0 到 A17 的既有断言；
+- [`specs/009-portal-login-redirect/contracts/e2e-a18-a19.md`](../specs/009-portal-login-redirect/contracts/e2e-a18-a19.md)：门户前置与 A18/A19（2026-10-25 起）。
 
 | 项 | 说明 |
 |---|---|
 | 前置 | IdP 在跑、管理员账号可用、端口空闲（默认 `8000/8001/8002`，可用 `E2E_*_PORT` 改）；工具链 `go`/`mvn`/`python3` 加上断言用的 `curl`/`jq` 与端口检查用的 `lsof`（缺任何一项 `exit 2` 并列出缺失项）；**Python 依赖由脚本自行准备**（缺 `examples/python/venv` 时自动 `python3 -m venv` + `pip install -r requirements.txt`，受 `E2E_NET_TIMEOUT` 约束）；不满足则 `exit 2` 且**不开始**断言 |
+| 门户前置（009，非断言） | 被测 IdP **必须配置 `PORTAL_LOGIN_URL`**，且其值与脚本的 `E2E_PORTAL_LOGIN_URL`（默认 `http://localhost:5173/login`）一致；未配置或不一致时脚本以 `exit 2` 中止并打印实际跳转地址，**不会**把 A18/A19 标成 SKIP。A2 之后先用 `POST /api/v1/auth/login` 为示例账号建立会话写 `$WORK/portal.cookie`（只用于「账号可用 + MFA 未开」的快速失败，不再复制进各语言 jar）；A4–A6 改为**空 jar** 走真实路径（示例 → 授权 → 门户登录页 → 脚本代劳登录 → 带 `portal=1` 回 IdP → 完成授权），故断言 `LOGIN_SAW_IDP_FORM=0` 且审计 `detail.entry=portal` |
 | 退出码 | `0` 全绿 / `1` 有断言失败（已打印 got/want 并附日志尾部）/ `2` 前置不满足 |
 | 产物 | `.tmp/e2e-examples/`：`report.txt`（逐项结果）、`clients.env`（`0600`，可 `source` 后手工起示例）、`go.log`/`java.log`/`python.log` |
 | A9 的判据 | 脚本先回读三个客户端原 `accessTokenTtl`，临时改成 60 秒并重新登录，等令牌进入刷新窗口后访问 `/api/me`，以日志 `[refresh] ok rotated=1` 判定轮换（令牌本身不出服务端，脚本无法直接比对 refresh_token），跑完按**原值**恢复 |
-| A8 的覆盖 | 3 组 × 2 目标共 6 条：登录任一示例后，用它的 jar（含 IdP `sid`）驱动另外两个示例的 `/login`，断言免表单 + `/api/me` 200 + `sub` 相同，逐组写 `A8-COMBO A→B PASS` |
+| A8 的覆盖 | 3 组 × 2 目标共 6 条：登录任一示例后，用它的 jar（含 IdP `sid`）驱动另外两个示例的 `/login`，断言免表单 + `/api/me` 200 + `sub` 相同，逐组写 `A8-COMBO A→B PASS`；同一批组合顺带打印 `A8-TIMING`（有会话直达耗时）并做 T035 的「审计 `sso_login_success` 恰好 +10」观察（`A8-AUDIT10`） |
+| 门户前置的判据 | `authorize_probe` 的 `302` 的 `Location` 基址必须等于 `E2E_PORTAL_LOGIN_URL`；相等即通过，否则 `exit 2`（不是断言失败） |
+| A18 的判据 | 空 jar 请求 `/oauth2/authorize` → `302`，`Location` 的 scheme+host+path 等于 `E2E_PORTAL_LOGIN_URL`，`next` 解码一次后匹配 `^<issuer>/login\?id=[^&]+&portal=1$`，`app` 非空，且**不**退回 `<issuer>/login?id=` |
+| A19 的判据 | 带 `portal=1` 且无会话 GET `next` → `200` 内置页（含 `<form` 与降级文案「未能在跳转中延续」）→ 表单 POST 完成授权 → 回调换 token；java / python 各再复验一次表单回跳——A4–A6 改走 SSO 后，表单 POST 路径只在 A19 逐语言覆盖 |
 | A17 的判据 | 先取 `accessTokenTtl=60` 的短命令牌，再把三个客户端置 `status=0`，令牌进入刷新窗口后三示例 `/api/me` 均 `401`（连续两次都 `401`，证明清掉失效令牌后不重试）；恢复原 `status` 后重新登录回到 `200`。全程只用管理 API；`accessTokenTtl` 与 `status` 都先回读再登记，正常结束与 Ctrl-C/超时打断都会按原值还原（`trap` 兜底），不会留下 disabled 客户端 |
 | 超时 | 每步 HTTP 用 `E2E_CURL_TIMEOUT`（默认 10s）；A0 的依赖准备/构建用 `E2E_NET_TIMEOUT`（默认 300s）。机器上没有 coreutils 的 `timeout` 时，脚本退到 `gtimeout`，再没有就用 bash 计时 + `kill` 兜底，不会静默裸跑 |
 | A11 的判据 | 用同一 `sid` 直接查 `{API}/api/v1/me` 是否仍 200，不依赖门户 dev server 是否在跑；同时断言示例响应里没有 `Set-Cookie: sid=` |
-| 幂等 | 连跑两次都全绿（客户端按 `clientName` 复用、密钥复用缓存，已存在即通过）；2026-10-25（含 A8 六条组合与 A17）实测连续两轮 **18/18 PASS**（154s / 163s，第二轮带 `E2E_STRICT_REFRESH=1`） |
+| 幂等 | 连跑两次都全绿（客户端按 `clientName` 复用、密钥复用缓存，已存在即通过）；2026-10-25 在 008 的 18 条断言上实测连续两轮 154s / 163s（第二轮带 `E2E_STRICT_REFRESH=1`）；009 起断言增至 **20 条**（新增 A18/A19 与审计 10 连击），单轮实测见 §4.2 |
 | 严格档 | `E2E_STRICT_REFRESH=1` 时在 A17 额外断言「每个示例只记录一条 `[refresh] fail`」（单飞、不重试）；旧 refresh_token 的重放断言在示例侧无法执行（令牌不出服务端），故不再假装有一条重放断言 |
 
-### 4.2 实测用时（2026-10-25，macOS x86_64）
+### 4.2 实测用时（2026-10-26，macOS x86_64；009 起口径变化）
 
 | 项 | 实测 |
 |---|---|
-| 示例进程启动 → 首次 `/api/me` **200** | **Go 7s / Java 8s / Python 10s**（热缓存；`report.txt` 的 `A4-TIMING` 行） |
-| 进程启动 → 首次 `/api/me` 401（未登录基线） | Go 1s / Java 5s / Python 1s（`A3-TIMING` 行） |
-| 一条命令整体（连续第二次起） | **154s / 163s**（含 A17 的 40s 拒绝窗口），`PASS=18 FAIL=0` |
+| 示例进程启动 → 首次 `/api/me` **200**（`A4-TIMING`，**参考项**，不属 SC-002） | 以重跑 `report.txt` 为准；009 起 A4–A6 改走门户往返（含一次门户登录，不再含 argon2），008 的 Go 7s / Java 8s / Python 10s **不可直接比较** |
+| 进程启动 → 首次 `/api/me` 401（未登录基线） | Go 1s / Java 5s / Python 1s（`A3-TIMING` 行，2026-10-25 值） |
+| **有会话直达**：发起 → 首次 `/api/me` 200（`A8-TIMING`，SC-002②，目标 ≤2s） | max **674ms** / avg **583ms**（6 组） |
+| **门户登录 → SP 回调**（`run.sh` 场景 7 的 `[timing]`，SC-002①，目标 ≤3s、≤2 跳） | **199ms / 2 跳** |
+| 一条命令整体（A0–A19，热缓存） | 改造前 008 `43ac6cf` 18 条 **156s**；009 起 **20 条 / 176s**（= 112.8%，SC-006 的 ≤120% ✓；多出的约 20s 主要是 A18/A19 与审计 10 连击的 10 次授权） |
 
-口径：上表两轮均为**热缓存**（`venv/` 已装、Maven 依赖已下载），只代表「后续执行」；冷缓存首次会在 A0 多出 `mvn` 依赖下载与 `pip install -r requirements.txt` 的耗时（受 `E2E_NET_TIMEOUT` 约束）。
-数据来源固定为 `.tmp/e2e-examples/report.txt` 的 `A3-TIMING` / `A4-TIMING` 两行，重跑即刷新。
+口径：除整体耗时外均为**热缓存**（`venv/` 已装、Maven 依赖已下载），只代表「后续执行」；冷缓存首次会在 A0 多出 `mvn` 依赖下载与 `pip install -r requirements.txt` 的耗时（受 `E2E_NET_TIMEOUT` 约束）。
+SC-002 的两段口径都**不含用户输入凭据的时间**：①「门户点击登录 → 收到 SP 回调 302」由 `run.sh` 采集，②「有会话直达」由 A8 采集；`A4-TIMING` 自 2026-10-25 起只作冷启动参考（008 的 SC-001 基线作废）。
+数据来源固定为 `.tmp/e2e-examples/report.txt` 的 `A3-TIMING` / `A4-TIMING` / `A8-TIMING` 三行与 `run.sh` 日志的 `[timing]` 行，重跑即刷新。
 
 ## 5. 日志
 
