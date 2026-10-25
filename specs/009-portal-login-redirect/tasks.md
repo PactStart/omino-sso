@@ -44,8 +44,8 @@ description: "Task list for 未登录 OIDC 授权统一跳转门户登录页"
 
 **Purpose**：先让 `make check` 回到绿色，后续所有任务的 DoD 才能自证。
 
-- [ ] T001 [P] 在 `internal/config/config.go` 的 `Config` 结构体新增 `PortalLoginURL string`，并在 `Load()` 用 `env("PORTAL_LOGIN_URL", "")` 读取（**本任务不加校验逻辑**，仅接通读取）；验收：`make check` 的 2 条「环境变量未被 config.go 读取」消失
-- [ ] T002 [P] 在 `internal/store/model/audit_event.go` 新增常量 `EventSSOLoginSuccess = "sso_login_success"`（注释写明语义：凭既有会话直接完成授权）；验收：`make check` 审计事件 38/38
+- [X] T001 [P] 在 `internal/config/config.go` 的 `Config` 结构体新增 `PortalLoginURL string`，并在 `Load()` 用 `env("PORTAL_LOGIN_URL", "")` 读取（**本任务不加校验逻辑**，仅接通读取）；验收：`make check` 的 2 条「环境变量未被 config.go 读取」消失
+- [X] T002 [P] 在 `internal/store/model/audit_event.go` 新增常量 `EventSSOLoginSuccess = "sso_login_success"`（注释写明语义：凭既有会话直接完成授权）；验收：`make check` 审计事件 38/38
 
 **Checkpoint**：`make check` 全绿（0 漂移），文档与代码重新对齐。
 
