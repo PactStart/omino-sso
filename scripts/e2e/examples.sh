@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
-# 三语言接入示例的本地端到端验证（specs/008-integration-examples）。
+# 三语言接入示例的本地端到端验证（specs/008-integration-examples，009 扩到 A18/A19）。
 #
-# 断言清单与行为约束见 specs/008-integration-examples/contracts/e2e-examples-cli.md。
+# 断言清单与行为约束：
+#   - A0–A17：specs/008-integration-examples/contracts/e2e-examples-cli.md
+#   - 门户前置 + A18/A19：specs/009-portal-login-redirect/contracts/e2e-a18-a19.md
 # 用法：
-#   bash scripts/e2e/examples.sh              # 跑 A0–A17
+#   bash scripts/e2e/examples.sh              # 跑 A0–A19
 #   bash scripts/e2e/examples.sh --keep       # 结束后保留三个示例进程
 #   bash scripts/e2e/examples.sh --self-test  # 只校验脚本自身，不连 IdP、不起进程
+#
+# 009 语义变更（与 008 的实测数据不可直接比较，自 2026-10-25 起重新建立基线）：
+#   - A4–A6 由「表单登录闭环」改为「SSO 闭环」：先跑门户前置（API 域登录建立 IdP 会话），
+#     再把它复制成各语言 jar，三示例凭既有会话完成授权，LOGIN_SAW_IDP_FORM=0；
+#   - 表单 POST 路径改由 A19 对 go/java/python 各覆盖一次（含换 token），不再由 A4–A6 兜底；
+#   - A4-TIMING 口径不变（进程启动 → 首次 /api/me 200），但不再含一次 argon2 校验，数值会变快。
 #
 # 退出码：0 全绿 / 1 有断言失败 / 2 前置条件不满足（此时尚未开始断言）。
 set -uo pipefail
@@ -23,8 +31,12 @@ E2E_NET_TIMEOUT=${E2E_NET_TIMEOUT:-300}
 E2E_STRICT_REFRESH=${E2E_STRICT_REFRESH:-0}
 E2E_EXAMPLE_USER=${E2E_EXAMPLE_USER:-examples}
 E2E_EXAMPLE_PASS=${E2E_EXAMPLE_PASS:-Examples@12345}
+# 009：期望的门户登录页地址（A18 对 scheme+host+path 做硬断言）。被测 IdP 的
+# PORTAL_LOGIN_URL 必须与之一致；不一致或未配置时 portal_preflight 以退出码 2 中止，
+# 不允许把 A18/A19 标成 SKIP 后仍以 0 退出（spec US4 场景 4）。
+E2E_PORTAL_LOGIN_URL=${E2E_PORTAL_LOGIN_URL:-http://localhost:5173/login}
 
-export E2E_ISSUER E2E_API E2E_WORK_DIR E2E_CURL_TIMEOUT
+export E2E_ISSUER E2E_API E2E_WORK_DIR E2E_CURL_TIMEOUT E2E_PORTAL_LOGIN_URL
 
 WORK="$E2E_WORK_DIR"
 REPORT="$WORK/report.txt"
@@ -82,6 +94,91 @@ wait_http() { # wait_http <url> <期望码> <超时秒>
     i=$((i + 1))
   done
   return 1
+}
+
+# ------------------------------------------- 009：门户跳转与 OIDC 探针工具函数
+
+# url_query <url> <参数名> —— 取查询参数并解码**一次**（缺失输出空行）。
+# 不用 sed/grep 手工解转义：Location 里的 next 是被 URL-encode 的完整地址，
+# 且 app 参数是中文应用名，靠正则去处理 & / % / 多字节字符必然出错。
+url_query() {
+  python3 - "$1" "$2" <<'PY'
+import sys, urllib.parse
+
+parts = urllib.parse.urlsplit(sys.argv[1])
+print(urllib.parse.parse_qs(parts.query).get(sys.argv[2], [""])[0])
+PY
+}
+
+# url_base <url> —— 只留 scheme://host/path，用于比对落点（忽略查询串）。
+url_base() {
+  python3 - "$1" <<'PY'
+import sys, urllib.parse
+
+p = urllib.parse.urlsplit(sys.argv[1])
+print(f"{p.scheme}://{p.netloc}{p.path}")
+PY
+}
+
+# S256 PKCE（RFC 7636）：verifier 走 base64url 去 padding，challenge 为其 SHA-256。
+pkce_verifier() { openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n'; }
+pkce_challenge() { printf '%s' "$1" | openssl dgst -binary -sha256 | openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+
+# authorize_probe <jar> <client_id> <redirect_uri> <state> <code_challenge>
+# 走**两跳**并输出第二跳的 "<HTTP 状态码> <Location>"（URL 编码后不含空格，可安全切分）：
+#   第 1 跳 /oauth2/authorize → 协议库固定的 /login?id=（这一步不是落点）；
+#   第 2 跳 GET /login?id= → 本次改造的判定结果（门户登录页 / 内置页 / 直接完成授权）。
+# 为什么不只看第一跳：把 /login?id= 当成落点会得出「没有跳到门户」的假结论。
+authorize_probe() {
+  local jar=$1 cid=$2 redirect=$3 state=$4 challenge=$5 out code loc
+  out=$(curl -s --max-time "$E2E_CURL_TIMEOUT" -c "$jar" -b "$jar" -o /dev/null \
+    -w '%{http_code} %{redirect_url}' -G \
+    --data-urlencode "client_id=$cid" \
+    --data-urlencode "response_type=code" \
+    --data-urlencode "scope=openid profile email" \
+    --data-urlencode "redirect_uri=$redirect" \
+    --data-urlencode "state=$state" \
+    --data-urlencode "code_challenge=$challenge" \
+    --data-urlencode "code_challenge_method=S256" \
+    "$E2E_ISSUER/oauth2/authorize" 2>/dev/null)
+  code=${out%% *}
+  loc=${out#* }
+  if [[ "$loc" == *"/login?id="* ]]; then
+    out=$(curl -s --max-time "$E2E_CURL_TIMEOUT" -c "$jar" -b "$jar" -o /dev/null \
+      -w '%{http_code} %{redirect_url}' "$loc" 2>/dev/null)
+  fi
+  printf '%s' "$out"
+}
+
+# idp_form_login <jar> <请求 id> —— 在内置登录页的表单里提交示例账号，输出下一跳 Location。
+idp_form_login() {
+  curl -s --max-time "$E2E_CURL_TIMEOUT" -c "$1" -b "$1" -o /dev/null -w '%{redirect_url}' \
+    --data-urlencode "id=$2" \
+    --data-urlencode "username=$E2E_EXAMPLE_USER" \
+    --data-urlencode "password=$E2E_EXAMPLE_PASS" \
+    "$E2E_ISSUER/login" 2>/dev/null
+}
+
+# next_id <next-url> —— 从 <issuer>/login?id=X&portal=1 里取 X（缺失输出空）。
+next_id() {
+  local id=${1#*"/login?id="}
+  [[ "$1" == *"/login?id="* ]] || { printf ''; return 0; }
+  printf '%s' "${id%%&*}"
+}
+
+# a19_token <code> <client_id> <client_secret> <redirect_uri> <verifier>
+# 用授权码换 access_token（confidential client 走 client_secret_basic），失败输出空。
+a19_token() {
+  local code=$1 cid=$2 secret=$3 redirect=$4 verifier=$5 http
+  http=$(curl -s --max-time "$E2E_CURL_TIMEOUT" -o "$WORK/a19-token.json" -w '%{http_code}' \
+    -X POST -u "$cid:$secret" \
+    --data-urlencode "grant_type=authorization_code" \
+    --data-urlencode "code=$code" \
+    --data-urlencode "redirect_uri=$redirect" \
+    --data-urlencode "code_verifier=$verifier" \
+    "$E2E_ISSUER/oauth2/token" 2>/dev/null)
+  [[ "$http" == "200" ]] || return 1
+  jq -r '.access_token // empty' "$WORK/a19-token.json" 2>/dev/null
 }
 
 # 超时兜底：优先 coreutils 的 timeout，其次 Homebrew 的 gtimeout（macOS 默认两者都没有），
@@ -182,7 +279,8 @@ preflight() {
   : >"$REPORT"
 
   local missing=() bin
-  for bin in curl jq go mvn python3; do
+  # openssl 用于 PKCE 的 verifier/challenge（A18/A19），python3 用于查询参数解码。
+  for bin in curl jq go mvn python3 openssl; do
     command -v "$bin" >/dev/null 2>&1 || missing+=("$bin")
   done
   (( ${#missing[@]} )) && die_preflight "缺少工具链：${missing[*]}"
@@ -286,6 +384,45 @@ stage_a2_account() {
   ok A2 "$E2E_EXAMPLE_USER 可登录"
 }
 
+# ------------------------------------- 009：门户前置（建立 IdP 会话，无断言编号）
+
+# 与门户登录页走同一条后端能力：API 域 POST /api/v1/auth/login 拿到 sid，写入 portal.cookie。
+# 之后 A4–A6 把它复制成各语言 jar，因此三示例走「凭既有会话完成授权」（SSO 闭环）。
+# 失败即退出码 2 且**不重试**——失败计数会累加，重试会把示例账号锁死。
+stage_portal_prestep() {
+  section "门户前置（建立 IdP 会话）"
+  local jar="$WORK/portal.cookie" body code
+  rm -f "$jar"
+  body=$(jq -nc --arg u "$E2E_EXAMPLE_USER" --arg p "$E2E_EXAMPLE_PASS" '{username:$u,password:$p}') || exit 2
+  code=$(curl -s --max-time "$E2E_CURL_TIMEOUT" -c "$jar" -o "$WORK/portal-login.json" \
+    -w '%{http_code}' -H 'Content-Type: application/json' -d "$body" \
+    "$E2E_API/api/v1/auth/login" 2>/dev/null) || die_preflight "门户前置：登录请求失败（API 不可达：$E2E_API）"
+
+  [[ "$code" == "200" ]] || die_preflight "门户前置：登录被拒（HTTP $code）——示例账号须可用且未被锁定"
+  if jq -e '.data.mfaRequired == true' "$WORK/portal-login.json" >/dev/null 2>&1; then
+    die_preflight "门户前置：示例账号「$E2E_EXAMPLE_USER」已启用 MFA，无法用验证码登录路径建立会话"
+  fi
+  grep -q 'sid' "$jar" 2>/dev/null \
+    || die_preflight "门户前置：响应未下发 sid cookie（检查 COOKIE_DOMAIN 是否覆盖 $E2E_API 的主机名）"
+  log "门户前置：已建立 IdP 会话（$jar）"
+}
+
+# 前置约束（contracts/e2e-a18-a19.md §1）：被测 IdP 的 PORTAL_LOGIN_URL 必须与
+# E2E_PORTAL_LOGIN_URL 一致。不一致或未配置（仍落内置 /login?id=）→ 退出码 2，
+# 而不是让 A18/A19 静默跳过。
+portal_preflight() {
+  local jar="$WORK/portal-probe.cookie" out code loc
+  rm -f "$jar"
+  out=$(authorize_probe "$jar" "$GO_ID" "$GO_BASE/callback" "portal-probe" "$(pkce_challenge "$(pkce_verifier)")")
+  code=${out%% *}
+  loc=${out#* }
+  if [[ "$code" == "302" && "$(url_base "$loc")" == "$(url_base "$E2E_PORTAL_LOGIN_URL")" ]]; then
+    log "门户前置：IdP 已按 $E2E_PORTAL_LOGIN_URL 跳转"
+    return 0
+  fi
+  die_preflight "前置不满足：IdP 未按门户跳转（期望 $E2E_PORTAL_LOGIN_URL，实际 ${loc:-HTTP $code}）——请以 PORTAL_LOGIN_URL=$E2E_PORTAL_LOGIN_URL 启动被测 IdP"
+}
+
 # ------------------------------------------------------------ A3 三示例启动
 
 start_examples() {
@@ -351,8 +488,9 @@ start_examples() {
 
 # drive_login <lang> <base> <jar>
 # 逐跳跟随：示例 /login →（Java 多一跳 /oauth2/authorization/omino）→ IdP 授权端点
-# → （无 IdP 会话时）IdP 登录表单 POST → 示例 /callback。成功返回 0。
-# LOGIN_SAW_IDP_FORM=1 表示本次真的落在登录页（A8 用它做反证）。
+# →（无 IdP 会话时）门户登录页 →（脚本代劳）API 域登录 → 回 IdP /login?id=…&portal=1
+# → 示例 /callback。成功返回 0。
+# LOGIN_SAW_IDP_FORM=1 表示本次真的落在了 IdP 内置表单（A8 用它做反证）。
 LOGIN_SAW_IDP_FORM=0
 SESSION_SECRET_SHARED=""
 
@@ -364,6 +502,22 @@ GO_FIRST200_S="" JAVA_FIRST200_S="" PY_FIRST200_S=""
 # 被脚本临时改过的客户端配置，元素形如 "id|field|原值"。cleanup（trap EXIT/INT/TERM）
 # 会按这份登记兜底还原，因此任何中断路径都不会留下 disabled 客户端或 60s TTL。
 MUTATED_CLIENTS=()
+
+# portal_resume <url> <jar> —— 落点是门户登录页时，按门户的真实行为补齐后半程：
+# 在 API 域登录（等价于用户在门户输入账号密码），输出 next（IdP 登录入口）；
+# 不是门户页则原样回传，调用方照旧跟随。登录失败返回 1。
+# 无头脚本永远不去 GET 门户页本身（:5173 的 Vite 服务不一定是起着的）。
+portal_resume() {
+  local url=$1 jar=$2 next pcode
+  next=$(url_query "$url" next)
+  [[ "$next" == *"/login?id="* ]] || { printf '%s' "$url"; return 0; }
+  pcode=$(curl -s --max-time "$E2E_CURL_TIMEOUT" -c "$jar" -b "$jar" -o /dev/null \
+    -w '%{http_code}' -H 'Content-Type: application/json' \
+    -d "$(jq -nc --arg u "$E2E_EXAMPLE_USER" --arg p "$E2E_EXAMPLE_PASS" '{username:$u,password:$p}')" \
+    "$E2E_API/api/v1/auth/login" 2>/dev/null)
+  [[ "$pcode" == "200" ]] || return 1
+  printf '%s' "$next"
+}
 
 drive_login() {
   local lang=$1 base=$2 jar=$3 suffix=${4:-}
@@ -398,7 +552,8 @@ drive_login() {
           first_loc="$E2E_ISSUER$first_loc"
         fi
         if [[ "$first_code" == "302" && -n "$first_loc" ]]; then
-          cur="$first_loc"
+          # 无会话时这一跳是门户登录页（009），不能当普通跳转直接 GET。
+          cur=$(portal_resume "$first_loc" "$jar") || return 1
           continue
         fi
         LOGIN_SAW_IDP_FORM=1
@@ -409,19 +564,19 @@ drive_login() {
         [[ -n "$loc" ]] || return 1
         cur="$loc"
         ;;
-      *"/oauth2/authorize/callback"*)
-        loc=$(curl -s --max-time "$E2E_CURL_TIMEOUT" -c "$jar" -b "$jar" \
-          -o /dev/null -w '%{redirect_url}' "$loc" 2>/dev/null)
-        [[ -n "$loc" ]] || return 1
-        cur="$loc"
-        ;;
       "$base/callback"*)
         local code
         code=$(curl -s --max-time "$E2E_CURL_TIMEOUT" -c "$jar" -b "$jar" -o /dev/null -w '%{http_code}' "$loc" 2>/dev/null)
         [[ "$code" == "302" ]] || return 1
         return 0
         ;;
-      *) cur="$loc" ;;
+      *)
+        # 009：无 IdP 会话时 authorize 会 302 到门户登录页（?next=<IdP 登录入口>&app=…）。
+        # 交给 portal_resume 补齐会话；非门户地址原样跟随（如 Java 的 /oauth2/authorization/omino）。
+        # 协议库的 /oauth2/authorize/callback 也走这里：它只是普通一跳，下一跳才是示例回调。
+        [[ "$loc" == /* ]] && loc="$E2E_ISSUER$loc"
+        cur=$(portal_resume "$loc" "$jar") || return 1
+        ;;
     esac
   done
   return 1
@@ -440,7 +595,13 @@ stage_a4_a6_login() {
       python) base=$PY_BASE; assert_id=A6 ;;
     esac
     jar="$WORK/$lang.cookie"
-    rm -f "$jar"
+    # 009：从门户前置的会话出发（SSO 闭环，契约 §2）。缺 portal.cookie 时退化为空 jar，
+    # drive_login 会走「门户跳转 → 门户登录 → 回 next」，断言仍能给出可诊断的失败。
+    if [[ -f "$WORK/portal.cookie" ]]; then
+      cp "$WORK/portal.cookie" "$jar"
+    else
+      rm -f "$jar"
+    fi
 
     if ! drive_login "$lang" "$base" "$jar"; then
       bad "$assert_id" "驱动登录失败（见 stderr / 日志）" "/login → /callback → 200"
@@ -905,15 +1066,128 @@ stage_a17_refresh_rejected() {
   fi
 }
 
+# --------------------------------- A18/A19 未登录授权落到门户（009）
+
+A18_NEXT="" A18_ID="" A18_VERIFIER=""
+
+stage_a18_portal_redirect() {
+  section "A18 未登录授权落到门户登录页"
+  local jar="$WORK/a18-empty.cookie" out acode aloc next app detail want_base got_base
+  # A12/A13 已登出，这里仍用一个全新空 jar：「无会话」必须是构造出来的事实，
+  # 不能依赖别的断言顺带留下的状态。
+  rm -f "$jar"
+  A18_VERIFIER=$(pkce_verifier)
+  out=$(authorize_probe "$jar" "$GO_ID" "$GO_BASE/callback" "a18" "$(pkce_challenge "$A18_VERIFIER")")
+  acode=${out%% *}
+  aloc=${out#* }
+  next=$(url_query "$aloc" next)
+  app=$(url_query "$aloc" app)
+  A18_NEXT=$next
+  A18_ID=$(next_id "$next")
+
+  want_base=$(url_base "$E2E_PORTAL_LOGIN_URL")
+  got_base=$(url_base "$aloc")
+  detail="code=$acode base=$got_base next=$next app=$app"
+
+  if [[ "$acode" == "302" ]] \
+    && [[ "$got_base" == "$want_base" ]] \
+    && [[ -n "$A18_ID" && "$next" == "$E2E_ISSUER/login?id=$A18_ID&portal=1" ]] \
+    && [[ -n "$app" ]] \
+    && [[ "$aloc" != "$E2E_ISSUER/login?id="* ]]; then
+    ok A18 "$detail"
+  else
+    bad A18 "$detail" "302 → $want_base，next=$E2E_ISSUER/login?id=<id>&portal=1，app 非空"
+  fi
+}
+
+stage_a19_loop_guard() {
+  section "A19 loop guard 降级 + 内置页仍可完成登录"
+  if [[ -z "$A18_NEXT" || -z "$A18_ID" ]]; then
+    bad A19 "A18 未产出可复用的 next（next=$A18_NEXT id=$A18_ID）" "A18 先通过"
+    return
+  fi
+
+  local fails=0 detail="" jar="$WORK/a19.cookie" code loc loc2 ocode tok lang cid redirect
+  rm -f "$jar"
+
+  # 1–2：带 portal=1 且无会话 → 200 内置页（不 302 回门户），且带降级说明。
+  code=$(curl -s --max-time "$E2E_CURL_TIMEOUT" -c "$jar" -b "$jar" -o "$WORK/a19-form.html" \
+    -w '%{http_code}' "$A18_NEXT" 2>/dev/null)
+  if [[ "$code" != "200" ]]; then
+    fails=$((fails + 1)); detail="$detail goto-next=$code"
+  elif ! grep -q '<form' "$WORK/a19-form.html" 2>/dev/null; then
+    fails=$((fails + 1)); detail="$detail 缺 <form"
+  elif ! grep -q '未能在跳转中延续' "$WORK/a19-form.html" 2>/dev/null; then
+    fails=$((fails + 1)); detail="$detail 缺降级文案"
+  fi
+
+  # 3–5：表单 POST → 回调 → 换 token。降级页必须真的能完成授权，而不只是「看起来像表单」，
+  # 这三步同时承担「本次改动没破坏内置登录页」的回归职责（FR-008）。
+  loc=$(idp_form_login "$jar" "$A18_ID")
+  if [[ "$loc" != *"/oauth2/authorize/callback"* ]]; then
+    fails=$((fails + 1)); detail="$detail 表单POST loc=${loc:-空}"
+  else
+    [[ "$loc" == /* ]] && loc="$E2E_ISSUER$loc"
+    loc2=$(curl -s --max-time "$E2E_CURL_TIMEOUT" -c "$jar" -b "$jar" -o /dev/null \
+      -w '%{redirect_url}' "$loc" 2>/dev/null)
+    if [[ "$loc2" != "$GO_BASE/callback?code="* ]]; then
+      fails=$((fails + 1)); detail="$detail 回调 loc2=${loc2:-空}"
+    else
+      ocode=$(url_query "$loc2" code)
+      tok=$(a19_token "$ocode" "$GO_ID" "$GO_SECRET" "$GO_BASE/callback" "$A18_VERIFIER") || tok=""
+      [[ -n "$tok" ]] || { fails=$((fails + 1)); detail="$detail token 换取失败"; }
+    fi
+  fi
+
+  # 三语言补偿（契约 §4）：A4–A6 改成 SSO 起步后，表单 POST 与回跳地址只剩这里逐语言覆盖。
+  for lang in java python; do
+    case "$lang" in
+      java) cid=$JAVA_ID; redirect="$JAVA_BASE/callback" ;;
+      python) cid=$PY_ID; redirect="$PY_BASE/callback" ;;
+    esac
+    local v out c l nid floc ljar
+    ljar="$WORK/a19-$lang.cookie"
+    rm -f "$ljar"
+    v=$(pkce_verifier)
+    out=$(authorize_probe "$ljar" "$cid" "$redirect" "a19-$lang" "$(pkce_challenge "$v")")
+    c=${out%% *}
+    l=${out#* }
+    if [[ "$c" != "302" ]]; then
+      fails=$((fails + 1)); detail="$detail $lang(authorize=$c)"
+      continue
+    fi
+    nid=$(next_id "$(url_query "$l" next)")
+    if [[ -z "$nid" ]]; then
+      fails=$((fails + 1)); detail="$detail $lang(无 next)"
+      continue
+    fi
+    floc=$(idp_form_login "$ljar" "$nid")
+    if [[ "$floc" == *"/oauth2/authorize/callback"* ]]; then
+      [[ "$floc" == /* ]] && floc="$E2E_ISSUER$floc"
+      floc=$(curl -s --max-time "$E2E_CURL_TIMEOUT" -c "$ljar" -b "$ljar" \
+        -o /dev/null -w '%{redirect_url}' "$floc" 2>/dev/null)
+    fi
+    [[ "$floc" == "$redirect?code="* ]] || { fails=$((fails + 1)); detail="$detail $lang(callback=${floc:-空})"; }
+  done
+
+  if (( fails == 0 )); then
+    ok A19 "200 内置页（含降级文案）→ 表单 POST → 回调 → token 200；java/python 各复验表单回跳"
+  else
+    bad A19 "$detail" "200 内置页 + 表单完成授权 + go 换 token 成功 + java/python 回跳正确"
+  fi
+}
+
 # --------------------------------------------------------------------- 主流程
 
 self_test() {
   section "self-test"
   local bad_count=0 fn bin
-  for fn in preflight stage_a0_build stage_a1_clients stage_a2_account start_examples \
+  for fn in preflight stage_a0_build stage_a1_clients stage_a2_account \
+    stage_portal_prestep portal_preflight start_examples \
+    url_query url_base pkce_verifier pkce_challenge authorize_probe idp_form_login next_id a19_token portal_resume \
     drive_login example_base interruptible_sleep stage_a4_a6_login stage_a8_sso stage_a9_a10_refresh stage_a11_idp_session \
     stage_a14_no_secret stage_a12_logout stage_a13_after_logout stage_a15_degraded stage_a16_cookie_prefix \
-    stage_a17_refresh_rejected; do
+    stage_a17_refresh_rejected stage_a18_portal_redirect stage_a19_loop_guard; do
     declare -F "$fn" >/dev/null || { printf '[FAIL] 缺少函数 %s\n' "$fn"; bad_count=1; }
   done
   for bin in curl jq; do
@@ -948,6 +1222,10 @@ main() {
   stage_a0_build
   stage_a1_clients
   stage_a2_account
+  # 009：门户前置 + 门户地址前置断言必须在示例启动前完成——A4–A6 依赖这份 IdP 会话，
+  # 而「IdP 未按门户跳转」属于配置错误（退出码 2），不该消耗几百秒的示例启动时间。
+  stage_portal_prestep
+  portal_preflight
   start_examples
   stage_a4_a6_login
   stage_a8_sso
@@ -959,6 +1237,8 @@ main() {
   stage_a15_degraded
   stage_a16_cookie_prefix
   stage_a17_refresh_rejected
+  stage_a18_portal_redirect
+  stage_a19_loop_guard
 
   section "汇总"
   log "PASS=$PASSED FAIL=$FAILED 报告=$REPORT"

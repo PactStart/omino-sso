@@ -120,10 +120,10 @@ description: "Task list for 未登录 OIDC 授权统一跳转门户登录页"
 
 **Independent Test**：被测 IdP 已配门户地址时 `bash scripts/e2e/examples.sh` 全绿；把 `E2E_PORTAL_LOGIN_URL` 改成别的地址 → 退出码 2 且提示前置不满足。
 
-- [ ] T024 [US4] 在 `scripts/e2e/examples.sh` 头部增加 `E2E_PORTAL_LOGIN_URL="${E2E_PORTAL_LOGIN_URL:-http://localhost:5173/login}"` 与用法说明；A2 之后插入「门户前置」步骤（`POST $E2E_API/api/v1/auth/login` 写入 `$WORK/portal.cookie`，`mfaRequired`/非 200/网络错误 → `exit 2`）；A4–A6 改为复制该 jar 起步并断言 `LOGIN_SAW_IDP_FORM=0`；验收：日志打印「门户前置：已建立 IdP 会话」
-- [ ] T025 [US4] 新增 A18（contracts/e2e-a18-a19.md §3）：空 jar 请求 `/oauth2/authorize`，断言 ①`302` ②`Location` 的 scheme+host+path 等于 `E2E_PORTAL_LOGIN_URL` ③`next` 解码后匹配 `^<issuer>/login\?id=[^&]+&portal=1$` ④`app` 非空 ⑤不是 `<issuer>/login?id=`；并按 §3.1 记录「有会话直达」段耗时（A4–A6 各一次，目标 ≤2 秒），打印到断言日志；失败时打印实际 `Location` 与期望值
-- [ ] T026 [US4] 新增 A19（§4）：`GET <A18 的 next>` 空 jar → `200` + 含 `<form` + 含降级文案；`POST /login` 完成登录 → `302` → 回调拿到 code → 换 token 成功；对 go/java/python **各跑一次**表单 POST（仅断言 302 到各自回调）；验收：A19 失败信息能区分「未降级到内置登录页（降级态）」与「降级态页面不能完成登录」两种情况
-- [ ] T027 [US4] 更新 `--self-test` 的函数清单与脚本文档：表头/用法注释改为 A0–A19，函数清单加入新增 stage；同步核对 `AGENTS.md §3` 与 `docs/integration-guide.md` 的 A0–A19 表述（文档已改，本任务只做一致性核对）；验收：`bash scripts/e2e/examples.sh --self-test` 通过，缺函数时自检报错
+- [X] T024 [US4] 在 `scripts/e2e/examples.sh` 头部增加 `E2E_PORTAL_LOGIN_URL="${E2E_PORTAL_LOGIN_URL:-http://localhost:5173/login}"` 与用法说明；A2 之后插入「门户前置」步骤（`POST $E2E_API/api/v1/auth/login` 写入 `$WORK/portal.cookie`，`mfaRequired`/非 200/网络错误 → `exit 2`）；A4–A6 改为复制该 jar 起步并断言 `LOGIN_SAW_IDP_FORM=0`；验收：日志打印「门户前置：已建立 IdP 会话」
+- [X] T025 [US4] 新增 A18（contracts/e2e-a18-a19.md §3）：空 jar 请求 `/oauth2/authorize`，断言 ①`302` ②`Location` 的 scheme+host+path 等于 `E2E_PORTAL_LOGIN_URL` ③`next` 解码后匹配 `^<issuer>/login\?id=[^&]+&portal=1$` ④`app` 非空 ⑤不是 `<issuer>/login?id=`；并按 §3.1 记录「有会话直达」段耗时（A4–A6 各一次，目标 ≤2 秒），打印到断言日志；失败时打印实际 `Location` 与期望值
+- [X] T026 [US4] 新增 A19（§4）：`GET <A18 的 next>` 空 jar → `200` + 含 `<form` + 含降级文案；`POST /login` 完成登录 → `302` → 回调拿到 code → 换 token 成功；对 go/java/python **各跑一次**表单 POST（仅断言 302 到各自回调）；验收：A19 失败信息能区分「未降级到内置登录页（降级态）」与「降级态页面不能完成登录」两种情况
+- [X] T027 [US4] 更新 `--self-test` 的函数清单与脚本文档：表头/用法注释改为 A0–A19，函数清单加入新增 stage；同步核对 `AGENTS.md §3` 与 `docs/integration-guide.md` 的 A0–A19 表述（文档已改，本任务只做一致性核对）；验收：`bash scripts/e2e/examples.sh --self-test` 通过，缺函数时自检报错
 
 **Checkpoint**：US4 独立可验——A0–A19 全绿，前置错配以退出码 2 结束。
 
