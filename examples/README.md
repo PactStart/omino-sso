@@ -86,7 +86,7 @@ curl -i http://localhost:8000/api/me            # 未登录：401 {"error":"unau
 ### 4.1 一条命令做自动验证
 
 ```bash
-bash scripts/e2e/examples.sh              # 跑 A0–A16 并打印逐项 PASS/FAIL
+bash scripts/e2e/examples.sh              # 跑 A0–A17 并打印逐项 PASS/FAIL
 bash scripts/e2e/examples.sh --keep       # 结束后保留三个示例进程，便于接着手工点
 bash scripts/e2e/examples.sh --self-test  # 只校验脚本自身（不连 IdP、不起进程）
 ```
@@ -96,14 +96,16 @@ bash scripts/e2e/examples.sh --self-test  # 只校验脚本自身（不连 IdP�
 
 | 项 | 说明 |
 |---|---|
-| 前置 | IdP 在跑、管理员账号可用、端口空闲（默认 `8000/8001/8002`，可用 `E2E_*_PORT` 改）、`go`/`mvn`/`python3` 就绪；**Python 依赖由脚本自行准备**（缺 `examples/python/venv` 时自动 `python3 -m venv` + `pip install -r requirements.txt`，受 `E2E_NET_TIMEOUT` 约束）；不满足则 `exit 2` 且**不开始**断言 |
+| 前置 | IdP 在跑、管理员账号可用、端口空闲（默认 `8000/8001/8002`，可用 `E2E_*_PORT` 改）；工具链 `go`/`mvn`/`python3` 加上断言用的 `curl`/`jq` 与端口检查用的 `lsof`（缺任何一项 `exit 2` 并列出缺失项）；**Python 依赖由脚本自行准备**（缺 `examples/python/venv` 时自动 `python3 -m venv` + `pip install -r requirements.txt`，受 `E2E_NET_TIMEOUT` 约束）；不满足则 `exit 2` 且**不开始**断言 |
 | 退出码 | `0` 全绿 / `1` 有断言失败（已打印 got/want 并附日志尾部）/ `2` 前置不满足 |
 | 产物 | `.tmp/e2e-examples/`：`report.txt`（逐项结果）、`clients.env`（`0600`，可 `source` 后手工起示例）、`go.log`/`java.log`/`python.log` |
-| A9 的判据 | 脚本先回读三个客户端原 `accessTokenTtl`，临时改成 60 秒并重新登录，等令牌过期后访问 `/api/me`，以日志 `[refresh] ok rotated=1` 判定轮换（令牌本身不出服务端，脚本无法直接比对 refresh_token），跑完按**原值**恢复 |
+| A9 的判据 | 脚本先回读三个客户端原 `accessTokenTtl`，临时改成 60 秒并重新登录，等令牌进入刷新窗口后访问 `/api/me`，以日志 `[refresh] ok rotated=1` 判定轮换（令牌本身不出服务端，脚本无法直接比对 refresh_token），跑完按**原值**恢复 |
+| A8 的覆盖 | 3 组 × 2 目标共 6 条：登录任一示例后，用它的 jar（含 IdP `sid`）驱动另外两个示例的 `/login`，断言免表单 + `/api/me` 200 + `sub` 相同，逐组写 `A8-COMBO A→B PASS` |
+| A17 的判据 | 先取 `accessTokenTtl=60` 的短命令牌，再把三个客户端置 `status=0`，令牌进入刷新窗口后三示例 `/api/me` 均 `401`（连续两次都 `401`，证明清掉失效令牌后不重试）；恢复原 `status` 后重新登录回到 `200`。全程只用管理 API；`accessTokenTtl` 与 `status` 都先回读再登记，正常结束与 Ctrl-C/超时打断都会按原值还原（`trap` 兜底），不会留下 disabled 客户端 |
 | 超时 | 每步 HTTP 用 `E2E_CURL_TIMEOUT`（默认 10s）；A0 的依赖准备/构建用 `E2E_NET_TIMEOUT`（默认 300s）。机器上没有 coreutils 的 `timeout` 时，脚本退到 `gtimeout`，再没有就用 bash 计时 + `kill` 兜底，不会静默裸跑 |
 | A11 的判据 | 用同一 `sid` 直接查 `{API}/api/v1/me` 是否仍 200，不依赖门户 dev server 是否在跑；同时断言示例响应里没有 `Set-Cookie: sid=` |
-| 幂等 | 连跑两次都全绿（客户端按 `clientName` 复用、密钥复用缓存，已存在即通过）；2026-10-24 与 2026-10-25 各实测连续两轮 17/17 PASS |
-| 已知限制 | `refresh_token` 不出服务端，`E2E_STRICT_REFRESH=1` 的「重放旧令牌应得 invalid_grant」在示例侧无法执行，脚本会明确打印这条限制而不是假装通过 |
+| 幂等 | 连跑两次都全绿（客户端按 `clientName` 复用、密钥复用缓存，已存在即通过）；2026-10-25（含 A8 六条组合与 A17）实测连续两轮 **18/18 PASS**（154s / 163s，第二轮带 `E2E_STRICT_REFRESH=1`） |
+| 严格档 | `E2E_STRICT_REFRESH=1` 时在 A17 额外断言「每个示例只记录一条 `[refresh] fail`」（单飞、不重试）；旧 refresh_token 的重放断言在示例侧无法执行（令牌不出服务端），故不再假装有一条重放断言 |
 
 ### 4.2 实测用时（2026-10-25，macOS x86_64）
 
@@ -111,7 +113,7 @@ bash scripts/e2e/examples.sh --self-test  # 只校验脚本自身（不连 IdP�
 |---|---|
 | 示例进程启动 → 首次 `/api/me` **200** | **Go 7s / Java 8s / Python 10s**（热缓存；`report.txt` 的 `A4-TIMING` 行） |
 | 进程启动 → 首次 `/api/me` 401（未登录基线） | Go 1s / Java 5s / Python 1s（`A3-TIMING` 行） |
-| 一条命令整体（连续第二次起） | **103s**，`PASS=17 FAIL=0` |
+| 一条命令整体（连续第二次起） | **154s / 163s**（含 A17 的 40s 拒绝窗口），`PASS=18 FAIL=0` |
 
 口径：上表两轮均为**热缓存**（`venv/` 已装、Maven 依赖已下载），只代表「后续执行」；冷缓存首次会在 A0 多出 `mvn` 依赖下载与 `pip install -r requirements.txt` 的耗时（受 `E2E_NET_TIMEOUT` 约束）。
 数据来源固定为 `.tmp/e2e-examples/report.txt` 的 `A3-TIMING` / `A4-TIMING` 两行，重跑即刷新。

@@ -393,7 +393,7 @@ GET {issuer}/logout?next=/logged-out
 需要什么：
 
 - 环境变量、运行命令、日志说明、排障表、**已验证版本矩阵**：见 [`examples/README.md`](../examples/README.md)；
-- 一条命令跑完全部断言（A0–A16，含跨示例 SSO、刷新轮换、降级、cookie 前缀）：`bash scripts/e2e/examples.sh`，
+- 一条命令跑完全部断言（A0–A17，含跨示例 SSO、刷新轮换、刷新被拒回落、降级、cookie 前缀）：`bash scripts/e2e/examples.sh`，
   断言清单在 [`specs/008-integration-examples/contracts/e2e-examples-cli.md`](../specs/008-integration-examples/contracts/e2e-examples-cli.md)。
 
 ### 9.2 与本文档历史示例的四处差异（照抄旧片段会踩）
@@ -470,7 +470,7 @@ curl -s -H "Authorization: Bearer $ACCESS_TOKEN" "$ISSUER/oauth2/userinfo"
 ```
 
 > 验证"接入示例能不能跑通"时不要手抄上面的 curl：在 omino-sso 仓库里执行 `bash scripts/e2e/examples.sh`，
-> 它会自行拉起三个示例并跑完 A0–A16（跨示例 SSO、刷新轮换、userinfo 降级、cookie 前缀），见 §9.1。
+> 它会自行拉起三个示例并跑完 A0–A17（跨示例 SSO、刷新轮换、刷新被拒回落、userinfo 降级、cookie 前缀），见 §9.1。
 
 ## 13. 需要 IdP 侧改造时
 

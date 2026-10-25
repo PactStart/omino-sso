@@ -167,7 +167,7 @@ omino-sso/
 │   │   └── pre-push                   # 2026-10-24 新增：push 边界跑 full 档（`make hooks-install` 安装）
 │   └── e2e/                           # 2026-10-23 新增：本地 test 形态端到端验证（make e2e）
 │       ├── run.sh                     # *.lvh.me 四域 HTTPS + 跨子域 SSO/cookie/探针/可信代理断言，退出自动还原数据
-│       ├── examples.sh                # 2026-10-24 新增：三语言示例 A0–A16 端到端断言（--keep / --self-test）
+│       ├── examples.sh                # 2026-10-24 新增：三语言示例 A0–A17 端到端断言（--keep / --self-test）
 │       ├── lib/
 │       │   └── admin.sh               # 2026-10-24 新增：客户端复用 / 密钥缓存 / 专用账号，被 examples.sh source
 │       └── nginx/                     # portal/admin/api/sso 四个 server 块（容器内固定路径，刻意不做模板替换）

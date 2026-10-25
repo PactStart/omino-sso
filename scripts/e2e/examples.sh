@@ -3,7 +3,7 @@
 #
 # 断言清单与行为约束见 specs/008-integration-examples/contracts/e2e-examples-cli.md。
 # 用法：
-#   bash scripts/e2e/examples.sh              # 跑 A0–A16
+#   bash scripts/e2e/examples.sh              # 跑 A0–A17
 #   bash scripts/e2e/examples.sh --keep       # 结束后保留三个示例进程
 #   bash scripts/e2e/examples.sh --self-test  # 只校验脚本自身，不连 IdP、不起进程
 #
@@ -88,6 +88,11 @@ wait_http() { # wait_http <url> <期望码> <超时秒>
 # 都没有时用 bash 自带计时 + kill 实现同等上限，超时返回 124（与 timeout 一致）。
 # 不允许「没装 timeout 就直接裸跑」——那会让 E2E_NET_TIMEOUT 静默失效，
 # A0 的 go build / mvn package 可能无限挂起。
+interruptible_sleep() { # <秒>：用后台 sleep + wait，让 INT/TERM 的 trap 立刻生效
+  sleep "$1" &
+  wait $! 2>/dev/null || true
+}
+
 with_timeout() { # with_timeout <秒> <命令...>
   local seconds=$1
   shift
@@ -117,6 +122,9 @@ with_timeout() { # with_timeout <秒> <命令...>
 }
 
 cleanup() {
+  # 先还原被脚本改过的客户端配置：进程被杀掉不等于配置恢复，
+  # Ctrl-C / 超时打断后不能把 disabled 客户端或 60s TTL 留在环境里（FR-012）。
+  restore_mutations
   if (( KEEP == 0 )); then
     local pid
     for pid in "$GO_PID" "$JAVA_PID" "$PY_PID"; do
@@ -130,7 +138,35 @@ cleanup() {
     printf '\n[keep] 示例仍在运行：go=%s java=%s python=%s\n' "$GO_PID" "$JAVA_PID" "$PY_PID"
   fi
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+# INT/TERM 必须「清理后退出」：只挂 cleanup 会让脚本在清理完继续跑，
+# 用已死的示例进程继续断言，报出来的失败与真实原因无关。
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
+
+client_field() { # client_field <id> <field> -> 客户端字段原值（读不到时输出空）
+  curl -s --max-time "$E2E_CURL_TIMEOUT" -b "${ad_cookie:-}" \
+    "$E2E_API/api/v1/admin/clients/$1" 2>/dev/null | jq -r ".data.$2 // empty" 2>/dev/null
+}
+
+register_mutation() { # register_mutation <id> <field> <原值>：登记待还原的客户端配置
+  MUTATED_CLIENTS+=("$1|$2|$3")
+}
+
+restore_mutations() { # 按登记把客户端配置改回原值（幂等；无登记时直接返回）
+  local entry id rest field val
+  for entry in "${MUTATED_CLIENTS[@]:-}"; do
+    [[ -n "$entry" ]] || continue
+    id=${entry%%|*}
+    rest=${entry#*|}
+    field=${rest%%|*}
+    val=${rest#*|}
+    curl -s --max-time "$E2E_CURL_TIMEOUT" -X PATCH -b "${ad_cookie:-}" -o /dev/null \
+      -H 'Content-Type: application/json' -d "{\"$field\":${val}}" \
+      "$E2E_API/api/v1/admin/clients/$id" 2>/dev/null
+  done
+  MUTATED_CLIENTS=()
+}
 
 dump_logs() { # failure 时打印该示例三类日志的尾部
   local file="$WORK/$1.log"
@@ -325,6 +361,10 @@ SESSION_SECRET_SHARED=""
 EX_STARTED_AT=""
 GO_FIRST200_S="" JAVA_FIRST200_S="" PY_FIRST200_S=""
 
+# 被脚本临时改过的客户端配置，元素形如 "id|field|原值"。cleanup（trap EXIT/INT/TERM）
+# 会按这份登记兜底还原，因此任何中断路径都不会留下 disabled 客户端或 60s TTL。
+MUTATED_CLIENTS=()
+
 drive_login() {
   local lang=$1 base=$2 jar=$3 suffix=${4:-}
   local cur="$base/login" loc hdr_file="$WORK/header-$lang$suffix.txt" i=0
@@ -450,25 +490,54 @@ stage_a4_a6_login() {
 
 # --------------------------------------------------------------- A8 跨示例 SSO
 
+example_base() { # example_base <lang>
+  case "$1" in
+    go) printf '%s' "$GO_BASE" ;;
+    java) printf '%s' "$JAVA_BASE" ;;
+    python) printf '%s' "$PY_BASE" ;;
+  esac
+}
+
 stage_a8_sso() {
-  section "A8 跨示例单点登录"
-  local jar="$WORK/go-sso.cookie"
+  section "A8 跨示例单点登录（3 组 × 2 目标）"
+  local src target jar base code sub pairs=0 fails=0 detail=""
 
-  # 复制 java 的 jar（里面有 IdP 的 sid），再走一遍 Go 示例的登录：
-  # 该 IdP 的 authorize 一定把浏览器送到 /login?id=，区别在于同会话时该 URL 直接 302
-  # 回 callback，而不是渲染登录表单——这才是「免登录」的可观测事实。
-  cp "$WORK/java.cookie" "$jar" 2>/dev/null || { bad A8 "缺少 java.cookie" "有 IdP 会话的 jar"; return; }
+  # SC-003 要的是「登录任一示例后，其余 2 个示例都免登录」——3 组 × 2 个目标共 6 条，
+  # 不能只测一组。每组用「来源示例的 jar（含 IdP 的 sid）」驱动目标示例的 /login：
+  # 该 IdP 的 authorize 一律把浏览器送到 /login?id=，同会话时直接 302 回 callback，
+  # 「没渲染登录表单 + /api/me 200 + sub 相同」才是免登录的可观测事实。
+  for src in go java python; do
+    for target in go java python; do
+      [[ "$target" == "$src" ]] && continue
+      pairs=$((pairs + 1))
+      jar="$WORK/sso-$src-$target.cookie"
+      base=$(example_base "$target")
+      cp "$WORK/$src.cookie" "$jar" 2>/dev/null \
+        || { bad A8 "缺少 $src.cookie" "有 IdP 会话的 jar"; return; }
 
-  if ! drive_login go "$GO_BASE" "$jar" "-sso"; then
-    bad A8 "驱动登录失败" "免登录直达 /callback"
-    dump_logs go
-    return
-  fi
+      if ! drive_login "$target" "$base" "$jar" "-sso-$src"; then
+        fails=$((fails + 1))
+        detail="$detail $src→$target(驱动登录失败)"
+        dump_logs "$target"
+        continue
+      fi
 
-  if (( LOGIN_SAW_IDP_FORM == 0 )); then
-    ok A8 "同一 IdP 会话下未出现登录表单，直接完成授权"
+      code=$(http_code "$jar" "$base/api/me")
+      sub=$(curl -s --max-time "$E2E_CURL_TIMEOUT" -b "$jar" "$base/api/me" 2>/dev/null | jq -r '.sub // empty')
+      if (( LOGIN_SAW_IDP_FORM != 0 )) || [[ "$code" != "200" || "$sub" != "$GO_SUB" ]]; then
+        fails=$((fails + 1))
+        detail="$detail $src→$target(form=$LOGIN_SAW_IDP_FORM,code=$code,sub=$sub)"
+        dump_logs "$target"
+        continue
+      fi
+      printf 'A8-COMBO %s→%s PASS（免表单 + /api/me 200 + sub 一致）\n' "$src" "$target" >>"$REPORT"
+    done
+  done
+
+  if (( fails == 0 )); then
+    ok A8 "$pairs/$pairs 组合免登录（3 组 × 2 目标，均 200 且 sub 相同）"
   else
-    bad A8 "出现了登录表单（需重新输密码）" "已有 IdP 会话时应免登录"
+    bad A8 "$detail" "全部 $pairs 个组合免表单 + 200 + sub 相同"
   fi
 }
 
@@ -484,9 +553,9 @@ stage_a9_a10_refresh() {
   # （FR-012：不破坏既有配置；管理端可能改过 TTL）。
   local -a orig_ttl=()
   for id in "$GO_ID" "$JAVA_ID" "$PY_ID"; do
-    ttl=$(curl -s --max-time "$E2E_CURL_TIMEOUT" -b "$ad_cookie" \
-      "$E2E_API/api/v1/admin/clients/$id" 2>/dev/null | jq -r '.data.accessTokenTtl // empty' 2>/dev/null)
+    ttl=$(client_field "$id" accessTokenTtl)
     orig_ttl+=("${ttl:-900}")
+    register_mutation "$id" accessTokenTtl "${ttl:-900}"
     curl -s --max-time "$E2E_CURL_TIMEOUT" -X PATCH -b "$ad_cookie" -o /dev/null \
       -H 'Content-Type: application/json' -d "{\"accessTokenTtl\":$min_ttl}" \
       "$E2E_API/api/v1/admin/clients/$id" 2>/dev/null
@@ -507,7 +576,7 @@ stage_a9_a10_refresh() {
   done
 
   log "等待访问令牌过期（${wait_s}s，accessTokenTtl=${min_ttl}）…"
-  sleep "$wait_s"
+  interruptible_sleep "$wait_s"
 
   local failed=0 detail="" lang base jar code sub
   for lang in go java python; do
@@ -545,10 +614,8 @@ stage_a9_a10_refresh() {
     dump_logs go; dump_logs java; dump_logs python
   fi
 
-  # E2E_STRICT_REFRESH=1 时用旧 refresh_token 重放，断言 invalid_grant（会吊销整族，故放在最后）。
-  if [[ "$E2E_STRICT_REFRESH" == "1" ]]; then
-    log "[strict] 跳过重放断言：refresh_token 不出服务端，脚本无法重放（见 examples/README.md 已知限制）"
-  fi
+  # 旧 refresh_token 无法从示例侧重放（令牌不出服务端）；「刷新被拒」由 A17 用
+  # 「短命令牌 + 禁用客户端」制造，E2E_STRICT_REFRESH=1 时在那里额外断言不重试。
 
   idx=0
   for id in "$GO_ID" "$JAVA_ID" "$PY_ID"; do
@@ -558,6 +625,7 @@ stage_a9_a10_refresh() {
     idx=$((idx + 1))
   done
   log "已按原值恢复三个客户端的 accessTokenTtl：go=${orig_ttl[0]:-900} java=${orig_ttl[1]:-900} python=${orig_ttl[2]:-900}"
+  MUTATED_CLIENTS=()
 }
 
 # ------------------------------------------------------ A11 未破坏 IdP 会话
@@ -717,14 +785,135 @@ stage_a16_cookie_prefix() {
   fi
 }
 
+# ------------------------------------------- A17 刷新被拒 → 回落重新授权
+
+# 制造「刷新被拒」的可复现手段：把访问令牌压到 60 秒下限 → 重新登录拿到短命令牌 →
+# 把三个客户端置为 disabled（GetClientByClientID 直接拒绝）→ 令牌进入刷新窗口后，
+# 示例的刷新必然被 IdP 拒绝。全程只用管理 API，不碰库、不碰私有令牌。
+stage_a17_refresh_rejected() {
+  section "A17 刷新被拒 → 回落重新授权"
+  local lang id base jar code code2 sub idx=0 ttl st fails=0 detail="" cnt
+  local -a orig_ttl=() orig_status=()
+
+  # 回读原值并登记，cleanup 会在中断时兜底还原（status 也要回读：原本停用的客户端不能被打开）。
+  for id in "$GO_ID" "$JAVA_ID" "$PY_ID"; do
+    ttl=$(client_field "$id" accessTokenTtl)
+    st=$(client_field "$id" status)
+    orig_ttl+=("${ttl:-900}")
+    orig_status+=("${st:-1}")
+    register_mutation "$id" accessTokenTtl "${ttl:-900}"
+    register_mutation "$id" status "${st:-1}"
+    curl -s --max-time "$E2E_CURL_TIMEOUT" -X PATCH -b "$ad_cookie" -o /dev/null \
+      -H 'Content-Type: application/json' -d '{"accessTokenTtl":60}' \
+      "$E2E_API/api/v1/admin/clients/$id" 2>/dev/null
+  done
+
+  # A13 已把三示例登出，这里用短命令牌重新建立会话。
+  for lang in go java python; do
+    base=$(example_base "$lang")
+    jar="$WORK/$lang-rej.cookie"
+    rm -f "$jar"
+    if ! drive_login "$lang" "$base" "$jar" "-rej"; then
+      bad A17 "驱动 $lang 登录失败" "先建立会话再制造刷新被拒"
+      dump_logs "$lang"
+      return
+    fi
+    code=$(http_code "$jar" "$base/api/me")
+    if [[ "$code" != "200" ]]; then
+      bad A17 "$lang 登录后 /api/me=$code" "200"
+      dump_logs "$lang"
+      return
+    fi
+  done
+
+  for id in "$GO_ID" "$JAVA_ID" "$PY_ID"; do
+    curl -s --max-time "$E2E_CURL_TIMEOUT" -X PATCH -b "$ad_cookie" -o /dev/null \
+      -H 'Content-Type: application/json' -d '{"status":0}' \
+      "$E2E_API/api/v1/admin/clients/$id" 2>/dev/null
+  done
+
+  log "已禁用三个客户端，等访问令牌进入刷新窗口（40s）…"
+  interruptible_sleep 40
+
+  for lang in go java python; do
+    base=$(example_base "$lang")
+    jar="$WORK/$lang-rej.cookie"
+    code=$(http_code "$jar" "$base/api/me")
+    # 第二次请求必须仍是 401：证明清掉失效令牌后没有拿旧令牌反复重试。
+    code2=$(http_code "$jar" "$base/api/me")
+    if [[ "$code" != "401" || "$code2" != "401" ]]; then
+      fails=$((fails + 1))
+      detail="$detail $lang(code=$code/$code2)"
+      dump_logs "$lang"
+    fi
+  done
+
+  # 恢复客户端：刷新被拒后必须能重新授权（不是死循环、也不是空白页）。
+  for id in "$GO_ID" "$JAVA_ID" "$PY_ID"; do
+    curl -s --max-time "$E2E_CURL_TIMEOUT" -X PATCH -b "$ad_cookie" -o /dev/null \
+      -H 'Content-Type: application/json' -d '{"status":1}' \
+      "$E2E_API/api/v1/admin/clients/$id" 2>/dev/null
+  done
+
+  for lang in go java python; do
+    base=$(example_base "$lang")
+    jar="$WORK/$lang-reauth.cookie"
+    rm -f "$jar"
+    if ! drive_login "$lang" "$base" "$jar" "-reauth"; then
+      fails=$((fails + 1))
+      detail="$detail $lang(重新授权失败)"
+      dump_logs "$lang"
+      continue
+    fi
+    code=$(http_code "$jar" "$base/api/me")
+    sub=$(curl -s --max-time "$E2E_CURL_TIMEOUT" -b "$jar" "$base/api/me" 2>/dev/null | jq -r '.sub // empty')
+    if [[ "$code" != "200" || "$sub" != "$GO_SUB" ]]; then
+      fails=$((fails + 1))
+      detail="$detail $lang(重新授权 code=$code sub=$sub)"
+      dump_logs "$lang"
+    fi
+  done
+
+  # 严格档：每个示例的刷新失败只允许一条日志（单飞 + 不重试）。
+  if [[ "$E2E_STRICT_REFRESH" == "1" ]]; then
+    for lang in go java python; do
+      cnt=$(grep -c '\[refresh\] fail' "$WORK/$lang.log" 2>/dev/null || true)
+      if [[ "${cnt:-0}" != "1" ]]; then
+        fails=$((fails + 1))
+        detail="$detail $lang([refresh] fail 次数=${cnt:-0}，期望 1)"
+      fi
+    done
+  fi
+
+  idx=0
+  for id in "$GO_ID" "$JAVA_ID" "$PY_ID"; do
+    curl -s --max-time "$E2E_CURL_TIMEOUT" -X PATCH -b "$ad_cookie" -o /dev/null \
+      -H 'Content-Type: application/json' -d "{\"accessTokenTtl\":${orig_ttl[$idx]:-900}}" \
+      "$E2E_API/api/v1/admin/clients/$id" 2>/dev/null
+    curl -s --max-time "$E2E_CURL_TIMEOUT" -X PATCH -b "$ad_cookie" -o /dev/null \
+      -H 'Content-Type: application/json' -d "{\"status\":${orig_status[$idx]:-1}}" \
+      "$E2E_API/api/v1/admin/clients/$id" 2>/dev/null
+    idx=$((idx + 1))
+  done
+  log "已按原值恢复三个客户端：accessTokenTtl=go:${orig_ttl[0]:-900}/java:${orig_ttl[1]:-900}/python:${orig_ttl[2]:-900}，status=go:${orig_status[0]:-1}/java:${orig_status[1]:-1}/python:${orig_status[2]:-1}"
+  MUTATED_CLIENTS=()
+
+  if (( fails == 0 )); then
+    ok A17 "刷新被拒后三示例均 401（非 5xx、不重试），重新授权后 200 且 sub 一致"
+  else
+    bad A17 "$detail" "刷新被拒 → 401 → 重新授权 200"
+  fi
+}
+
 # --------------------------------------------------------------------- 主流程
 
 self_test() {
   section "self-test"
   local bad_count=0 fn bin
   for fn in preflight stage_a0_build stage_a1_clients stage_a2_account start_examples \
-    drive_login stage_a4_a6_login stage_a8_sso stage_a9_a10_refresh stage_a11_idp_session \
-    stage_a14_no_secret stage_a12_logout stage_a13_after_logout stage_a15_degraded stage_a16_cookie_prefix; do
+    drive_login example_base interruptible_sleep stage_a4_a6_login stage_a8_sso stage_a9_a10_refresh stage_a11_idp_session \
+    stage_a14_no_secret stage_a12_logout stage_a13_after_logout stage_a15_degraded stage_a16_cookie_prefix \
+    stage_a17_refresh_rejected; do
     declare -F "$fn" >/dev/null || { printf '[FAIL] 缺少函数 %s\n' "$fn"; bad_count=1; }
   done
   for bin in curl jq; do
@@ -769,6 +958,7 @@ main() {
   stage_a13_after_logout
   stage_a15_degraded
   stage_a16_cookie_prefix
+  stage_a17_refresh_rejected
 
   section "汇总"
   log "PASS=$PASSED FAIL=$FAILED 报告=$REPORT"

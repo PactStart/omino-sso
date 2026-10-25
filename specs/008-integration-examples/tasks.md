@@ -237,3 +237,40 @@ Task: "examples/go/session.go（T010）"
 - [x] T037 对齐 Java 示例的结构性清单：plan 与 T013/T014 写的是 `com/example/demo/{DemoApplication,SecurityConfig,AuthController}.java`，实现为 `com/example/ssoexample/{DemoApplication,SecurityConfig,PageController,MeService,LoginSuccessHandler,OAuthFailureHandler,IdTokenOnlyUserService,SessionKeys,StartupCheck}.java`——更新 plan 的 Source Code 结构与 tasks 中的文件引用（或按原命名重构），使产物与代码可逐项对照 per plan: Source Code structure、T013–T014 (partial)
 - [x] T038 重跑并刷新 SC-007 证据：`416643c` 把三示例启动改为 `env` 数组传参后，tasks.md「连跑两次 17/17」的证据早于该改动——连续执行两轮 `bash scripts/e2e/examples.sh` 全绿，并确认 A3（启动基线）、A15（降级重启）行为未变，把新 report 的关键行回填到本文件「完成证据」 per SC-007、T024 (partial)
 
+---
+
+## Phase 8: Convergence
+
+**Purpose**: 第二次 `/speckit.converge`（2026-10-25，Phase 7 落地之后）复核出 3 项差距：跨示例 SSO 只测了 1/3 组合、刷新被拒回落无断言、契约判据与实现观测点不一致。以下任务只做补齐，不改动 Phase 1–7 的既有条目。
+
+- [x] T039 把 A8 扩成 SC-003 要求的 3 组组合：先登录 A（保留其 IdP 会话 jar），再用同一 jar 分别驱动 B 与 C 的 `/login`，每组断言 ① `LOGIN_SAW_IDP_FORM=0`（未出现登录表单）、② 回调后 `/api/me` = 200、③ `sub` 与 A 相同；结果写入 `report.txt` 并逐组打印，替换当前只覆盖 java→go 的单组断言 per SC-003 (partial)
+- [x] T040 让「刷新被拒 → 清本地令牌 + 回落重新授权」可被 e2e 实际执行并断言：在示例已持有会话时从 IdP 侧使 refresh 失效（吊销令牌族/会话），待访问令牌过期后访问 `/api/me`，断言返回 401（非 5xx、非死循环），且随后 `/login` 能重新完成授权拿到 200；同时把 `E2E_STRICT_REFRESH=1` 的行为改成真实断言或明确降级说明，不再只是打印「跳过」 per SC-008、US1/AC7 (partial)
+- [x] T041 对齐契约判据：`contracts/e2e-examples-cli.md` 的 A9 改为「以 `[refresh] ok rotated=1` 日志为可观测量」、A11 改为「用同一 `sid` 查 `{API}/api/v1/me` 仍 200 且示例未写 `Set-Cookie: sid=`」、`E2E_STRICT_REFRESH` 行写清示例侧无法重放的原因，使契约与实现一致 per contracts/e2e-examples-cli.md A9、A11 (partial)
+
+### Phase 8 完成证据（2026-10-25）
+
+| 项 | 证据 |
+|---|---|
+| T039 | `stage_a8_sso` 改为 3 组 × 2 目标共 6 条：`[PASS] A8 6/6 组合免登录（3 组 × 2 目标，均 200 且 sub 相同）`，`report.txt` 逐条留 `A8-COMBO A→B PASS` |
+| T040 | 新增 `stage_a17_refresh_rejected`：`accessTokenTtl=60` 取短命令牌 → 三客户端 `status=0` → 等 40s → 三示例 `/api/me` 连续两次均 `401`（不重试）→ `status=1` → 重新登录 `200` 且 `sub` 与 A7 一致；`[PASS] A17`。`E2E_STRICT_REFRESH=1` 时额外断言每个示例只有一条 `[refresh] fail`（第二轮实测通过）。全程只用管理 API，TTL 与 status 均回读后按原值恢复 |
+| T041 | 契约 A8（3 组 × 2 目标）、A9（日志判据）、A11（`{API}` 观测点）、`E2E_STRICT_REFRESH`（改为不重试断言）、新增 A17 行、`report.txt` 口径改为 A0–A17 全部落地；`docs/integration-guide.md` 与 `AGENTS.md` 的「A0–A16」同步为「A0–A17」 |
+| 两轮实跑 | 2026-10-25 连续两轮 `PASS=18 FAIL=0`：154s（默认档）/ 163s（`E2E_STRICT_REFRESH=1`），仍满足 SC-002 的「后续 ≤3 分钟」 |
+| 门禁 | `make verify-fast` 与 `check-artifact-refs` / `check-docs-commands` 通过（见本轮收尾） |
+
+## Phase 9: Convergence
+
+**Purpose**: 第三次 `/speckit.converge`（2026-10-25，Phase 8 落地之后）复核出 3 项差距，全部集中在「脚本改动客户端配置的还原与前置说明」：中断不还原、`status` 恢复写死、前置工具清单不全。以下任务只做补齐，不改动 Phase 1–8 的既有条目。
+
+- [x] T042 让「被脚本改过的客户端配置」在任意退出路径都还原：把 A17 置 `status=0` 与 A9/A17 改 `accessTokenTtl` 时的原值登记到全局变量，在 `cleanup`（`trap EXIT INT TERM`）里按原值回写并清空登记，保证 Ctrl-C / 超时打断后下一次运行不会因为客户端仍处于 disabled 而在 A4–A6 失败 per FR-011、FR-012 (partial)
+- [x] T043 让 A17 恢复 `status` 时使用回读原值而不是写死 `1`：进入 A17 时用 `GET /api/v1/admin/clients/{id}` 记录三个客户端的原始 `status`，结束时按原值写回并打印，避免把原本停用的客户端悄悄打开 per FR-012 (partial)
+- [x] T044 补齐 e2e 前置工具说明：`examples/README.md` 的前置行与 `contracts/e2e-examples-cli.md` 的前置条件列出 `preflight` 实际校验的 `curl`/`jq`（及端口检查用的 `lsof`），使干净机器上缺少依赖时用户能预判 `exit 2` 的原因 per FR-011、contracts/e2e-examples-cli.md 前置 (partial)
+
+### Phase 9 完成证据（2026-10-25）
+
+| 项 | 证据 |
+|---|---|
+| T042 | `cleanup` 首行改为 `restore_mutations`；trap 拆成 `EXIT`（清理）+ `INT`/`TERM`（清理后 `exit 130/143`，不再「清理完继续跑」）；A9/A17 的长等待改 `interruptible_sleep`（后台 `sleep` + `wait`），信号可立即生效。实测：A17 停用窗口内发 `SIGTERM` → **2s 内退出、exit=143**、端口全部释放，事后 `GET /clients/{id}` 三客户端仍为 `status=1 ttl=900`（即已按登记还原）。注：后台非交互 shell 里 `SIGINT` 按 POSIX 对异步子进程为 ignore、无法验证，故用 `SIGTERM` 覆盖同一条 trap 路径 |
+| T043 | A17 进入时用 `client_field` 回读 `accessTokenTtl` 与 `status` 并 `register_mutation`，结束按原值写回；日志 `已按原值恢复三个客户端：accessTokenTtl=go:900/java:900/python:900，status=go:1/java:1/python:1`（值来自回读，非硬编码） |
+| T044 | 契约「前置条件」第 4 条与 `examples/README.md` 前置行补齐 `curl`/`jq`/`lsof`，并说明缺项即 `exit 2` 且列出缺失项 |
+| 回归 | 2026-10-25 全量一轮 `PASS=18 FAIL=0`（161s），`A8 6/6`、`A17` 均 PASS，两份恢复日志均为回读值 |
+
