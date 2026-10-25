@@ -13,7 +13,9 @@
 #       ⑤ 改密：清 cookie、旧 sid 401、新密码可登录
 #       ⑥ 多跳 XFF：审计 IP 取真实客户端，不取网关
 #       ⑦ 验证码重置：保留当前会话、吊销其他设备、不清 cookie（D10 反例）
-#       ⑧ OIDC 授权码 + PKCE：sso 域登录 → portal 域免登录 → 换 token → sso 登出 → portal 401
+#       ⑧ OIDC 授权码 + PKCE：未登录授权 → 302 门户登录页 → api 域登录 → 回跳完成授权 → 换 token
+#          → sso 登出 → portal 401；含 loop guard（带 portal=1 无会话 → 200 内置页不回头）与
+#          「内置页表单 POST 仍能完成授权」的回归断言（009）
 #
 # 不覆盖：真实 LB / 云 DNS / 网络隔离（api 域内网化）/ 浏览器人工点验。
 #
@@ -137,9 +139,11 @@ gen_cert() {
 
 start_backend() {
   # 与 dev 隔离：独立端口 + REDIS_DB=1；通知走 mock（验证码固定 888888，不发真实短信/邮件）。
+  # PORTAL_LOGIN_URL：未登录授权落到门户登录页（009）；APP_ENV=test 下必须 https。
   env HTTP_IDP_ADDR="$IDP_ADDR" HTTP_API_ADDR="$API_ADDR" \
     APP_ENV=test COOKIE_DOMAIN=".$DOMAIN" COOKIE_SECURE=true \
     OIDC_ISSUER="$SSO" REDIS_DB=1 TRUSTED_PROXIES="$TRUSTED" \
+    PORTAL_LOGIN_URL="$PT/login" \
     MAIL_PROVIDER=mock SMS_PROVIDER=mock \
     nohup "$BIN" >"$WORK/sso.log" 2>&1 &
   BACKEND_PID=$!
@@ -401,41 +405,99 @@ check_reset_by_code() {
   eq "密码已还原为演示值" "$code" "200"
 }
 
+# ---------------- 009：门户跳转相关小工具 ----------------
+ms() { python3 -c 'import time;print(int(time.time()*1000))'; }
+
+# loc_of —— 从 curl -D - 的头块里取首个 Location（去 CRLF）
+loc_of() { tr -d '\r' | awk 'tolower($1)=="location:"{print $2; exit}'; }
+
+# url_query <url> <名> —— 查询参数解码**一次**（next 是被编码的完整地址，app 是中文应用名）
+url_query() {
+  python3 - "$1" "$2" <<'PY'
+import sys, urllib.parse
+
+p = urllib.parse.urlsplit(sys.argv[1])
+print(urllib.parse.parse_qs(p.query).get(sys.argv[2], [""])[0])
+PY
+}
+
+# url_base <url> —— scheme://host/path（比对落点用，忽略查询串）
+url_base() {
+  python3 - "$1" <<'PY'
+import sys, urllib.parse
+
+p = urllib.parse.urlsplit(sys.argv[1])
+print(f"{p.scheme}://{p.netloc}{p.path}")
+PY
+}
+
+# authorize_url <state> <code_challenge> —— portal 客户端的 S256 授权请求
+authorize_url() {
+  printf '%s/oauth2/authorize?client_id=portal&response_type=code&scope=openid%%20profile%%20email&redirect_uri=%s&state=%s&code_challenge=%s&code_challenge_method=S256' \
+    "$SSO" \
+    "$(python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=""))' "$E2E_REDIRECT")" \
+    "$1" "$2"
+}
+
 check_oidc_flow() {
-  section "7. OIDC 授权码 + PKCE：sso 域登录 → portal 域免登录"
-  local sj="$WORK/jar-sso.txt" verifier challenge loc aid loc2 ocode code tok at now
+  section "7. 未登录授权落门户 → api 域登录 → 回跳完成授权（含 loop guard）"
+  local sj="$WORK/jar-sso.txt" verifier challenge loc loc2 next app code ocode tok now t0 hops uris
+  local jar_empty="$WORK/jar-empty.txt" jar_form="$WORK/jar-form.txt" ncode nid floc payload
+
   curl -sk -o /dev/null -b "$AJAR" -A "$UA" -X PATCH -H 'Content-Type: application/json' \
     -d "{\"redirectUris\":[\"http://localhost:5173/callback\",\"$E2E_REDIRECT\"]}" \
     "$AD/api/v1/admin/clients/portal" || true
   verifier=$(python3 -c 'import secrets;print(secrets.token_urlsafe(48)[:64])')
   challenge=$(python3 -c "import hashlib,base64,sys;print(base64.urlsafe_b64encode(hashlib.sha256(sys.argv[1].encode()).digest()).rstrip(b'=').decode())" "$verifier")
 
-  loc=$(curl -sk -o /dev/null -D - -A "$UA" \
-    "$SSO/oauth2/authorize?client_id=portal&response_type=code&scope=openid%20profile%20email&redirect_uri=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=''))" "$E2E_REDIRECT")&state=e2e&code_challenge=$challenge&code_challenge_method=S256" \
-    | grep -i '^location:' | tr -d '\r' | awk '{print $2}' || true)
-  has "授权端点重定向到 sso 登录页" "$loc" "/login?id="
-  aid=$(printf '%s' "$loc" | sed -n 's/.*[?&]id=\([^&]*\).*/\1/p')
+  # ① 空 jar 授权：authorize 的第一跳固定是协议库的 /login?id=（不是落点），第二跳才由
+  #    本次改造决定——必须落到门户登录页，且 next 指回 sso 域登录入口。
+  rm -f "$jar_empty"
+  loc=$(curl -sk -o /dev/null -D - -c "$jar_empty" -A "$UA" "$(authorize_url e2e "$challenge")" | loc_of || true)
+  has "authorize 先回 sso 登录入口" "$loc" "/login?id="
+  loc2=$(curl -sk -o /dev/null -D - -b "$jar_empty" -A "$UA" "$loc" | loc_of || true)
+  eq "未登录授权 302 到门户登录页" "$(url_base "$loc2")" "$PT/login"
+  next=$(url_query "$loc2" next)
+  app=$(url_query "$loc2" app)
+  has "next 指回 sso 域登录入口" "$next" "$SSO/login?id="
+  has "next 带 portal 标记" "$next" "&portal=1"
+  if [ -n "$app" ]; then ok "门户登录页带应用名（app=$app）"; else bad "门户登录页缺少 app 参数"; fi
+  eq "门户登录页可达" "$(http_code "$PT/login")" "200"
 
+  # ② 真实用户路径：api 域登录建立共享会话 → 回到 next → sso 域两跳 → portal 回调。
+  #    计时口径（contracts/e2e-a18-a19.md §3）：起点是登录接口 200，终点是指向 SP 回调的 302。
+  sj="$WORK/jar-sso.txt"
   rm -f "$sj"
-  loc2=$(curl -sk -o /dev/null -D - -c "$sj" -A "$UA" -X POST \
-    --data-urlencode "id=$aid" --data-urlencode "username=$USER_NAME" --data-urlencode "password=$USER_PASS" \
-    "$SSO/login" | grep -i '^location:' | tr -d '\r' | awk '{print $2}' || true)
-  # 协议库先回自己的 /oauth2/authorize/callback，再由它 302 到 client 回调；多跟一跳。
+  # 请求体先落到变量：`-d "{\"a\":1}"` 写在命令替换里会被 bash 当成花括号展开，
+  # 拆成两个词发给服务端（实测得到 VALIDATION_FAILED），必须先 printf 出来再引用。
+  payload=$(printf '{"username":"%s","password":"%s"}' "$USER_NAME" "$USER_PASS")
+  eq "api 域登录 200" "$(curl -sk -o "$WORK/api-login.json" -w '%{http_code}' -c "$sj" -A "$UA" \
+      -H 'Content-Type: application/json' -d "$payload" \
+      "$API/api/v1/auth/login" || echo 000)" "200"
+  if grep -qi "$DOMAIN" "$sj"; then
+    ok "api 域登录下发共享 cookie（Domain=$DOMAIN）"
+  else
+    # 只打印 jar 的「域|名字」结构，绝不打 cookie 值（sid 等同凭据）。
+    bad "api 域登录未下发共享 cookie（jar: $(awk -F'\t' 'NF>=7{printf "%s|%s ", $1, $6}' "$sj" 2>/dev/null | tr -d '\r')；mfaRequired=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("data",{}).get("mfaRequired"))' "$WORK/api-login.json" 2>/dev/null || echo '?'))"
+  fi
+
+  t0=$(ms)
+  loc2=$(curl -sk -o /dev/null -D - -b "$sj" -c "$sj" -A "$UA" "$next" | loc_of || true)
+  hops=1
   case "$loc2" in
     *"authorize/callback"*)
-      loc2=$(curl -sk -o /dev/null -D - -b "$sj" -c "$sj" -A "$UA" "$SSO$loc2" \
-        | grep -i '^location:' | tr -d '\r' | awk '{print $2}' || true)
+      loc2=$(curl -sk -o /dev/null -D - -b "$sj" -c "$sj" -A "$UA" "$SSO$loc2" | loc_of || true)
+      hops=2
       ;;
   esac
-  has "sso 登录后回调到 portal 域" "$loc2" "callback?code="
-  ocode=$(printf '%s' "$loc2" | sed -n 's/.*[?&]code=\([^&]*\).*/\1/p')
-  if grep -qi "$DOMAIN" "$sj"; then
-    ok "sso 域登录下发共享 cookie（Domain=$DOMAIN）"
-  else
-    bad "sso 域登录未下发共享 cookie"
-  fi
+  now=$(ms)
+  has "回跳后落到 portal 回调（带 code）" "$loc2" "callback?code="
+  eq "门户登录 → SP 回调跳转数 ≤2" "$([ "$hops" -le 2 ] && echo 1 || echo 0)" "1"
+  eq "门户登录 200 → SP 回调 302 ≤3s" "$([ $((now - t0)) -le 3000 ] && echo 1 || echo 0)" "1"
+  printf '    [timing] 门户登录 200 → SP 回调 302：%sms / %s 跳\n' "$((now - t0))" "$hops"
   eq "协议域登录后 portal 域 /me 200（SSO 生效）" "$(http_code -b "$sj" "$PT/api/v1/me")" "200"
 
+  ocode=$(printf '%s' "$loc2" | sed -n 's/.*[?&]code=\([^&]*\).*/\1/p')
   code=$(curl -sk -o "$WORK/token.json" -w '%{http_code}' -A "$UA" -X POST \
     -d 'grant_type=authorization_code' --data-urlencode "code=$ocode" \
     --data-urlencode "redirect_uri=$E2E_REDIRECT" -d 'client_id=portal' \
@@ -444,6 +506,31 @@ check_oidc_flow() {
   tok=$(python3 -c 'import json;print(json.load(open("'"$WORK"'/token.json")).get("access_token",""))' 2>/dev/null || true)
   if [ -n "$tok" ]; then ok "返回 access_token"; else bad "未返回 access_token"; fi
 
+  # ③ loop guard：另起一个仍有效的请求，带 portal=1 但无会话 → 200 内置页，不再 302 回门户。
+  #    复用已完成的 next 会命中「请求已过期」，所以这里重新授权一次拿新的 id。
+  rm -f "$jar_empty"
+  loc=$(curl -sk -o /dev/null -D - -c "$jar_empty" -A "$UA" "$(authorize_url e2e-lg "$challenge")" | loc_of || true)
+  loc2=$(curl -sk -o /dev/null -D - -b "$jar_empty" -A "$UA" "$loc" | loc_of || true)
+  next=$(url_query "$loc2" next)
+  rm -f "$jar_form"
+  ncode=$(curl -sk -o "$WORK/loopguard.html" -w '%{http_code}' -c "$jar_form" -b "$jar_form" -A "$UA" "$next" || echo 000)
+  eq "loop guard：带 portal=1 无会话 → 200（不 302 回门户）" "$ncode" "200"
+  has "loop guard 页面含内置表单" "$(cat "$WORK/loopguard.html" 2>/dev/null || true)" "<form"
+  has "loop guard 页面含降级说明" "$(cat "$WORK/loopguard.html" 2>/dev/null || true)" "未能在跳转中延续"
+
+  # ④ 保留一条表单 POST 登录断言：内置页确实能完成授权，而不只是「看起来像表单」。
+  nid=$(printf '%s' "$next" | sed -n 's/.*[?&]id=\([^&]*\).*/\1/p')
+  floc=$(curl -sk -o /dev/null -D - -c "$jar_form" -b "$jar_form" -A "$UA" -X POST \
+    --data-urlencode "id=$nid" --data-urlencode "username=$USER_NAME" --data-urlencode "password=$USER_PASS" \
+    "$SSO/login" | loc_of || true)
+  case "$floc" in
+    *"authorize/callback"*)
+      floc=$(curl -sk -o /dev/null -D - -b "$jar_form" -c "$jar_form" -A "$UA" "$SSO$floc" | loc_of || true)
+      ;;
+  esac
+  has "内置页表单 POST 仍能完成授权" "$floc" "callback?code="
+
+  # ⑤ 登出：sso 域清 cookie 带同一 Domain，portal 域随即 401
   loc=$(curl -sk -D - -o /dev/null -b "$sj" -A "$UA" "$SSO/logout" | grep -i '^set-cookie: sid=' | tr -d '\r' || true)
   printf '    %s\n' "$loc"
   has "sso 登出清 cookie 带 Domain=$DOMAIN" "$loc" "Domain=$DOMAIN"
@@ -451,11 +538,10 @@ check_oidc_flow() {
 
   curl -sk -o /dev/null -b "$AJAR" -A "$UA" -X PATCH -H 'Content-Type: application/json' \
     -d "{\"redirectUris\":$DEV_REDIRECTS}" "$AD/api/v1/admin/clients/portal" || true
-  now=$(curl -sk -b "$AJAR" -A "$UA" "$AD/api/v1/admin/clients/portal" \
+  uris=$(curl -sk -b "$AJAR" -A "$UA" "$AD/api/v1/admin/clients/portal" \
     | python3 -c 'import sys,json;print(json.dumps(json.load(sys.stdin)["data"]["redirectUris"]))' 2>/dev/null || true)
-  eq "portal 回调地址已还原为 dev 基线" "$now" "$DEV_REDIRECTS"
+  eq "portal 回调地址已还原为 dev 基线" "$uris" "$DEV_REDIRECTS"
 }
-
 # ---------------- 主流程 ----------------
 main() {
   mkdir -p "$WORK"

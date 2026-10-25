@@ -585,23 +585,25 @@ drive_login() {
 GO_SUB="" JAVA_SUB="" PY_SUB=""
 
 stage_a4_a6_login() {
-  section "A4–A6 三个登录闭环"
-  local lang base assert_id jar
+  section "A4–A6 三个 SSO 登录闭环（含审计 +1）"
+  local lang base assert_id jar cid before after latest got_cid detail entry audit_note audit_ok
 
   for lang in go java python; do
     case "$lang" in
-      go) base=$GO_BASE; assert_id=A4 ;;
-      java) base=$JAVA_BASE; assert_id=A5 ;;
-      python) base=$PY_BASE; assert_id=A6 ;;
+      go) base=$GO_BASE; assert_id=A4; cid=$GO_ID ;;
+      java) base=$JAVA_BASE; assert_id=A5; cid=$JAVA_ID ;;
+      python) base=$PY_BASE; assert_id=A6; cid=$PY_ID ;;
     esac
     jar="$WORK/$lang.cookie"
-    # 009：从门户前置的会话出发（SSO 闭环，契约 §2）。缺 portal.cookie 时退化为空 jar，
-    # drive_login 会走「门户跳转 → 门户登录 → 回 next」，断言仍能给出可诊断的失败。
-    if [[ -f "$WORK/portal.cookie" ]]; then
-      cp "$WORK/portal.cookie" "$jar"
-    else
-      rm -f "$jar"
-    fi
+    # 009：用**空 jar** 走真实用户路径（示例 /login → 授权 → 门户登录页 → 脚本代劳登录 →
+    # 带 portal=1 回到 IdP → 完成授权）。不能把门户前置的 portal.cookie 复制过来：
+    # 那样浏览器直达 /login?id=（无 portal 标记），审计 entry 只会是 template，
+    # 而 US2 要的「凭门户会话完成授权」必须由带标记的往返才能观察到（entry=portal）。
+    rm -f "$jar"
+
+    # T018：先记基线，登录后要求该客户端的 sso_login_success 恰好 +1 且 detail.entry=portal
+    # （凭门户带回的会话完成授权）。审计是异步落库，用轮询而非 sleep 猜时间。
+    before=$(admin::audit_count sso_login_success "$cid")
 
     if ! drive_login "$lang" "$base" "$jar"; then
       bad "$assert_id" "驱动登录失败（见 stderr / 日志）" "/login → /callback → 200"
@@ -613,7 +615,22 @@ stage_a4_a6_login() {
     code=$(http_code "$jar" "$base/api/me")
     body=$(curl -s --max-time "$E2E_CURL_TIMEOUT" -b "$jar" "$base/api/me" 2>/dev/null)
     printf '%s' "$body" >"$WORK/me-$lang.json"
-    if [[ "$code" == "200" ]]; then
+
+    after=$(admin::audit_wait_increment sso_login_success "$cid" "$before" 5) || true
+    latest=$(admin::audit_latest sso_login_success "$cid")
+    got_cid=${latest%%$'\t'*}
+    detail=${latest#*$'\t'}
+    entry=$(printf '%s' "$detail" | jq -r '.entry // empty' 2>/dev/null)
+    audit_note="audit=${before:-?}→${after:-?}"
+    if [[ -n "$before" && "$after" == "$((before + 1))" && "$got_cid" == "$cid" && "$entry" == "portal" ]]; then
+      audit_note="$audit_note(entry=portal)"
+      audit_ok=1
+    else
+      audit_note="$audit_note(cid=${got_cid:-?} entry=${entry:-?})"
+      audit_ok=0
+    fi
+
+    if [[ "$code" == "200" && "$audit_ok" == "1" ]]; then
       sub=$(printf '%s' "$body" | jq -r '.sub // empty')
       case "$lang" in
         go)
@@ -629,10 +646,12 @@ stage_a4_a6_login() {
           [[ -n "$EX_STARTED_AT" ]] && PY_FIRST200_S=$(( $(date +%s) - EX_STARTED_AT ))
           ;;
       esac
-      ok "$assert_id" "sub=$sub"
-    else
-      bad "$assert_id" "code=$code" "200"
+      ok "$assert_id" "sub=$sub $audit_note"
+    elif [[ "$code" != "200" ]]; then
+      bad "$assert_id" "code=$code $audit_note" "200 且审计 +1"
       dump_logs "$lang"
+    else
+      bad "$assert_id" "$audit_note detail=$detail" "sso_login_success 条数 +1 且 detail.entry=portal"
     fi
   done
 
@@ -1185,6 +1204,7 @@ self_test() {
   for fn in preflight stage_a0_build stage_a1_clients stage_a2_account \
     stage_portal_prestep portal_preflight start_examples \
     url_query url_base pkce_verifier pkce_challenge authorize_probe idp_form_login next_id a19_token portal_resume \
+    admin::audit_count admin::audit_wait_increment admin::audit_latest \
     drive_login example_base interruptible_sleep stage_a4_a6_login stage_a8_sso stage_a9_a10_refresh stage_a11_idp_session \
     stage_a14_no_secret stage_a12_logout stage_a13_after_logout stage_a15_degraded stage_a16_cookie_prefix \
     stage_a17_refresh_rejected stage_a18_portal_redirect stage_a19_loop_guard; do
