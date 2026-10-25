@@ -131,10 +131,10 @@ description: "Task list for 未登录 OIDC 授权统一跳转门户登录页"
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
-- [ ] T028 [P] 跑 `make build && make lint && make test && make check`（Go + 两端前端 + 三个一致性脚本），确认第 1 阶段的 3 处漂移已归零且无新增
-- [ ] T029 [P] 跑 `make build-web` 并核对 `web/portal` 产物体积未异常增长（element-plus 仍只在 `views/app-admin/`，本特性未引入新依赖）
-- [ ] T030 跑 `make e2e`（四域）与 `bash scripts/e2e/examples.sh`（A0–A19），按 quickstart 场景 1–10 逐条留证（含场景 5 的 5 条配置反证）
-- [ ] T031 提交前自检：`git diff` 中无未登记的新环境变量 / 审计事件 / 路由；`internal/api/docs/openapi.json` 未变（`check-registry` 输出的文档基线 sha256 仍为 `7a5cb8d19b43…`，且与 `specs/009-portal-login-redirect/api-evolve/baseline/manifest.json` 一致）；确认未新增第三方依赖（`git diff go.mod web/*/package.json` 为空）；**并按 `quickstart.md §10` 把三条观测 SQL 各跑一次**（验证 SC-009 的三项信号确实可从既有数据源算出，不新增接口）；来源：门禁 + critique P6
+- [X] T028 [P] 跑 `make build && make lint && make test && make check`（Go + 两端前端 + 三个一致性脚本），确认第 1 阶段的 3 处漂移已归零且无新增
+- [X] T029 [P] 跑 `make build-web` 并核对 `web/portal` 产物体积未异常增长（element-plus 仍只在 `views/app-admin/`，本特性未引入新依赖）
+- [X] T030 跑 `make e2e`（四域）与 `bash scripts/e2e/examples.sh`（A0–A19），按 quickstart 场景 1–10 逐条留证（含场景 5 的 5 条配置反证）
+- [X] T031 提交前自检：`git diff` 中无未登记的新环境变量 / 审计事件 / 路由；`internal/api/docs/openapi.json` 未变（`check-registry` 输出的文档基线 sha256 仍为 `7a5cb8d19b43…`，且与 `specs/009-portal-login-redirect/api-evolve/baseline/manifest.json` 一致）；确认未新增第三方依赖（`git diff go.mod web/*/package.json` 为空）；**并按 `quickstart.md §10` 把三条观测 SQL 各跑一次**（验证 SC-009 的三项信号确实可从既有数据源算出，不新增接口）；来源：门禁 + critique P6
 
 ---
 
