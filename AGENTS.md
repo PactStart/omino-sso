@@ -167,7 +167,7 @@ omino-sso/
 │   │   └── pre-push                   # 2026-10-24 新增：push 边界跑 full 档（`make hooks-install` 安装）
 │   └── e2e/                           # 2026-10-23 新增：本地 test 形态端到端验证（make e2e）
 │       ├── run.sh                     # *.lvh.me 四域 HTTPS + 跨子域 SSO/cookie/探针/可信代理断言，退出自动还原数据
-│       ├── examples.sh                # 2026-10-24 新增：三语言示例 A0–A17 端到端断言（--keep / --self-test）
+│       ├── examples.sh                # 2026-10-24 新增：三语言示例 A0–A19 端到端断言（含门户前置与未登录跳门户；--keep / --self-test）
 │       ├── lib/
 │       │   └── admin.sh               # 2026-10-24 新增：客户端复用 / 密钥缓存 / 专用账号，被 examples.sh source
 │       └── nginx/                     # portal/admin/api/sso 四个 server 块（容器内固定路径，刻意不做模板替换）
@@ -368,6 +368,8 @@ omino-sso/
 | 接口文档（Gin，仅非 prod） | `:8081` | `/docs/*` | **原始 HTML / JSON / 静态字节**，禁止套统一响应 |
 
 > `/oauth2/*` 与 `/.well-known/*` 的报文由 `zitadel/oidc/v3` 生成，**不得包装、不得改写字段名**。
+
+> **未登录落点（2026-10-25，009-portal-login-redirect）**：`/oauth2/authorize` 对无会话的浏览器仍把 `LoginURL` 指向 `sso 域 /login?id=`（协议库每次授权都会调用 `LoginURL` 且拿不到会话，**不得**在 `LoginURL` 里判断登录态），由该处理器决定落点：① 已登录 → 直接完成授权并 302 回调；② 未登录且已配置 `PORTAL_LOGIN_URL` → 302 到门户登录页，回跳目标带 `portal=1` 标记；③ 未配置，或带标记回跳后仍无会话 → 内置 HTML 登录页（循环防护兜底）。内置页长期保留，不因主路径改走门户而删除。
 
 **探针的暴露面**：公网仅放行 `sso.<主域>/healthz`（供外部 LB 判存活，响应只含 `{"status":"ok"}`）；`/readyz` 会暴露 MySQL/Redis 连通性，**公网必须 404**，只在容器内/内网由 healthcheck 打 `127.0.0.1`。容器 healthcheck 统一打 `:8081/healthz`。
 
@@ -974,9 +976,11 @@ omino-sso/
 | `trace_id` | VARCHAR(32) | NULL | |
 | `created_at` | BIGINT | NOT NULL, INDEX | |
 
-`event_type` 枚举（新增需登记）：`login_success`、`login_failure`、`mfa_success`、`mfa_failure`、`logout`、`password_changed`、`token_issued`、`token_revoked`、`code_reused`、`refresh_reused`、`user_created`、`user_updated`、`client_created`、`client_secret_rotated`、`org_created`、`org_updated`、`org_deleted`、`client_updated`、`app_member_added`、`app_member_removed`、`app_role_created`、`app_role_updated`、`app_role_deleted`、`app_permission_created`、`app_permission_updated`、`app_permission_deleted`、`app_grant_updated`、`file_uploaded`、`file_status_updated`、`verification_code_sent`、`phone_bound`、`email_bound`、`mfa_bound`、`mfa_unbound`、`password_reset`、`app_member_admin_granted`、`app_member_admin_revoked`。
+`event_type` 枚举（新增需登记）：`login_success`、`login_failure`、`mfa_success`、`mfa_failure`、`logout`、`password_changed`、`token_issued`、`token_revoked`、`code_reused`、`refresh_reused`、`user_created`、`user_updated`、`client_created`、`client_secret_rotated`、`org_created`、`org_updated`、`org_deleted`、`client_updated`、`app_member_added`、`app_member_removed`、`app_role_created`、`app_role_updated`、`app_role_deleted`、`app_permission_created`、`app_permission_updated`、`app_permission_deleted`、`app_grant_updated`、`file_uploaded`、`file_status_updated`、`verification_code_sent`、`phone_bound`、`email_bound`、`mfa_bound`、`mfa_unbound`、`password_reset`、`app_member_admin_granted`、`app_member_admin_revoked`、`sso_login_success`。
 
 > `verification_code_sent` 的 `detail` 记 `{channel,scene,target,provider}`（`target` 已脱敏）；验证码登录成功/失败复用 `login_success`/`login_failure`，MFA 二步复用 `mfa_success`/`mfa_failure`。
+
+> `sso_login_success`（2026-10-25，009-portal-login-redirect）记「凭既有会话直接完成授权」：`result=success`，`detail` 为 `{entry, amr}`（`entry` ∈ `portal` / `template`，表示回跳来自门户还是内置页）。**表单登录仍只记 `login_success`**，两者互不替代——混用会让登录次数统计把"每次进应用"都算成一次登录。
 
 `detail` 详略规则（003 起）：一般只记字段名列表与数量；**地址类字段（`redirectUris` / `postLogoutUris`）记变更前后的完整数组**；删除角色/权限记被解除绑定的 ID 快照（超过 20 项记数量 + 前 20 项）。
 
@@ -1216,6 +1220,8 @@ make build-web WEB_MODE=test  # 按 test 构建（加载 .env.test）；模板�
 
 > **前端按环境构建（2026-10-24）**：同一份代码 + 不同 `VITE_*` 构建出 test/prod 产物，不做运行时 `config.js` 注入。每个前端三份模板：`.env.example`（dev，默认可用）、`.env.test.example`、`.env.production.example`；真实 `.env` / `.env.test` / `.env.production` 已被 `.gitignore` 排除。**四域部署必须注入** `VITE_ADMIN_HOME`（portal）与 `VITE_PORTAL_HOME` / `VITE_PORTAL_LOGIN_URL`（admin）的**绝对地址**，否则退化为同域 `/users`、`/login`，跨域回跳与"返回门户"都会打到错误站点。
 
+> **门户回跳白名单（2026-10-25，009）**：portal 新增构建期变量 `VITE_SSO_BASE_URL`（形如 `https://sso.example.com`，dev 缺省 `http://localhost:8080`），其 origin 会被 portal 登录页的 `next` 白名单信任——未登录 SSO 由 IdP 跳到 `PORTAL_LOGIN_URL`，登录成功后需整页跳回 IdP 登录入口，白名单漏配会把这次回跳丢掉（用户登录成功却停在门户首页）。因此 `web/Dockerfile` 的 portal target 对其做**构建期强制校验**（缺失即构建失败），并由 `scripts/check-build-env.sh` 断言镜像内的 sso 域属于本环境。
+
 > **改动自测纪律（强制）**：任何改动在提交前必须主动执行 `make test` 与 `make lint`，不得依赖 pre-commit 兜底。新增/修改业务逻辑、端点或数据访问层时，必须同步新增或更新对应单元测试。新增/删除路由或改动 DTO 字段后，必须执行 `make docs` 重新生成 `openapi.json`，并全局搜索、同步更新依赖 operation 数 / 字段结构的硬编码测试断言（如 `internal/api/docs/docs_test.go`、`internal/api/router_test.go`）。改动前端后执行 `npm run typecheck`（`web/admin` 与 `web/portal`）。
 
 **门禁分档（2026-10-24 复盘）**：全职门禁 ~35s 挂在每次提交上并不划算——它会把"文档漂移"这类与当前改动无关的问题变成提交阻塞，也让 flake 的代价放大一倍。分档后**检查项不减，只改失败时机**：
@@ -1288,7 +1294,8 @@ docker compose up -d --build     # 门户 :8088，后台 :8090，IdP :8080，管
 | `SESSION_TTL_REMEMBER` | 否 | `604800` | 秒，7 天 |
 | `COOKIE_DOMAIN` | 是 | — | 主域，形如 `.example.com`（prod 强制校验：必须非空、以 `.` 开头、不带 scheme/结尾斜杠）；写入与清除必须用同一值 |
 | `COOKIE_SECURE` | 否 | `true` | 本地 http 调试可设 false；prod 强制 true |
-| `COOKIE_SAME_SITE` | 否 | `Lax` | `Lax` / `Strict` |
+| `COOKIE_SAME_SITE` | 否 | `Lax` | **仅 `Lax`**（大小写不敏感，空视为 `Lax`）。`Strict` 或其它取值一律**启动失败**并指名变量：跨站整页跳转链上 `Strict` 会让会话不被携带，表现为"刚登录又要登录"（2026-10-25，009） |
+| `PORTAL_LOGIN_URL` | 条件 | 空 | 未登录 OIDC 授权的门户登录页地址（绝对 URL，形如 `https://portal.example.com/login`）。`prod` **必填**（缺失启动失败）；`test` 可空但非空必须 `https`；`dev` 允许 `http`。**留空 = 回落内置登录页**（dev/test 的回滚手段） |
 | `TRUSTED_PROXIES` | 否 | 空 | 可信反代网段，逗号分隔 CIDR 或单 IP；仅这些来源的 `X-Forwarded-For` 会被采信（Gin 与协议层共用同一判定），留空表示不信任任何代理。非法值启动即失败 |
 | `DB_HOST` | 是 | `127.0.0.1` | |
 | `DB_PORT` | 否 | `3306` | |

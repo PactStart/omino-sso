@@ -65,4 +65,9 @@ const (
 	EventMFABound             = "mfa_bound"
 	EventMFAUnbound           = "mfa_unbound"
 	EventPasswordReset        = "password_reset"
+
+	// 未登录授权跳门户（009-portal-login-redirect，AGENTS.md §6.7）。
+	// 语义：凭既有会话直接完成授权（无输入）；detail 记 {entry, amr}，
+	// entry ∈ portal（门户回跳）/ template（内置登录页）。表单登录仍只记 login_success。
+	EventSSOLoginSuccess = "sso_login_success"
 )

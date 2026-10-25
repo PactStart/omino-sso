@@ -78,7 +78,7 @@ flowchart LR
   subgraph L1["① 用户浏览器"]
     direction TB
     a1["1 访问受保护页面"] --> a2["2 302 到 /oauth2/authorize"]
-    a2 --> a3["3 IdP 登录页<br/>账号密码 + TOTP"]
+    a2 --> a3["3 门户登录页<br/>账号密码 / 验证码 + TOTP"]
     a3 --> a4["7 回调 redirect_uri?code=…"]
     a4 --> a5["11 拿到本地会话"]
   end
@@ -124,13 +124,17 @@ sequenceDiagram
   participant B as 浏览器
   participant RP as 你的应用（RP）
   participant IdP as omino-sso（IdP）
+  participant P as 门户登录页（portal 域）
 
   B->>RP: 访问受保护页面
   RP-->>B: 302 /oauth2/authorize（client_id / state / nonce / code_challenge S256）
   B->>IdP: GET /oauth2/authorize
   alt 无 sid 会话
-    IdP-->>B: 302 /login
-    B->>IdP: POST /login（账号密码 + TOTP）
+    IdP-->>B: 302 /login?id=…（IdP 内部入口，不直接展示表单）
+    IdP-->>B: 302 PORTAL_LOGIN_URL?next=…/login?id=…%26portal=1&app=…
+    B->>P: 在门户登录页完成登录（账号密码 / 验证码 + 可选 TOTP）
+    P-->>B: 整页跳回 /login?id=…&portal=1
+    B->>IdP: GET /login?id=…&portal=1（IdP 认出共享会话 → 完成授权）
   end
   IdP-->>B: 302 redirect_uri?code=…&state=…
   B->>RP: GET /callback?code=…&state=…
@@ -190,8 +194,9 @@ GET {issuer}/oauth2/authorize
   &code_challenge_method=S256
 ```
 
-- 未登录时 IdP 会 302 到 `/login?id=...`，登录与 MFA 都在 IdP 完成，你的应用无需实现登录页
-- 用户已有 IdP 会话时**直接返回 code**，这就是单点登录
+- 未登录时 IdP 会先把浏览器 302 到**门户登录页**（`PORTAL_LOGIN_URL`，带 `next` 指回 IdP 的 `/login?id=...&portal=1`）；用户在门户完成登录（账号密码 / 邮箱验证码 / 手机验证码 + 可选 TOTP）后自动回到 IdP 完成授权并 302 回你的 `redirect_uri`——**你的应用始终不需要实现登录页**
+- 用户已有 IdP 会话时**直接返回 code**（不经过门户），这就是单点登录
+- 部署方若未配置门户登录页地址（仅 dev/test），落点会退回 IdP 内置 HTML 登录页；两种落点对**接入方完全透明**，不需要任何代码分支
 - 公开客户端（`isPublic=true`）**必须**携带 PKCE；机密客户端可选，但一旦携带只能是 `S256`
 - `state` 与 `nonce` 必须存在服务端会话里，回调时逐字节比对
 
@@ -393,7 +398,7 @@ GET {issuer}/logout?next=/logged-out
 需要什么：
 
 - 环境变量、运行命令、日志说明、排障表、**已验证版本矩阵**：见 [`examples/README.md`](../examples/README.md)；
-- 一条命令跑完全部断言（A0–A17，含跨示例 SSO、刷新轮换、刷新被拒回落、降级、cookie 前缀）：`bash scripts/e2e/examples.sh`，
+- 一条命令跑完全部断言（A0–A19，含门户前置、未登录跳门户、循环防护降级、跨示例 SSO、刷新轮换、刷新被拒回落、降级、cookie 前缀）：`bash scripts/e2e/examples.sh`，
   断言清单在 [`specs/008-integration-examples/contracts/e2e-examples-cli.md`](../specs/008-integration-examples/contracts/e2e-examples-cli.md)。
 
 ### 9.2 与本文档历史示例的四处差异（照抄旧片段会踩）
@@ -455,7 +460,8 @@ CID=<clientId>; SECRET=<clientSecret>; REDIRECT=https://portal.example.com/callb
 VERIFIER=$(openssl rand -base64 60 | tr -d '\n=+/' | cut -c1-64)
 CHALLENGE=$(printf %s "$VERIFIER" | openssl dgst -binary -sha256 | openssl base64 | tr -d '=' | tr '/+' '_-')
 
-# 1) 授权：应 302 到 /login?id=...
+# 1) 授权：未登录时应 302 到门户登录页 PORTAL_LOGIN_URL?next=...%2Flogin%3Fid%3D...%26portal%3D1&app=...
+#    （未配置 PORTAL_LOGIN_URL 时退化为 302 到 /login?id=...，两种落点对接入方透明）
 curl -si "$ISSUER/oauth2/authorize?response_type=code&client_id=$CID\
 &redirect_uri=$REDIRECT&scope=openid%20profile%20email&state=s1&nonce=n1\
 &code_challenge=$CHALLENGE&code_challenge_method=S256" | grep -i '^location'
@@ -470,7 +476,7 @@ curl -s -H "Authorization: Bearer $ACCESS_TOKEN" "$ISSUER/oauth2/userinfo"
 ```
 
 > 验证"接入示例能不能跑通"时不要手抄上面的 curl：在 omino-sso 仓库里执行 `bash scripts/e2e/examples.sh`，
-> 它会自行拉起三个示例并跑完 A0–A17（跨示例 SSO、刷新轮换、刷新被拒回落、userinfo 降级、cookie 前缀），见 §9.1。
+> 它会自行拉起三个示例并跑完 A0–A19（门户前置、未登录跳门户、循环防护降级、跨示例 SSO、刷新轮换、刷新被拒回落、userinfo 降级、cookie 前缀），见 §9.1。
 
 ## 13. 需要 IdP 侧改造时
 

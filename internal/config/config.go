@@ -38,6 +38,10 @@ type Config struct {
 	CookieSecure   bool
 	CookieSameSite string
 
+	// PortalLoginURL 未登录 OIDC 授权的落点（PORTAL_LOGIN_URL，门户登录页绝对地址）。
+	// 空表示不启用跳转、回落 IdP 内置登录页；prod 必填，test/prod 非空时必须 https（009）。
+	PortalLoginURL string
+
 	// TrustedProxies 可信反代网段（TRUSTED_PROXIES，逗号分隔 CIDR/单 IP）。
 	// 仅这些来源的 X-Forwarded-For 会被采信；为空表示不信任任何代理。
 	TrustedProxies []netip.Prefix
@@ -169,6 +173,7 @@ func Load() (*Config, error) {
 		CookieDomain:         env("COOKIE_DOMAIN", ""),
 		CookieSecure:         envBool("COOKIE_SECURE", true),
 		CookieSameSite:       env("COOKIE_SAME_SITE", "Lax"),
+		PortalLoginURL:       env("PORTAL_LOGIN_URL", ""),
 		LoginMaxFailures:     envInt("LOGIN_MAX_FAILURES", 5),
 		LoginLockDuration:    time.Duration(envInt("LOGIN_LOCK_DURATION", 900)) * time.Second,
 		RateLimitLoginPerMin: envInt("RATE_LIMIT_LOGIN_PER_MIN", 10),

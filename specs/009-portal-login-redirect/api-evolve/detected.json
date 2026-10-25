@@ -1,0 +1,13 @@
+{
+  "scanned_at": "2026-10-25T12:54:46Z",
+  "contracts": [
+    {
+      "path": "internal/api/docs/openapi.json",
+      "format": "openapi-3",
+      "title": "omino-sso 管理 API",
+      "version": "1.0",
+      "endpoints": 78,
+      "components": 69
+    }
+  ]
+}
