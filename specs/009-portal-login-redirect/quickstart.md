@@ -82,6 +82,20 @@ APP_ENV=test PORTAL_LOGIN_URL=http://localhost:5173/login make dev  # → must u
 
 正例：`APP_ENV=test PORTAL_LOGIN_URL=https://portal.example-test.com/login` 应正常启动；`COOKIE_SAME_SITE=lax` 应正常启动。
 
+**2026-10-26 实测（T034，逐条真实进程启动，`bin/sso` + 独立端口）**
+
+| 场景 | 结果 |
+|---|---|
+| `COOKIE_SAME_SITE=Strict` | exit=1，`COOKIE_SAME_SITE=Strict is not allowed: cross-site redirects would drop the session (use Lax)` |
+| `PORTAL_LOGIN_URL=portal.example.com/login` | exit=1，`PORTAL_LOGIN_URL must be an absolute URL like https://portal.example.com/login` |
+| `APP_ENV=prod PORTAL_LOGIN_URL=` | exit=1，`PORTAL_LOGIN_URL is required in prod` |
+| `APP_ENV=test PORTAL_LOGIN_URL=http://…` | exit=1，`PORTAL_LOGIN_URL must use https in test` |
+| `PORTAL_LOGIN_URL=https://portal.example.com/login#frag` | exit=1，同上「absolute URL」分支（fragment 不被接受） |
+| 正例 3 条（dev 空地址 / test https / `COOKIE_SAME_SITE=lax`） | 均 `healthz=200` 正常启动 |
+| **SC-007 回退**：dev 清空地址后未登录授权 | `/oauth2/authorize` → `302 /login?id=…`（**不跳门户**）→ 该页直接渲染内置 `<form>`，可完成登录 |
+
+> 反例的证据形态固定为：**非零退出 + 日志点名变量**；`docs/deployment.md` §11 的排障表按同一口径引用这些文案。
+
 ## 6. 自动门禁
 
 ```bash
@@ -90,6 +104,24 @@ make check                                          # 注册表四向一致（�
 make build-web                                      # 两端前端类型检查 + 构建
 cd web/portal && npm run test                        # redirect / Login 用例
 ```
+
+**发布前人工门禁：OpenID 一致性套件（AGENTS §8.5）**
+
+```bash
+# 前提：被测 IdP 以「清空 PORTAL_LOGIN_URL」的形态启动（内置登录页供套件自动完成登录）
+docker run --rm -p 8080:8080 \
+  -e CONFORMANCE_SERVER=http://host.docker.internal:8080 \
+  openidentity/conformance-suite
+# 然后在 UI 新建 basic OP + config OP 计划，全部用例通过才可发布
+```
+
+> **2026-10-26 状态（T032）：未执行。** 该镜本次尝试无法获取——`docker pull openidentity/conformance-suite`
+> 返回 `pull access denied / repository does not exist`（`:latest`、`:release-v5.0.0`、`:v4.1.5` 均如此），
+> `registry.gitlab.com/openid/conformance-suite:latest` 亦无 `latest` 标签。因此本特性（改变了未登录
+> `authorize` 第一跳的落点）**尚未取得一致性套件证据**，发布前必须在能访问套件分发源的机器上补做，并把
+> 命令、profile、用例通过数、执行日期补写在此处。
+> **口径**：必须用「清空 `PORTAL_LOGIN_URL`」的形态跑，因为套件的自动化浏览器期望授权端点直接给出登录表单；
+> **禁止**为了套件给代码加按环境/开关分流的逻辑（FR-002：行为不得按环境名开关）。
 
 ## 7. 四域端到端（需 docker）
 
@@ -108,6 +140,17 @@ bash scripts/e2e/examples.sh --self-test  # 仅校验脚本自身
 ```
 
 **预期**：A0–A17 全绿（A4–A6 走 SSO 快捷完成，`LOGIN_SAW_IDP_FORM=0`）；A18/A19 全绿；把 `E2E_PORTAL_LOGIN_URL` 改成别的地址再跑 → 退出码 `2` 且提示为「前置不满足」。
+
+**2026-10-26 实测（T038，SC-006 的 120% 口径）**
+
+| 版本 | 断言数 | 单次执行耗时（热缓存，同一台机器） |
+|---|---|---|
+| 改造前 `43ac6cf`（008 完成态，独立 worktree） | 18 | **156s** |
+| 当前 HEAD（009 + Phase 8 断言） | 20 | **176s**（= 112.8%，≤120% ✓） |
+
+测量条件：`go build`/`mvn package`/python venv 均已就绪（双方各先跑一次预热），被测 IdP 为 `APP_ENV=dev` +
+`PORTAL_LOGIN_URL=http://localhost:5173/login`，示例端口 8000–8002，未并行跑其他 e2e。HEAD 侧额外的
+~20s 中包含 A18/A19 与 T035 的「审计 10 连击」（10 次额外授权），即 009 本身引入的增量更小。
 
 ## 9. 首次上线顺序与回滚
 
@@ -144,3 +187,10 @@ GROUP BY username HAVING c >= 3 ORDER BY c DESC;
 - ② `/login` 的"请求已失效"占比（目标 < 1%）：从协议层日志/网关 access log 统计 `/login` 响应分布；超过阈值优先检查 `PORTAL_LOGIN_URL` 与请求有效期。
 
 判读：① 偏低 → 门户地址未生效或被降级；② 偏高 → 有效期太短或配置错配；③ 异常升高 → 标记丢失/回跳失败。触发其中任一项异常时，按场景 5 逐项核对配置，必要时回滚（§9）。
+
+**2026-10-26 实测（T036，本地 `omino_sso` 库）**
+
+- ① 可直接算出：`2026-10-25` 为 `login_success=136` / `sso_login_success=129`（约 1:1——一次门户往返 = 1 条门户密码登录 + 1 条凭会话完成授权，符合预期）；
+- ③ 可直接算出（近 24h，`HAVING c>=3` 命中 `examples=127 / zhangsan=34 / admin=29`，均为脚本与联调账号，阈值与账号白名单的选择属运营口径）；
+- ② **不落库**：`/login` 的“请求已失效”响应只体现在网关/协议层访问日志，库内无法统计。取数方式：对 nginx access log 按 `$request ~ "GET /login"` 聚合并统计渲染过期页的那部分（该页为 200 + 固定文案，可用响应体特征或给该分支加独立 access log 标记）。因此 ② 的可用性取决于部署是否保留 sso 域访问日志，**建议在 nginx 侧确认 `/login` 未被纳入采样丢弃**。
+

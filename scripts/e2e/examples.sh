@@ -10,10 +10,13 @@
 #   bash scripts/e2e/examples.sh --self-test  # 只校验脚本自身，不连 IdP、不起进程
 #
 # 009 语义变更（与 008 的实测数据不可直接比较，自 2026-10-25 起重新建立基线）：
-#   - A4–A6 由「表单登录闭环」改为「SSO 闭环」：先跑门户前置（API 域登录建立 IdP 会话），
-#     再把它复制成各语言 jar，三示例凭既有会话完成授权，LOGIN_SAW_IDP_FORM=0；
+#   - A4–A6 由「表单登录闭环」改为「SSO 闭环」：用**空 jar** 走真实用户路径（示例 /login →
+#     授权 → 门户登录页 → 脚本代劳登录 → 带 portal=1 回到 IdP → 完成授权），
+#     LOGIN_SAW_IDP_FORM=0，且审计 detail.entry=portal（预置会话只会是 template）；
+#   - 门户前置（portal.cookie）只负责「示例账号可用 + 会话可建立」的快速失败，不再被复制进各语言 jar；
 #   - 表单 POST 路径改由 A19 对 go/java/python 各覆盖一次（含换 token），不再由 A4–A6 兜底；
-#   - A4-TIMING 口径不变（进程启动 → 首次 /api/me 200），但不再含一次 argon2 校验，数值会变快。
+#   - 计时口径分两段（SC-002）：A4-TIMING = 进程启动 → 首次 /api/me 200（含冷启动，不再含 argon2）；
+#     A8-TIMING = 已有会话时的「发起 → 首次 /api/me 200」（有会话直达，目标 ≤2s）。
 #
 # 退出码：0 全绿 / 1 有断言失败 / 2 前置条件不满足（此时尚未开始断言）。
 set -uo pipefail
@@ -97,6 +100,9 @@ wait_http() { # wait_http <url> <期望码> <超时秒>
 }
 
 # ------------------------------------------- 009：门户跳转与 OIDC 探针工具函数
+
+# ms —— 毫秒时间戳（macOS 的 date 不支持 %N，统一走 python3）
+ms() { python3 -c 'import time;print(int(time.time()*1000))'; }
 
 # url_query <url> <参数名> —— 取查询参数并解码**一次**（缺失输出空行）。
 # 不用 sed/grep 手工解转义：Location 里的 next 是被 URL-encode 的完整地址，
@@ -680,7 +686,8 @@ example_base() { # example_base <lang>
 
 stage_a8_sso() {
   section "A8 跨示例单点登录（3 组 × 2 目标）"
-  local src target jar base code sub pairs=0 fails=0 detail=""
+  local src target jar base code sub pairs=0 fails=0 detail="" t0 t1 dur max_ms=0 sum_ms=0
+  local slow=""
 
   # SC-003 要的是「登录任一示例后，其余 2 个示例都免登录」——3 组 × 2 个目标共 6 条，
   # 不能只测一组。每组用「来源示例的 jar（含 IdP 的 sid）」驱动目标示例的 /login：
@@ -695,6 +702,10 @@ stage_a8_sso() {
       cp "$WORK/$src.cookie" "$jar" 2>/dev/null \
         || { bad A8 "缺少 $src.cookie" "有 IdP 会话的 jar"; return; }
 
+      # SC-002②「有会话直达」口径：从发起（GET 目标示例 /login）到首次 /api/me 200 的墙钟耗时。
+      # 这段路径不含用户输入，也是本次改造对老用户最直接的影响面（多出的门户往返只在
+      # 无会话时发生，因此这里必须是「直达」）。
+      t0=$(ms)
       if ! drive_login "$target" "$base" "$jar" "-sso-$src"; then
         fails=$((fails + 1))
         detail="$detail $src→$target(驱动登录失败)"
@@ -703,6 +714,11 @@ stage_a8_sso() {
       fi
 
       code=$(http_code "$jar" "$base/api/me")
+      t1=$(ms)
+      dur=$((t1 - t0))
+      sum_ms=$((sum_ms + dur))
+      (( dur > max_ms )) && max_ms=$dur
+      (( dur > 2000 )) && slow="$slow $src→$target(${dur}ms)"
       sub=$(curl -s --max-time "$E2E_CURL_TIMEOUT" -b "$jar" "$base/api/me" 2>/dev/null | jq -r '.sub // empty')
       if (( LOGIN_SAW_IDP_FORM != 0 )) || [[ "$code" != "200" || "$sub" != "$GO_SUB" ]]; then
         fails=$((fails + 1))
@@ -714,10 +730,40 @@ stage_a8_sso() {
     done
   done
 
-  if (( fails == 0 )); then
-    ok A8 "$pairs/$pairs 组合免登录（3 组 × 2 目标，均 200 且 sub 相同）"
+  # SC-002②：有会话直达的耗时（不含用户输入）。6 个组合取 max/avg，任一 >2s 即 FAIL。
+  if (( pairs > 0 )); then
+    printf 'A8-TIMING 有会话直达（%s 组，发起→首次 /api/me 200）：max=%sms avg=%sms\n' \
+      "$pairs" "$max_ms" "$((sum_ms / pairs))" >>"$REPORT"
+    log "A8-TIMING 有会话直达：max=${max_ms}ms avg=$((sum_ms / pairs))ms（${pairs} 组）"
+  fi
+  [[ -n "$slow" ]] && { fails=$((fails + 1)); detail="$detail 超过 2s:$slow"; }
+
+  # SC-004②：同一会话连续 10 次「凭既有会话完成授权」→ 审计恰好 +10（既不合并也不丢失）。
+  # 用 A8 里已有会话的 go jar 反复驱动，计数走管理 API（脚本不直连 MySQL）。
+  local n_before n_after i jargo="$WORK/audit10.cookie" audit_note=""
+  if cp "$WORK/go.cookie" "$jargo" 2>/dev/null; then
+    n_before=$(admin::audit_count sso_login_success "$GO_ID")
+    for i in $(seq 1 10); do
+      if ! drive_login go "$GO_BASE" "$jargo" "-audit10"; then
+        fails=$((fails + 1)); detail="$detail 10 连击第${i}次授权失败"
+        break
+      fi
+    done
+    n_after=$(admin::audit_wait_total sso_login_success "$GO_ID" "$(( ${n_before:-0} + 10 ))" 10) || true
+    audit_note="audit10=${n_before:-?}→${n_after:-?}"
+    printf 'A8-AUDIT10 sso_login_success %s→%s（期望 +10，同一会话连续授权）\n' \
+      "${n_before:-?}" "${n_after:-?}" >>"$REPORT"
+    if [[ -z "$n_before" || "$n_after" != "$((n_before + 10))" ]]; then
+      fails=$((fails + 1)); detail="$detail 审计未 +10(${n_before:-?}→${n_after:-?})"
+    fi
   else
-    bad A8 "$detail" "全部 $pairs 个组合免表单 + 200 + sub 相同"
+    fails=$((fails + 1)); detail="$detail 缺少 go.cookie（审计 10 连击无法执行）"
+  fi
+
+  if (( fails == 0 )); then
+    ok A8 "$pairs/$pairs 组合免登录（3 组 × 2 目标，均 200 且 sub 相同；直达 max=${max_ms}ms $audit_note）"
+  else
+    bad A8 "$detail" "全部 $pairs 个组合免表单 + 200 + sub 相同（有会话直达 ≤2000ms，审计 10 连击 +10）"
   fi
 }
 

@@ -223,3 +223,23 @@ Task: "T022 [US3] check-build-env.sh sso 域断言（脚本文件独立）"
 - 每个故事结束都有 **Checkpoint**，可停在任一 Checkpoint 交付。
 - 提交前确认 `make check` 的文档基线 sha256 仍为 `7a5cb8d1…`（本特性不改管理 API）。
 - 禁止在 `internal/oidc/storage.go` 的 `LoginURL` 里判断登录态（research.md R1）。
+
+---
+
+## Phase 8: Convergence
+
+**Purpose**：收敛 `/speckit.converge` 的余项。代码行为已符合 spec/plan 的功能性要求（FR-001…FR-014、FR-016…FR-022 均有实现与对应测试/断言），缺口集中在**验证证据**（一致性套件、两段耗时口径、配置反证启动、审计 10 连击、上线观测信号）与**一处脚本注释失真**。
+
+- [ ] T032 **CRITICAL** 按 `AGENTS.md` §8.5 在清空 `PORTAL_LOGIN_URL` 的形态下执行一次 OpenID 一致性套件（basic OP + config OP profile，`docker run --rm -p 8080:8080 -e CONFORMANCE_SERVER=http://host.docker.internal:8080 openidentity/conformance-suite`），把命令、profile、用例通过数与执行日期记入 `docs/deployment.md` §8.5 或 `specs/009-portal-login-redirect/quickstart.md`；若套件在“门户跳转”形态下无法自动完成登录，**只**在文档写明「套件以清空门户地址的形态运行」，禁止为套件新增按环境/开关分流的代码分支 per Constitution（开发工作流与质量门禁）/ AGENTS §8.5（missing）
+
+- [X] T033 **HIGH** 在 `scripts/e2e/examples.sh` 的 A8（跨示例 SSO，已登录直达）处测量并打印「发起 → 首次 `/api/me` 200」耗时（形如 `A8-TIMING 有会话直达：go=…s java=…s python=…s`），超过 2 秒报 FAIL；同时把三段计时口径（A4-TIMING 启动→首次 200、A8-TIMING 有会话直达、`run.sh` 门户登录→SP 回调）写入脚本头注释与 `contracts/e2e-a18-a19.md §3.1` per SC-002②（T025 的后半要求）（partial）
+
+- [X] T034 **MEDIUM** 按 `quickstart.md` 场景 5 以真实进程启动逐条留证 5 条配置反证（`COOKIE_SAME_SITE=Strict`、`test` 环境用 `http://` 门户地址、非法绝对地址、`prod` 缺失 `PORTAL_LOGIN_URL`、含 fragment 的地址），记录退出码与点名变量的错误文案；并验证 `dev`/`test` 清空 `PORTAL_LOGIN_URL` 重启后仍能展示内置登录页并完成登录（现有覆盖仅 `internal/config/config_test.go` 单测） per SC-005 / SC-007 / T030（partial）
+
+- [X] T035 **LOW** 增加「同一会话连续 10 次凭既有会话完成授权 → `sso_login_success` 恰好 +10、无合并无丢失」的观察断言（可放在 `scripts/e2e/examples.sh` 的 A8 之后复用 `admin::audit_count`），并打印实际条数 per SC-004②（partial）
+
+- [X] T036 **LOW** 按 `quickstart.md` §10 执行两条观测 SQL（`sso_login_success`/`login_success` 日条数比、近 24h 被送门户 ≥3 次的账号）并统计 `/login`“请求已失效”响应占比，把实际数值与取数方式记入 `quickstart.md` §10 或 `docs/deployment.md` §11，确认 SC-009 三项信号无需新增埋点即可算出（T031 自检中该项未执行） per SC-009 / T031（partial）
+
+- [X] T037 **LOW** 修正 `scripts/e2e/examples.sh` 头部 12–16 行注释：现仍写「先跑门户前置……再把它复制成各语言 jar」，而实现已是空 jar 走门户往返（A4–A6 段与 `contracts/e2e-a18-a19.md §2` 均已改），需与实现对齐以免误导后续维护 per T024（partial）
+
+- [X] T038 **LOW** 记录改造前基线：在 `43ac6cf`（008 完成态）与当前 HEAD 各跑一次 `bash scripts/e2e/examples.sh`，比较单次执行耗时并确认 ≤120%，把两个数值与测量条件写入 `contracts/e2e-a18-a19.md §3.1` 或 `quickstart.md` per SC-006（partial）

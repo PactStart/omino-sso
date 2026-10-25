@@ -43,3 +43,19 @@ Result: **PASS**
 | 5 | Migration doc present | 通过（不适用） | 无 breaking/removal，无需迁移文档 |
 
 契约字节复核：`openapi.json` sha256 `7a5cb8d19b43…3ede41` = baseline。
+
+---
+
+## Gate — 2026-10-26（converge 后 implement 前置，Phase 8）
+
+Result: **PASS**
+
+| # | Rule | Verdict | Evidence |
+|---|---|---|---|
+| 1 | Declared breaking — `breaking`/`removal` 无对应 `deprecations.json` 行 | 通过（空集） | 无 `changes.json` / `diff.json` / `deprecations.json`；Phase 8 只补验证证据与脚本注释，零端点变化 |
+| 2 | Bump confirmed — 隐含 bump 为 `major` 且 `bump.json.confirmed = false` | 通过（不适用） | 隐含 bump 为 `none` |
+| 3 | Sunset honored — 已过 `sunset_at` 的 deprecation 仍在契约中 | 通过（空集） | 无 `deprecations.json` |
+| 4 | Removal preceded by publish | 通过（空集） | 无 `removal` 条目 |
+| 5 | Migration doc present | 通过（不适用） | 无 breaking/removal |
+
+契约字节复核：`openapi.json` sha256 `7a5cb8d19b43797b8cd5683d2587ca6fa67741b8b6474470268fc513423ede41` = baseline。

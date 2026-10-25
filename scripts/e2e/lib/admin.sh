@@ -255,3 +255,17 @@ admin::audit_wait_increment() {
   printf '%s' "$now"
   return 1
 }
+
+# admin::audit_wait_total <eventType> <clientId> <期望总数> [秒]
+# 轮询到条数等于期望值；超时输出实测值并返回 1（审计消费者是异步的，批量写会滞后）。
+admin::audit_wait_total() {
+  local et=$1 cid=$2 want=$3 limit=${4:-10} i=0 now=""
+  while (( i < limit )); do
+    now=$(admin::audit_count "$et" "$cid")
+    [[ "$now" == "$want" ]] && { printf '%s' "$now"; return 0; }
+    sleep 1
+    i=$((i + 1))
+  done
+  printf '%s' "$now"
+  return 1
+}
