@@ -27,3 +27,12 @@ deploy/env/*.env.*
 
 # Playwright CLI 本地会话产物
 .playwright-cli/
+
+# 示例工程产物（008-integration-examples）
+examples/python/venv/
+examples/python/.venv/
+examples/**/__pycache__/
+examples/java/target/
+*.pyc
+# go build 产物（示例一律 go run .，二进制不入库）
+examples/go/go

@@ -362,11 +362,11 @@ GET {issuer}/logout?next=/logged-out
 2. **`post_logout_redirect_uri` 一律不可用**：客户端 `post_logout_uris` 恒为空（注册接口未开放该字段）。带 `client_id` 再传该参数会被拒为 **`400 invalid_request: post_logout_redirect_uri invalid`**；不带 `client_id` 时该参数被忽略，落到 `/logged-out`。要回到自己的站点，让前端从 `/logged-out` 再跳一次。
 3. **SLO 语义**：`/logout` 只失效 **IdP 会话**，不广播到其他系统；其他 RP 的本地会话各自到期。若要求「一处登出、处处失效」，需新增 back-channel logout（属 L2 改造）。
 
-## 9. 三语言完整示例
+## 9. 三语言示例（索引）
 
 ### 9.0 先对齐：三个语言暴露同一组端点
 
-不管用什么框架，接入后对外只有这四个端点。下文三个工程**路径完全一致**，方便横向对照或换语言重写：
+不管用什么框架，接入后对外只有下面这几个端点。仓库里的三个示例**路径完全一致**，方便横向对照或换语言重写：
 
 | 端点 | 作用 | 谁调用 |
 |---|---|---|
@@ -374,647 +374,51 @@ GET {issuer}/logout?next=/logged-out
 | `GET /callback` | 校验 state，用 code 换令牌，建本地会话 | IdP 回调 |
 | `GET /api/me` | 返回当前用户；未登录返回 401 | 前端页面 |
 | `GET /logout` | 清本地会话，再跳 IdP `/logout` 清 IdP 会话 | 页面上的「登出」按钮 |
+| `GET /` | 演示首页（未登录显示登录入口，已登录显示用户卡片） | 浏览器 |
 
 除此之外你不需要写任何协议代码：授权 URL 拼接、令牌交换、`id_token` 验签、JWKS 拉取与缓存，全部由库完成。
-每段示例后面都标了**注册应用时该填的 `redirectUris`**，这一项填错是最常见的失败原因。
 
-### 9.1 Java（Spring Boot 3 + Spring Security）
-
-工程结构（5 个文件）：
-
-```text
-demo-java/
-├── pom.xml
-└── src/main/
-    ├── java/com/example/demo/
-    │   ├── DemoApplication.java
-    │   ├── SecurityConfig.java
-    │   └── AuthController.java
-    └── resources/application.yaml
-```
-
-**① `pom.xml`**
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-  <modelVersion>4.0.0</modelVersion>
-
-  <parent>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-parent</artifactId>
-    <version>3.2.5</version>
-    <relativePath/>
-  </parent>
-
-  <groupId>com.example</groupId>
-  <artifactId>sso-demo</artifactId>
-  <version>1.0.0</version>
-
-  <properties>
-    <java.version>17</java.version>
-  </properties>
-
-  <dependencies>
-    <!-- Web + 内嵌 Tomcat -->
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-web</artifactId>
-    </dependency>
-    <!-- OIDC 登录：授权跳转、回调换令牌、id_token 验签、JWKS 缓存全部内置 -->
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-oauth2-client</artifactId>
-    </dependency>
-  </dependencies>
-
-  <build>
-    <plugins>
-      <plugin>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-maven-plugin</artifactId>
-      </plugin>
-    </plugins>
-  </build>
-</project>
-```
-
-只需两个依赖：`oauth2-client` 已传递引入 `spring-boot-starter-security`，无需重复声明，也不需要 Thymeleaf。
-
-**② `src/main/resources/application.yaml`**
-
-```yaml
-server:
-  port: 8000
-  servlet:
-    session:
-      cookie:
-        name: DEMO_SESSION
-        http-only: true
-        same-site: lax
-
-spring:
-  security:
-    oauth2:
-      client:
-        registration:
-          omino:
-            client-id: ${SSO_CLIENT_ID}
-            client-secret: ${SSO_CLIENT_SECRET}
-            client-name: 统一身份
-            authorization-grant-type: authorization_code
-            # 默认回调地址由 {registrationId} 决定：http://localhost:8000/login/oauth2/code/omino
-            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
-            scope: openid,profile,email
-            # 本 IdP 的机密客户端只接受 HTTP Basic，必须显式声明
-            client-authentication-method: client_secret_basic
-        provider:
-          omino:
-            issuer-uri: ${SSO_ISSUER}      # 例：https://sso.example.com
-```
-
-> `{baseUrl}` 与 `{registrationId}` 是 Spring Security 的 URI 模板占位符，**不需要在配置里定义**：前者在发起登录时
-> 用当前请求的 `scheme://host:port`（有 context-path 时含前缀）展开，后者取 registration id（这里是 `omino`）。
-> 本地展开为 `http://localhost:8000/login/oauth2/code/omino`，生产展开为 `https://app.example.com/login/oauth2/code/omino`。
-> 这一行本身也可以省略 —— Spring Boot 的默认值就是这串模板。
->
-> 真正的坑在**反向代理**：服务在 Nginx / 负载均衡后面终止 TLS 时，Spring 可能推导出 `http://` 或内网主机名，
-> 与注册值不一致就会被 IdP 拒绝。解决：加 `server.forward-headers-strategy: framework`（让 Spring 读取
-> `X-Forwarded-*`），或干脆把 `redirect-uri` 写成绝对地址。
->
-> `${SSO_ISSUER}` / `${SSO_CLIENT_ID}` / `${SSO_CLIENT_SECRET}` 同理是占位符，由环境变量在启动时注入
-> （见下方「⑥ 运行」），不必写进 `application.yaml`，也**不要把密钥提交进取值**。
-
-**③ `DemoApplication.java`**
-
-```java
-package com.example.demo;
-
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
-
-@SpringBootApplication
-public class DemoApplication {
-    public static void main(String[] args) {
-        SpringApplication.run(DemoApplication.class, args);
-    }
-}
-```
-
-**④ `SecurityConfig.java`**
-
-```java
-package com.example.demo;
-
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
-import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
-import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestCustomizers;
-import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestRedirectFilter;
-import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.SimpleUrlLogoutSuccessHandler;
-import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
-
-@Configuration
-@EnableWebSecurity
-public class SecurityConfig {
-
-    @Bean
-    SecurityFilterChain filterChain(HttpSecurity http,
-                                    ClientRegistrationRepository repo,
-                                    SimpleUrlLogoutSuccessHandler idpLogoutHandler) throws Exception {
-        // 授权请求：默认走 /oauth2/authorization/omino，这里只额外挂上 PKCE
-        var resolver = new DefaultOAuth2AuthorizationRequestResolver(
-                repo, OAuth2AuthorizationRequestRedirectFilter.DEFAULT_AUTHORIZATION_REQUEST_BASE_URI);
-        // 本 IdP 允许机密客户端不带 PKCE，但带上就必须是 S256；显式开启更稳妥
-        resolver.setAuthorizationRequestCustomizer(OAuth2AuthorizationRequestCustomizers.withPkce());
-
-        http
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/", "/error", "/logged-out").permitAll()
-                .anyRequest().authenticated())
-            .oauth2Login(login -> login
-                .authorizationEndpoint(ep -> ep.authorizationRequestResolver(resolver)))
-            // 登出：先清本地会话，再跳 IdP 的 /logout（本 IdP 的 end_session 不清 sid，见 §8）
-            .logout(logout -> logout
-                .logoutRequestMatcher(new AntPathRequestMatcher("/logout", "GET"))
-                .logoutSuccessHandler(idpLogoutHandler)
-                .invalidateHttpSession(true)
-                .deleteCookies("DEMO_SESSION"));
-        return http.build();
-    }
-
-    @Bean
-    SimpleUrlLogoutSuccessHandler idpLogoutHandler(@Value("${SSO_ISSUER}") String issuer) {
-        var handler = new SimpleUrlLogoutSuccessHandler();
-        // next 只接受同源相对路径；要回跳本系统，需前端从 /logged-out 再跳一次
-        handler.setDefaultTargetUrl(issuer + "/logout?next=/logged-out");
-        return handler;
-    }
-}
-```
-
-> IDE 若提示 `OAuth2AuthorizationRequestCustomizers` 找不到，安全起见让它自动导入（Security 6.2+ 提供，包名为
-> `org.springframework.security.oauth2.client.web`）。演示用 `GET /logout` 是为了便于在地址栏验证；
-> 生产环境建议去掉 `logoutRequestMatcher` 那行，恢复 Spring 默认的 `POST /logout` + CSRF 校验。
-
-**⑤ `AuthController.java`**
-
-```java
-package com.example.demo;
-
-import java.util.LinkedHashMap;
-import java.util.Map;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
-import org.springframework.security.oauth2.client.annotation.RegisteredOAuth2AuthorizedClient;
-import org.springframework.security.oauth2.core.oidc.user.OidcUser;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.client.RestClient;
-
-@RestController
-public class AuthController {
-
-    private final String issuer;
-    private final RestClient http = RestClient.create();
-
-    public AuthController(@Value("${SSO_ISSUER}") String issuer) {
-        this.issuer = issuer;
-    }
-
-    @GetMapping("/")
-    public Map<String, Object> home(@AuthenticationPrincipal OidcUser user) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("loggedIn", user != null);
-        body.put("user", user == null ? null : user.getClaimAsString("preferred_username"));
-        body.put("try", new String[] {"/api/me", "/api/userinfo"});
-        return body;
-    }
-
-    // 只读 id_token 里的声明，无网络调用 —— 建本地会话、做鉴权都用这个
-    @GetMapping("/api/me")
-    public Map<String, Object> me(@AuthenticationPrincipal OidcUser user) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("sub", user.getSubject());
-        body.put("username", user.getClaimAsString("preferred_username"));
-        body.put("name", user.getFullName());
-        body.put("email", user.getEmail());            // 未填邮箱时为 null
-        body.put("tenant", user.getClaimAsString("tenant"));
-        body.put("deptId", user.getClaimAsString("dept_id"));
-        body.put("roles", user.getClaimAsStringList("roles"));
-        body.put("amr", user.getClaimAsStringList("amr")); // 含 otp 表示过了 MFA
-        return body;
-    }
-
-    // 演示用 access_token 调 userinfo（只有在需要「最新资料」时才必要）
-    @GetMapping("/api/userinfo")
-    public String userinfo(@RegisteredOAuth2AuthorizedClient("omino") OAuth2AuthorizedClient client) {
-        return http.get()
-                .uri(issuer + "/oauth2/userinfo")
-                .header("Authorization", "Bearer " + client.getAccessToken().getTokenValue())
-                .retrieve()
-                .body(String.class);
-    }
-
-    @GetMapping("/logged-out")
-    public String loggedOut() {
-        return "已登出 IdP 会话，可直接关闭本页。";
-    }
-}
-```
-
-**⑥ 运行**
-
-```bash
-export SSO_ISSUER=https://sso.example.com
-export SSO_CLIENT_ID=<clientId>
-export SSO_CLIENT_SECRET=<clientSecret>
-mvn spring-boot:run
-# 浏览器打开 http://localhost:8000/ → 自动跳 IdP 登录 → 回到 /api/me
-```
-
-注册应用时填：`redirectUris = ["http://localhost:8000/login/oauth2/code/omino"]`。
-
-### 9.2 Python（FastAPI + Authlib）
-
-工程结构（3 个文件）：
-
-```text
-demo-python/
-├── requirements.txt
-├── app.py
-└── .env            # 可选，用 export 也一样
-```
-
-**① `requirements.txt`**
-
-```text
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-authlib==1.4.1
-httpx==0.28.1
-itsdangerous==2.2.0
-```
-
-`authlib` 负责协议，`httpx` 用于发现文档与调 `userinfo`，`itsdangerous` 是会话中间件的依赖。
-
-**② `app.py`**
-
-```python
-import os
-import secrets
-
-import httpx
-from authlib.integrations.starlette_client import OAuth
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, RedirectResponse
-from starlette.middleware.sessions import SessionMiddleware
-
-ISSUER = os.environ["SSO_ISSUER"].rstrip("/")
-CLIENT_ID = os.environ["SSO_CLIENT_ID"]
-CLIENT_SECRET = os.environ["SSO_CLIENT_SECRET"]
-SESSION_SECRET = os.environ.get("SESSION_SECRET", secrets.token_urlsafe(32))
-
-app = FastAPI()
-# 必须：state / nonce / code_verifier / 用户信息都存这里，且要签名
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=SESSION_SECRET,
-    same_site="lax",
-    https_only=False,      # 生产改 True
-)
-
-oauth = OAuth()
-oauth.register(
-    name="omino",
-    client_id=CLIENT_ID,
-    client_secret=CLIENT_SECRET,
-    server_metadata_url=f"{ISSUER}/.well-known/openid-configuration",  # 端点自动发现
-    client_kwargs={
-        "scope": "openid profile email",
-        "code_challenge_method": "S256",   # Authlib 自动生成 verifier 并存进 session
-    },
-)
-
-
-@app.get("/login")
-async def login(request: Request):
-    redirect_uri = str(request.url_for("callback"))   # 必须与注册值逐字符一致
-    nonce = secrets.token_urlsafe(16)
-    return await oauth.omino.authorize_redirect(request, redirect_uri, nonce=nonce)
-
-
-@app.get("/callback")
-async def callback(request: Request):
-    # 校验 state 与 id_token 签名；PKCE 用 session 里的 verifier 完成
-    token = await oauth.omino.authorize_access_token(request)
-    request.session["user"] = dict(token.get("userinfo") or {})
-    request.session["access_token"] = token.get("access_token")
-    return RedirectResponse("/api/me")
-
-
-@app.get("/api/me")
-async def me(request: Request):
-    user = request.session.get("user")
-    if not user:
-        return JSONResponse({"error": "unauthenticated"}, status_code=401)
-    return {
-        "sub": user.get("sub"),
-        "username": user.get("preferred_username"),
-        "name": user.get("name"),
-        "email": user.get("email"),
-        "tenant": user.get("tenant"),
-        "deptId": user.get("dept_id"),
-        "roles": user.get("roles", []),
-        "amr": user.get("amr", []),
-    }
-
-
-@app.get("/api/userinfo")
-async def userinfo(request: Request):
-    token = request.session.get("access_token")
-    if not token:
-        return JSONResponse({"error": "unauthenticated"}, status_code=401)
-    async with httpx.AsyncClient(timeout=5) as client:
-        resp = await client.get(
-            f"{ISSUER}/oauth2/userinfo",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-    return JSONResponse(resp.json(), status_code=resp.status_code)
-
-
-@app.get("/logout")
-async def logout(request: Request):
-    request.session.clear()
-    # 本 IdP 的 end_session 不清 sid，必须用 /logout
-    return RedirectResponse(f"{ISSUER}/logout?next=/logged-out")
-```
-
-**③ 运行**
-
-```bash
-pip install -r requirements.txt
-export SSO_ISSUER=https://sso.example.com
-export SSO_CLIENT_ID=<clientId>
-export SSO_CLIENT_SECRET=<clientSecret>
-uvicorn app:app --port 8000
-```
-
-注册应用时填：`redirectUris = ["http://localhost:8000/callback"]`。
-
-两点补充：
-
-- `nonce` 已随授权请求发出、IdP 会原样写回 `id_token`。若你的 Authlib 版本未自动比对，可在回调里自行取
-  `token["userinfo"]["nonce"]` 与会话中的值比较一次。
-- Django 项目可用 `mozilla-django-oidc`，四个等价配置：`OIDC_RP_SIGN_ALGO=RS256`、`OIDC_OP_ISSUER`、
-  `OIDC_RP_CLIENT_ID` / `OIDC_RP_CLIENT_SECRET`。
-
-### 9.3 Go（标准库 + `x/oauth2` + `go-oidc`）
-
-工程结构（2 个文件）：
-
-```text
-demo-go/
-├── go.mod
-└── main.go
-```
-
-**① 依赖**
-
-```bash
-go mod init demo
-go get github.com/coreos/go-oidc/v3/oidc
-go get golang.org/x/oauth2
-go get github.com/gorilla/sessions
-```
-
-**② `main.go`**
-
-```go
-package main
-
-import (
-	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/json"
-	"fmt"
-	"log"
-	"net/http"
-	"os"
-
-	"github.com/coreos/go-oidc/v3/oidc"
-	"github.com/gorilla/sessions"
-	"golang.org/x/oauth2"
-)
-
-var (
-	issuer       = os.Getenv("SSO_ISSUER")
-	clientID     = os.Getenv("SSO_CLIENT_ID")
-	clientSecret = os.Getenv("SSO_CLIENT_SECRET")
-	callbackURL  = os.Getenv("SSO_CALLBACK") // http://localhost:8000/callback
-)
-
-var (
-	store    *sessions.CookieStore
-	verifier *oidc.IDTokenVerifier
-	conf     *oauth2.Config
-)
-
-func main() {
-	ctx := context.Background()
-	// 自动发现各端点，并把 JWKS 拉进内存缓存
-	provider, err := oidc.NewProvider(ctx, issuer)
-	if err != nil {
-		log.Fatalf("discovery: %v", err)
-	}
-
-	verifier = provider.Verifier(&oidc.Config{ClientID: clientID})
-	conf = &oauth2.Config{
-		ClientID:     clientID,
-		ClientSecret: clientSecret,
-		Endpoint:     provider.Endpoint(),
-		RedirectURL:  callbackURL,
-		Scopes:       []string{"openid", "profile", "email"},
-	}
-
-	store = sessions.NewCookieStore([]byte(os.Getenv("SESSION_SECRET")))
-	store.Options = &sessions.Options{
-		Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 3600,
-	}
-
-	http.HandleFunc("/login", handleLogin)
-	http.HandleFunc("/callback", handleCallback)
-	http.HandleFunc("/api/me", handleMe)
-	http.HandleFunc("/logout", handleLogout)
-
-	log.Println("listening on :8000")
-	log.Fatal(http.ListenAndServe(":8000", nil))
-}
-
-// /login：生成 state + nonce + PKCE，302 到授权端点
-func handleLogin(w http.ResponseWriter, r *http.Request) {
-	state, nonce, codeVerifier := randString(32), randString(16), randString(32)
-
-	sess, _ := store.Get(r, "sso")
-	sess.Values["state"] = state
-	sess.Values["nonce"] = nonce
-	sess.Values["verifier"] = codeVerifier
-	_ = sess.Save(r, w)
-
-	authURL := conf.AuthCodeURL(state,
-		oauth2.SetAuthURLParam("nonce", nonce),
-		oauth2.SetAuthURLParam("code_challenge", s256(codeVerifier)),
-		oauth2.SetAuthURLParam("code_challenge_method", "S256"),
-	)
-	http.Redirect(w, r, authURL, http.StatusFound)
-}
-
-// /callback：校验 state → 换令牌（带 verifier）→ 验签 id_token → 建本地会话
-func handleCallback(w http.ResponseWriter, r *http.Request) {
-	sess, _ := store.Get(r, "sso")
-	if r.URL.Query().Get("state") != sess.Values["state"] {
-		http.Error(w, "state mismatch", http.StatusBadRequest)
-		return
-	}
-
-	tok, err := conf.Exchange(r.Context(), r.URL.Query().Get("code"),
-		oauth2.SetAuthURLParam("code_verifier", sess.Values["verifier"].(string)))
-	if err != nil {
-		http.Error(w, "exchange: "+err.Error(), http.StatusBadGateway)
-		return
-	}
-
-	raw, _ := tok.Extra("id_token").(string)
-	idToken, err := verifier.Verify(r.Context(), raw) // 校验签名 / iss / aud / exp
-	if err != nil {
-		http.Error(w, "verify: "+err.Error(), http.StatusUnauthorized)
-		return
-	}
-
-	var claims map[string]any
-	if err := idToken.Claims(&claims); err != nil {
-		http.Error(w, "claims: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if claims["nonce"] != sess.Values["nonce"] {
-		http.Error(w, "nonce mismatch", http.StatusUnauthorized)
-		return
-	}
-
-	// 只存原始 id_token，避免把任意 map 塞进 cookie（gob 类型注册的坑）
-	sess.Values["id_token"] = raw
-	sess.Values["access_token"] = tok.AccessToken
-	delete(sess.Values, "state")
-	delete(sess.Values, "nonce")
-	delete(sess.Values, "verifier")
-	_ = sess.Save(r, w)
-
-	http.Redirect(w, r, "/api/me", http.StatusFound)
-}
-
-// /api/me：每次从会话里的 id_token 解声明（只查本地缓存，不产生网络请求）
-func handleMe(w http.ResponseWriter, r *http.Request) {
-	sess, _ := store.Get(r, "sso")
-	raw, ok := sess.Values["id_token"].(string)
-	if !ok {
-		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unauthenticated"})
-		return
-	}
-	idToken, err := verifier.Verify(r.Context(), raw)
-	if err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "invalid session"})
-		return
-	}
-
-	var c struct {
-		Sub      string   `json:"sub"`
-		Username string   `json:"preferred_username"`
-		Name     string   `json:"name"`
-		Email    string   `json:"email"`
-		Tenant   string   `json:"tenant"`
-		DeptID   string   `json:"dept_id"`
-		Roles    []string `json:"roles"`
-		AMR      []string `json:"amr"`
-	}
-	if err := idToken.Claims(&c); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "claims"})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"sub": c.Sub, "username": c.Username, "name": c.Name, "email": c.Email,
-		"tenant": c.Tenant, "deptId": c.DeptID, "roles": c.Roles, "amr": c.AMR,
-	})
-}
-
-// /logout：先清本地会话，再清 IdP 会话
-func handleLogout(w http.ResponseWriter, r *http.Request) {
-	sess, _ := store.Get(r, "sso")
-	sess.Options = &sessions.Options{Path: "/", MaxAge: -1} // 覆盖为立即过期
-	_ = sess.Save(r, w)
-	http.Redirect(w, r, fmt.Sprintf("%s/logout?next=/logged-out", issuer), http.StatusFound)
-}
-
-func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
-}
-
-func randString(n int) string {
-	b := make([]byte, n)
-	_, _ = rand.Read(b)
-	return base64.RawURLEncoding.EncodeToString(b)
-}
-
-func s256(v string) string {
-	sum := sha256.Sum256([]byte(v))
-	return base64.RawURLEncoding.EncodeToString(sum[:])
-}
-```
-
-**③ 运行**
-
-```bash
-export SSO_ISSUER=https://sso.example.com   # 结尾不要带 /
-export SSO_CLIENT_ID=<clientId>
-export SSO_CLIENT_SECRET=<clientSecret>
-export SSO_CALLBACK=http://localhost:8000/callback
-export SESSION_SECRET=$(openssl rand -base64 32)
-go run .
-```
-
-注册应用时填：`redirectUris = ["http://localhost:8000/callback"]`。
-
-### 9.4 三语言对照
-
-| 关注点 | Java | Python | Go |
-|---|---|---|---|
-| 回调路径（**框架默认**，注册时照填） | `/login/oauth2/code/omino` | `/callback` | `/callback` |
-| 发起登录 | 库内置 `/oauth2/authorization/omino` | `authorize_redirect()` | `conf.AuthCodeURL()` |
-| state / nonce 存放 | Security 自动 | `SessionMiddleware` | `gorilla/sessions` |
-| PKCE | `withPkce()` | `code_challenge_method` | `SetAuthURLParam` 手写 |
-| 换令牌 | 自动 | `authorize_access_token()` | `conf.Exchange()` |
-| id_token 验签 | 自动 | 自动 | `verifier.Verify()` |
-| 取声明 | `OidcUser.getClaimAsString()` | `token["userinfo"]` | `idToken.Claims()` |
-| 登出 | `logoutSuccessHandler` | `RedirectResponse` | `http.Redirect` |
-
-> **为什么回调路径三栏不一样**：这不是协议差异。回调地址是注册时自己登记的白名单，IdP 只做逐字符匹配，填什么都可以。
-> Java 的 `/login/oauth2/code/omino` 是 Spring Security 过滤器 `OAuth2LoginAuthenticationFilter` 的固定入口
-> （`{registrationId}` 后缀用于区分多个 registration）；Python / Go 的 `/callback` 只是我们自己的路由函数。
->
-> 想把 Java 也统一成 `/callback`，两处必须同时改，否则 code 会打到 404：
-> `application.yaml` 的 `redirect-uri: "{baseUrl}/callback"` + `.oauth2Login(o -> o.redirectionEndpoint(e -> e.baseUri("/callback")))`。
-> 多客户端场景不建议统一 —— `{registrationId}` 后缀正是为了避免多个 registration 抢同一路径。
+### 9.1 完整实现只在仓库里（`examples/`）
+
+**接入代码的唯一权威是仓库的 [`examples/`](../examples/README.md)**，本文档不再保留第二份可复制实现——
+两份代码必然漂移，而"照抄文档里的旧片段"正是最常见的接入事故来源。三份工程都能独立启动、都带可点击的演示首页，
+且对外形状逐项一致（端点、环境变量名、`/api/me` 字段名与空值形态、`[start]/[login]/[refresh]` 日志行）。
+
+| 语言 | 目录 | 框架 / 库 | 必须显式改的默认值 | 注册回调（默认端口） |
+|---|---|---|---|---|
+| Go | [`examples/go`](../examples/go) | 标准库 `net/http` + `go-oidc/v3` + `x/oauth2` | 无框架默认；cookie 直接写 `sid_go` | `http://localhost:8000/callback` |
+| Java | [`examples/java`](../examples/java) | Spring Boot 3.5.3 + `spring-security-oauth2-client` + Thymeleaf | `server.servlet.session.cookie.name: sid_java`（默认 `JSESSIONID`）；`redirect-uri` 与 `redirectionEndpoint("/callback")` **两处同时**对齐 | `http://localhost:8001/callback` |
+| Python | [`examples/python`](../examples/python) | FastAPI + Authlib + Jinja2 | cookie 名 `sid_py`（**不用** Starlette 的 `SessionMiddleware`，它把数据放浏览器 cookie） | `http://localhost:8002/callback` |
+
+需要什么：
+
+- 环境变量、运行命令、日志说明、排障表、**已验证版本矩阵**：见 [`examples/README.md`](../examples/README.md)；
+- 一条命令跑完全部断言（A0–A17，含跨示例 SSO、刷新轮换、刷新被拒回落、降级、cookie 前缀）：`bash scripts/e2e/examples.sh`，
+  断言清单在 [`specs/008-integration-examples/contracts/e2e-examples-cli.md`](../specs/008-integration-examples/contracts/e2e-examples-cli.md)。
+
+### 9.2 与本文档历史示例的四处差异（照抄旧片段会踩）
+
+1. **Spring Boot 用 3.5.3，不是 3.2.5**：3.2.x 的 ASM 不支持 JDK 23 字节码（class file 67），
+   在 JDK 23 上跑官方示例会报 `Unsupported class file major version`。编译目标压在 21，JDK 17+ 都可用。
+2. **Java 也要对齐到 `/callback`**：默认入口是 `/login/oauth2/code/{registrationId}`。想与其余两语言一致，
+   `redirect-uri: "{baseUrl}/callback"`（或直接取 `SSO_REDIRECT_URI`）与
+   `.oauth2Login(o -> o.redirectionEndpoint(e -> e.baseUri("/callback")))` **必须同时改**，只改一处会让 code 打到 404。
+   多客户端场景不建议统一 —— `{registrationId}` 后缀正是为了避免多个 registration 抢同一路径。
+3. **会话 cookie 名必须带语言前缀（`sid_go` / `sid_java` / `sid_py`）**：示例与 IdP 同处 `localhost`，
+   而 HTTP cookie **不按端口隔离**，叫 `sid` 会与 IdP 的会话互相覆盖（表现为"登录示例后门户掉线"）。
+   Python 的 `SessionMiddleware` 默认叫 `session`、Java 默认 `JSESSIONID`，都是必须显式改的项。
+4. **令牌只存服务端**：旧示例用 `gorilla/sessions` 的 CookieStore 存 `access_token`/`id_token`/`refresh_token`，
+   而 CookieStore **只签名不加密** —— 令牌等于明文回到浏览器。仓库示例改为服务端会话（进程内 map 或 `HttpSession`），
+   浏览器只持有 `HttpOnly` 的 `sid_<lang>`，页面、URL、`localStorage` 里都没有令牌。
+
+### 9.3 三条与语言无关的正确性要点
+
+1. **刷新必须单飞**：IdP 的 refresh 是"轮换 + 重放即吊销整族"。并发请求同时用同一个 `refresh_token` 刷新，
+   会把用户直接踢下线。正确做法是一把进程内锁 + **锁内复查**（若已被别的请求换过，直接用新令牌返回）。
+2. **登出用 `/logout`，不要用 `end_session`**：`end_session` 只吊销该 client 的 refresh_token、不清 `sid`，
+   用户会以为登出失败（回到示例仍是登录态）。见 §8。
+3. **`userinfo` 不可用要降级，不要放大成 5xx**：`app_roles`/`permissions` 只在 userinfo 下发，
+   取不到时应返回 `200` + `degraded=["userinfo"]`（身份字段仍取自 `id_token`），而不是让整页报错。
 
 ## 10. 十一个硬性差异点
 
@@ -1064,6 +468,9 @@ curl -s -u "$CID:$SECRET" -X POST "$ISSUER/oauth2/token" \
 # 3) 取用户信息
 curl -s -H "Authorization: Bearer $ACCESS_TOKEN" "$ISSUER/oauth2/userinfo"
 ```
+
+> 验证"接入示例能不能跑通"时不要手抄上面的 curl：在 omino-sso 仓库里执行 `bash scripts/e2e/examples.sh`，
+> 它会自行拉起三个示例并跑完 A0–A17（跨示例 SSO、刷新轮换、刷新被拒回落、userinfo 降级、cookie 前缀），见 §9.1。
 
 ## 13. 需要 IdP 侧改造时
 

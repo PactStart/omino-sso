@@ -1,0 +1,276 @@
+---
+
+description: "Task list for 008-integration-examples"
+---
+
+# Tasks: 三语言接入示例工程与本地端到端验证
+
+**Input**: Design documents from `specs/008-integration-examples/`
+
+**Prerequisites**: [plan.md](./plan.md)、[spec.md](./spec.md)、[research.md](./research.md)、[data-model.md](./data-model.md)、[contracts/](./contracts/)、[quickstart.md](./quickstart.md)
+
+**Tests**: 本项目不接受「测试可选」。本特性的被测对象是**三个演示工程**，它们不在主站 `make test` 的覆盖范围内，因此测试形态固定为两类，**与实现同提交**：
+
+1. **构建/启动冒烟**（T012/T015/T018，以及 e2e 的 A0）：证明三份实现能编译、能启动、缺配置会失败；
+2. **端到端断言 A0–A16**（T020–T022）：证明登录、SSO、刷新轮换、登出、降级、cookie 前缀、无密钥外泄全部成立。
+
+任何实现类任务在勾选前必须通过其对应的冒烟或断言项，否则视为未完成。
+
+**Organization**: 按用户故事分组；US1 的三门语言可并行；US2 依赖 US1；US3 依赖三份实现齐备。
+
+## 任务完成定义（DoD，来自 AGENTS.md §7.4）
+
+1. **代码**：行为符合 spec 与 contracts，无 TODO / 空实现；
+2. **测试**：同提交内通过该任务列出的冒烟或断言项；
+3. **登记**：新增目录/脚本写入 `AGENTS.md §3`（T028）；示例依赖只落在各自清单，**不进**根 `go.mod` 与 §2.1 表；
+4. **门禁**：`make build && make test && make lint && make check` 全绿（T029），且 `internal/api/docs/openapi.json` 与 api-evolve 基线逐字节一致。
+
+## Format: `[ID] [P?] [Story] Description`
+
+- **[P]**: 可并行（不同文件、无未完成依赖）
+- **[Story]**: 所属用户故事（US1 / US2 / US3）
+- 每条任务带确切文件路径
+
+---
+
+## Phase 1: Setup（共享准备）
+
+**Purpose**: 划定示例与主站的物理边界，先立说明与脚本骨架
+
+- [x] T001 [P] 在 `.dockerignore` 追加 `examples/`，确认镜像构建上下文不含示例
+- [x] T002 [P] 创建 `examples/README.md` 骨架：6 个环境变量表（含调试项 `SSO_USERINFO_URL_OVERRIDE` 及「仅调试、生产禁用」标注）、三示例端口与回调（8000/8001/8002 → `/callback`）、运行命令、验证命令、`[start]/[login]/[refresh]` 日志说明、仅演示声明（生产必改三处）、版本矩阵占位、清理（可选）章节
+- [x] T003 [P] 建立脚本骨架：`scripts/e2e/examples.sh`（占位阶段以退出码 2 拒绝执行，避免被误读为"验证已通过"）与 `scripts/e2e/lib/admin.sh`（只声明约定，不实现）——已随任务书落地，供 T004/T019 替换
+
+---
+
+## Phase 2: Foundational（阻塞所有用户故事）
+
+**Purpose**: 三示例共用的「凭据准备」与「最小可启动骨架」；没有它们任何示例都跑不起来
+
+- [x] T004 在 `scripts/e2e/lib/admin.sh` 实现管理员侧辅助：管理员登录（`POST {API}/api/v1/auth/login` + cookie jar）；客户端 upsert（`GET /api/v1/admin/clients?keyword=` 后**按 `clientName` 逐字比对**，缺失则 POST、命中则 PATCH `redirectUris`）；密钥获取（命中 `.tmp/e2e-examples/clients.env` 则复用，否则 `POST /api/v1/admin/clients/{id}/secret` 轮换并回写）；写文件 `umask 077` + `chmod 600`
+- [x] T005 在 `scripts/e2e/lib/admin.sh` 实现专用账号 upsert：`POST /api/v1/admin/users`（`username`/`displayName`/`password` 必填、`email` 可选），**把「已存在」当成功**；随后登录一次确认，失败即 `exit 2` 且不重试（避免触发失败计数锁定）
+- [x] T006 [P] 创建 `examples/go`（`go.mod`：独立 module、`go 1.23`、依赖锁精确版本；`main.go` 骨架：读 6 个环境变量、缺项打印名称后非零退出、发现文档探测失败即退出、端口占用不换端口、打印 `[start]`）
+- [x] T007 [P] 创建 `examples/java`（`pom.xml`：Spring Boot `3.5.3`、`<java.version>21</java.version>`、web/oauth2-client/thymeleaf；`DemoApplication.java`、`application.yaml` 骨架）
+- [x] T008 [P] 创建 `examples/python`（`requirements.txt` 精确 `==` 版本；`app.py` 骨架：uvicorn 启动、读 6 个环境变量并校验、打印 `[start]`）
+
+**Checkpoint**: 三个工程分别通过 `go build ./...`、`mvn -q -DskipTests package`、`pip install -r requirements.txt && python -c "import app"`，且缺环境变量时都以非零码退出
+
+---
+
+## Phase 3: User Story 1 - 三种语言各自跑通登录闭环（P1）🎯 MVP
+
+**Goal**: 每个示例从自己的「登录」入口经 IdP 完成授权码 + PKCE 登录，回到示例后能看到自己的用户信息；登出后必须重新登录。
+
+**Independent Test**: 只启动 IdP 与该语言示例，按 quickstart 场景 A 操作——未登录 `/api/me` = 401；登录后 = 200 且 `sub` 可见；登出后再访问 = 401；浏览器 cookie 名为 `sid_<lang>`。
+
+### Go 示例
+
+- [x] T009 [P] [US1] 实现 `examples/go/oidc.go`：授权 URL（`response_type=code`、`code_challenge_method=S256`、`state`、`nonce`、scope 含 `offline_access`）；回调 `state` 逐字节比对；`POST {issuer}/oauth2/token` 用 **HTTP Basic** 换令牌；用 `go-oidc` 验签 `id_token`（`iss`/`aud`/`exp`/`nonce`）
+- [x] T010 [P] [US1] 实现 `examples/go/session.go`：进程内会话 map + `SetCookie("sid_go", …, HttpOnly, SameSite=Lax, Path=/)`；`pending`（state/nonce/verifier）与登录态分离；`sync.Mutex` 单飞刷新且在锁内复查令牌是否已被换过
+- [x] T011 [US1] 实现 `examples/go` 的 `/api/me`、`/logout`、`/`（`html/template`）：`/api/me` 字段严格按 contracts（`sub/username/name/email/tenant/deptId/roles/amr/appRoles/permissions/degraded/accessExpiresIn/lastRefreshedAt`，空值为 `""`/`[]`/`null` 且不省键）；`userinfo` 失败降级为 200 + `degraded=["userinfo"]`；支持 `SSO_USERINFO_URL_OVERRIDE`（仅覆盖 userinfo 地址）
+- [x] T012 [US1] Go 冒烟与手工验收：`go vet ./... && go build ./...`；按 quickstart 场景 A 点验四条断言（401 / 200+`sub` / 登出后 401 / cookie 名 `sid_go`），并确认三类日志不含令牌
+
+### Java 示例
+
+- [x] T013 [P] [US1] 配置 `examples/java/src/main/resources/application.yaml` + `SecurityConfig.java`：`server.servlet.session.cookie.name: sid_java`（默认 `JSESSIONID` 必须改）；`redirect-uri: "{baseUrl}/callback"` 与 `oauth2Login().redirectionEndpoint(baseUri("/callback"))` **两处同时**设置；PKCE 开启；scope 含 `offline_access`
+- [x] T014 [US1] 实现 `examples/java/.../AuthController.java` + `templates/index.html`：`/api/me`（含 `appRoles`/`permissions`、`degraded`、`accessExpiresIn`、`lastRefreshedAt`）、`/logout` 跳 `{issuer}/logout?next=/logged-out`、首页会话状态行、日志三类行
+- [x] T015 [US1] Java 冒烟与手工验收：`mvn -q -DskipTests package` 在 JDK 23 下通过（失败则回退 Boot `3.4.7` 并记入 README 版本矩阵）；手工点验同 T012 的四条断言，cookie 名须为 `sid_java`
+
+### Python 示例
+
+- [x] T016 [P] [US1] 实现 `examples/python/app.py`：Authlib 注册（`openid profile email offline_access`）、四端点路由、`SessionMiddleware(app, session_cookie="sid_py")`（默认 `session` 必须改）、`SSO_USERINFO_URL_OVERRIDE`
+- [x] T017 [US1] 实现 `examples/python/session_store.py` + `templates/index.html`：服务端会话（令牌不进 cookie/页面）、`asyncio.Lock` 单飞刷新、`userinfo` 失败降级、首页会话状态行、日志三类行
+- [x] T018 [US1] Python 冒烟与手工验收：`python3 -m venv venv && ./venv/bin/pip install -r requirements.txt && ./venv/bin/python -c "import app"`；手工点验同 T012 的四条断言，cookie 名须为 `sid_py`
+
+**Checkpoint**: 三门语言各自可独立演示（MVP 完成），`examples/README.md` 的运行说明经一次实测校对
+
+---
+
+## Phase 4: User Story 2 - 一条命令完成本地端到端验证（P1）
+
+**Goal**: `bash scripts/e2e/examples.sh` 自行拉起/关闭三个示例，跑完 A0–A16 并给出可定位结论；连跑两次全绿。
+
+**Independent Test**: IdP 在跑的前提下执行该命令 → `exit 0`、`report.txt` 中 A0–A16 全 PASS、`.tmp/e2e-examples/clients.env` 可直接 `source` 起手工实例；再执行一次仍全绿。
+
+- [x] T019 [US2] 用真实实现替换 `scripts/e2e/examples.sh` 的占位：preflight（元数据端点可达、三端口空闲、`go`/`mvn`/`python3` 存在，失败 `exit 2` 且未开始断言）、A0 构建冒烟、拉起三示例并 `trap` 在 `EXIT/INT/TERM` 关闭（`--keep` 时保留）
+- [x] T020 [US2] 实现断言 A1–A7：客户端注册复用与回调对应、专用账号可用、三示例 `/api/me` 均 401 基线、三次登录闭环、三个 `sub` 一致（任一登录失败立即中止，不重试）
+- [x] T021 [US2] 实现断言 A8–A11：跨示例 SSO（`Location` 不含 `/login?id=`）、刷新轮换（新 `refresh_token` ≠ 旧值）、刷新后 `sub` 不变、**门户 `/api/v1/me` 仍 200 且示例未写 `Set-Cookie: sid=…`**
+- [x] T022 [US2] 实现断言 A12–A16：登出 302 指向 `{issuer}/logout?next=/logged-out` 且 `sid_<lang>` 被清除、登出后三示例全 401、响应体无 `clientSecret`/`refresh_token`/`id_token`、`userinfo` 覆盖降级（200 + `degraded=["userinfo"]`）、三个 `Set-Cookie` 名恰为 `sid_go`/`sid_java`/`sid_py` 且互不相同
+- [x] T023 [US2] 实现报告与诊断：写 `.tmp/e2e-examples/report.txt`（A0–A16 的 PASS/FAIL + 实测值 + 各示例「启动→首次 200」耗时）；失败时打印对应 `go.log`/`java.log`/`python.log` 三类日志尾部 20 行；实现 `--self-test`
+- [x] T024 [US2] 实现超时与幂等：`E2E_CURL_TIMEOUT`（默认 10s）、`E2E_NET_TIMEOUT`（默认 300s）覆盖每步；连续执行两次均 `exit 0`（残留客户端与账号不影响）
+
+**Checkpoint**: US1 与 US2 均独立通过；US2 是 SC-002/003/004/007/009/010 的唯一验证入口
+
+---
+
+## Phase 5: User Story 3 - 三语言横向对照（P2）
+
+**Goal**: 三份实现的对外形状完全一致，且仓库里只有一份接入代码权威。
+
+**Independent Test**: 逐项比对三工程的端点、环境变量名、`/api/me` 字段、日志三类行 → 100% 同名同义；`docs/integration-guide.md §9` 内不再有可复制的完整实现。
+
+- [x] T025 [P] [US3] 一致性核对并修正差异：`examples/{go,java,python}` 的四端点路径、6 个环境变量名、`/api/me` 字段名与空值形态、`[start]/[login]/[refresh]` 日志格式逐项对齐（差异只允许存在于实现内部）
+- [x] T026 [US3] 完成 `examples/README.md`：三语言对照表（端点 / 变量 / 字段 / 日志）、**已验证版本矩阵（语言版本 + 依赖精确版本 + 验证日期）**、镜像与代理排障（`PIP_INDEX_URL`、Maven mirror）、清理（可选）
+- [x] T027 [US3] 收敛 `docs/integration-guide.md §9`：三语言完整代码改为「指向 `examples/` 的索引 + 差异说明」（Boot 3.5.3 而非 3.2.5、回调路径对齐 `/callback`、cookie 前缀、服务端会话）；验收：文档内无可复制的完整实现，且 §1–§8、§10–§13 未删减
+
+---
+
+## Phase 6: Polish & Cross-Cutting
+
+- [x] T028 更新 `AGENTS.md §3` 目录树：补 `examples/`（go/java/python 三行）与 `scripts/e2e/examples.sh`、`scripts/e2e/lib/admin.sh`；提交带 `Protected-Change: AGENTS.md` + `Approved-By`
+- [x] T029 门禁全跑：`make build && make test && make lint && make check`；`bash scripts/check-artifact-refs.sh`、`bash scripts/check-docs-commands.sh`；确认 `internal/api/docs/openapi.json` 的 sha256 与 `specs/008-integration-examples/api-evolve/baseline/manifest.json` 一致
+- [x] T030 SC 复核并记录证据：SC-001（`report.txt` 首次 200 耗时）、SC-002（首次/后续两档）、SC-003（3/3）、SC-004、SC-005（无明文密钥）、SC-006（对照表与版本矩阵）、SC-007（连跑两次）、SC-008、SC-009、SC-010
+- [x] T031 收尾核查：`SSO_USERINFO_URL_OVERRIDE` 未出现在常规用法中（仅调试章节）；`.tmp/e2e-examples/clients.env` 权限 `0600`；`examples/` 未被任何构建产物或镜像引用
+
+---
+
+### 完成证据（2026-10-24）
+
+| 项 | 证据 |
+|---|---|
+| T029 门禁 | `make verify-full` = build + test + lint + check，`EXIT=0`；`check-registry` 报告 `openapi.json` 基线 sha256 `7a5cb8d1…`（未变）、路由 78/78、错误码 33/33、审计事件 37/37、环境变量 71/71/71；`check-artifact-refs` 校验 212 个路径通过；`check-docs-commands` 校验 23 个目标 / 326 处引用通过 |
+| SC-001 / SC-002 | `.tmp/e2e-examples/report.txt` 记录「启动→首次 401」：go=1s、java=4s、python=1s（热缓存）；冷缓存首轮同样 17/17，仅构建阶段较慢（go/mvn 依赖下载受 `E2E_NET_TIMEOUT` 保护） |
+| SC-003 | `A7 PASS sub=01M5Q256P1VV1HDS9V5HGHA2YE`（三个示例 `sub` 完全一致，3/3 组合） |
+| SC-004 / SC-005 | `A12` 三示例登出均 302 到 `{issuer}/logout?next=/logged-out` 且清除 `sid_<lang>`；`A13` 登出后三示例全 401；`A14` 页面与 `/api/me` 均无 `clientSecret`/`refresh_token`/`id_token`/`access_token` |
+| SC-006 | `examples/README.md §6` 三语言对照表 + 已验证版本矩阵；`A1` 断言三个 `clientName` 逐字匹配、回调与端口一一对应 |
+| SC-007 | 连续三轮 `PASS=17 FAIL=0`（`run3`/`run4` 同端口连跑，`run5` 默认端口），客户端/密钥/专用账号全部复用 |
+| SC-008 | `A9 PASS 三个示例各刷新一次并轮换 refresh_token`（日志 `[refresh] ok rotated=1` ×3）+ `A10 PASS` 刷新后 `sub` 不变 |
+| SC-009 | `A15 PASS 200 + degraded=[userinfo]，appRoles/permissions 为 []`（真实重启 Python 示例并指向不可达 userinfo，非 SKIP） |
+| SC-010 | `A16 PASS` 三个 `Set-Cookie` 名恰为 `sid_go`/`sid_java`/`sid_py` 且互不相同；`A11 PASS` 期间 IdP `/api/v1/me` 仍 200 且示例未写 `sid=` |
+| T031 | `SSO_USERINFO_URL_OVERRIDE` 仅出现在 `examples/README.md §2` 与 A15 的临时环境；`.tmp/e2e-examples/clients.env` 权限 `0600`；`examples/` 已在 `.dockerignore` 中排除，未被任何镜像/构建产物引用 |
+
+### 收敛证据（2026-10-25，Phase 7 T032–T038）
+
+| 项 | 证据 |
+|---|---|
+| T032 | `report.txt` 新增 `A4-TIMING 启动→首次 200：go=7s java=8s python=10s`（两轮一致）；`examples/README.md §4.2` 固定「实测用时」表并写明冷/热缓存口径与数据来源 |
+| T033 | `stage_a0_build` 在缺 `venv` 时自动 `python3 -m venv` + `pip install -r requirements.txt`（受 `E2E_NET_TIMEOUT` 约束）；`--self-test` PASS，两轮实跑 A0 均 PASS |
+| T034 | 选择「记录上调」路线：`plan.md` 技术上下文改为 Go `1.26+` 并注明 `x/oauth2 v0.37.0 → 1.26.0`、`go-oidc v3.21.0 → 1.25.0`；`examples/README.md §3` 同步标注 |
+| T035 | `with_timeout` 三级兜底（`timeout` → `gtimeout` → bash 计时 + `kill`，超时返回 124）；本机无 coreutils，两轮 A0 均走兜底分支且未误杀 |
+| T036 | 两轮日志均为 `已按原值恢复三个客户端的 accessTokenTtl：go=900 java=900 python=900`（值来自 `GET /api/v1/admin/clients/{id}` 回读，非硬编码） |
+| T037 | `plan.md` 的 Source Code 结构已对齐实际文件：新增 `examples/go/handlers.go`，Java 包名更正为 `com/example/ssoexample` 并列出 9 个类 |
+| T038 | 2026-10-25 连续两轮 `PASS=17 FAIL=0`、第二轮 `ELAPSED=103s EXIT=0`；`A3`（go=1s/java=5s/python=1s）与 `A15`（200 + `degraded=[userinfo]`）行为未变 |
+| 门禁 | `make verify-fast` = lint + check + 单测，`EXIT=0`；`bash scripts/e2e/examples.sh --self-test` PASS；api-evolve gate PASS（无 breaking/removal 声明，契约 sha256 仍为 `7a5cb8d1…ede41`） |
+
+## Dependencies
+
+```text
+Phase 1 (T001–T003)
+      │
+Phase 2 (T004–T008)  ← 阻塞：无凭据准备与骨架，任何示例都跑不通
+      │
+      ├───────────────┬────────────────┐
+      ▼               ▼                ▼
+  Go (T009–T012)   Java (T013–T015)   Python (T016–T018)   ← US1，三者可并行
+      └───────────────┴────────────────┘
+                      │
+                      ▼
+               US2 (T019–T024)   ← 需三示例齐备才能断言 SSO
+                      │
+                      ▼
+               US3 (T025–T027)   ← 对照与文档收敛需要三份实现
+                      │
+                      ▼
+               Polish (T028–T031)
+```
+
+- **US1 内部**：T009/T010 可并行（不同文件），T011 依赖两者；T013→T014→T015 串行；T016→T017→T018 串行。
+- **US2 内部**：T019→T020→T021→T022→T023→T024 串行（同一脚本，顺序追加）。
+- **US3**：T025 依赖 US1 三份实现；T026 依赖 T025；T027 与 T026 可并行。
+
+## Parallel Example: User Story 1
+
+```bash
+# 三门语言同时开工（不同目录，互不冲突）
+Task: "实现 examples/go/oidc.go 与 session.go（T009/T010）"
+Task: "配置 examples/java 的 application.yaml 与 SecurityConfig.java（T013）"
+Task: "实现 examples/python/app.py 的四端点与 SessionMiddleware（T016）"
+
+# Go 内部再并行：协议与存储分属不同文件
+Task: "examples/go/oidc.go（T009）"
+Task: "examples/go/session.go（T010）"
+```
+
+## Implementation Strategy
+
+### MVP First（Go 一条链路）
+
+1. Phase 1 → Phase 2；
+2. 只做 Go 分支：T009–T012；
+3. **停下验证**：quickstart 场景 A 走通、cookie 名 `sid_go`、登出后 401；
+4. 此时已能回答「接入文档是否可执行」，其余语言是复述。
+
+### Incremental Delivery
+
+1. Go 跑通 → 补 Java（验证 Spring 侧 PKCE 与回调双处对齐的成本）；
+2. 补 Python（验证 3.14 上的依赖与降级路径）；
+3. 三份齐备 → US2 脚本接管验证（此后回归只看一条命令）；
+4. US3 收敛文档，把「两份代码」变成「一份代码 + 索引」。
+
+### 风险与回退
+
+| 风险 | 触发信号 | 回退动作 |
+|---|---|---|
+| Java 在 JDK 23 下编译/运行失败 | T015 的 `mvn package` 报 class file 版本错误 | 回退 Boot `3.4.7`，把实测版本写入 README 矩阵 |
+| Python 3.14 无可用轮子 | T018 的 `pip install` 解析失败 | 钉住可用组合；必要时降到纯 Starlette，并在 README 记录偏离 |
+| cookie 前缀漏改 | T022 的 A16 失败 | 按 contracts「实现落点」列逐项修（Java `session.cookie.name`、Python `session_cookie=`） |
+| 刷新把整族吊销 | A9/A10 失败且用户被踢 | 检查单飞锁是否在锁内复查令牌（T010/T017） |
+
+## Notes
+
+- `[P]` = 不同文件且无未完成依赖；同一脚本内的断言任务**不要**并行。
+- 勾选前必须有冒烟或断言证据，不接受「代码写完了」作为完成依据。
+- 示例依赖只落在 `examples/*` 清单；任何让根 `go.mod` 出现变化的改动都视为缺陷（FR-016）。
+- 端到端脚本会留下客户端与专用账号（用户已允许），清理是手工动作，见 `examples/README.md`。
+
+---
+
+## Phase 7: Convergence
+
+**Purpose**: `/speckit.converge` 复核（2026-10-25）发现 7 项「规格/契约/计划 vs 现有实现」的差距。以下任务只做补齐，不改动 Phase 1–6 的既有条目。
+
+- [x] T032 补齐 SC-001 的可量化证据两处：① `scripts/e2e/examples.sh` 在 A3 之后额外记录「示例启动→首次 `/api/me` 200」耗时并写入 `.tmp/e2e-examples/report.txt`（当前 `A3-TIMING` 只记到首次 401）；② `examples/README.md` 固定一行「实测用时」写明三语言数值与测量条件（含冷/热缓存口径） per SC-001 (partial)
+- [x] T033 让 A0 自行准备 Python 依赖：`scripts/e2e/examples.sh` 在缺 `examples/python/venv` 时用 `python3 -m venv` + `pip install -r requirements.txt` 创建（受 `E2E_NET_TIMEOUT` 约束），失败再 `exit 2` 并打印最后一屏错误；使干净检出上「一条命令」成立 per contracts/e2e-examples-cli.md A0、FR-011、SC-002 (partial)
+- [x] T034 消除 Go 示例的版本矛盾：`examples/go/go.mod` 的 `go 1.26.0` 由 `golang.org/x/oauth2 v0.37.0`（`gover=1.26.0`）与 `go-oidc v3.21.0`（`gover=1.25.0`）强制，与 plan「Go 1.23+」及 T006 的 `go 1.23` 冲突——要么把这两个依赖降到支持 1.23 的精确版本，要么在 plan 的技术上下文与 `examples/README.md` 前置条件里显式记录上调到 1.26 并说明理由 per plan: Go 1.23+ (contradicts)
+- [x] T035 给 `scripts/e2e/examples.sh` 的 `with_timeout` 补 macOS 兜底：优先 `timeout`，其次 `gtimeout`，都没有时用 bash 自带计时 + `kill` 实现同等上限，使 `E2E_NET_TIMEOUT` 在无 coreutils 的机器上真正生效（当前静默裸跑，A0 的 `go build`/`mvn package` 可无限挂起） per contracts/e2e-examples-cli.md 行为约束（超时兜底）、E2E_NET_TIMEOUT (partial)
+- [x] T036 `scripts/e2e/examples.sh` 的 `stage_a9_a10_refresh` 先回读并保存三个客户端原 `accessTokenTtl`，结束时按原值恢复，不再硬编码 `900`（否则会留下被脚本改过的客户端配置） per FR-012、contracts/e2e-examples-cli.md 行为约束（不碰既有配置） (partial)
+- [x] T037 对齐 Java 示例的结构性清单：plan 与 T013/T014 写的是 `com/example/demo/{DemoApplication,SecurityConfig,AuthController}.java`，实现为 `com/example/ssoexample/{DemoApplication,SecurityConfig,PageController,MeService,LoginSuccessHandler,OAuthFailureHandler,IdTokenOnlyUserService,SessionKeys,StartupCheck}.java`——更新 plan 的 Source Code 结构与 tasks 中的文件引用（或按原命名重构），使产物与代码可逐项对照 per plan: Source Code structure、T013–T014 (partial)
+- [x] T038 重跑并刷新 SC-007 证据：`416643c` 把三示例启动改为 `env` 数组传参后，tasks.md「连跑两次 17/17」的证据早于该改动——连续执行两轮 `bash scripts/e2e/examples.sh` 全绿，并确认 A3（启动基线）、A15（降级重启）行为未变，把新 report 的关键行回填到本文件「完成证据」 per SC-007、T024 (partial)
+
+---
+
+## Phase 8: Convergence
+
+**Purpose**: 第二次 `/speckit.converge`（2026-10-25，Phase 7 落地之后）复核出 3 项差距：跨示例 SSO 只测了 1/3 组合、刷新被拒回落无断言、契约判据与实现观测点不一致。以下任务只做补齐，不改动 Phase 1–7 的既有条目。
+
+- [x] T039 把 A8 扩成 SC-003 要求的 3 组组合：先登录 A（保留其 IdP 会话 jar），再用同一 jar 分别驱动 B 与 C 的 `/login`，每组断言 ① `LOGIN_SAW_IDP_FORM=0`（未出现登录表单）、② 回调后 `/api/me` = 200、③ `sub` 与 A 相同；结果写入 `report.txt` 并逐组打印，替换当前只覆盖 java→go 的单组断言 per SC-003 (partial)
+- [x] T040 让「刷新被拒 → 清本地令牌 + 回落重新授权」可被 e2e 实际执行并断言：在示例已持有会话时从 IdP 侧使 refresh 失效（吊销令牌族/会话），待访问令牌过期后访问 `/api/me`，断言返回 401（非 5xx、非死循环），且随后 `/login` 能重新完成授权拿到 200；同时把 `E2E_STRICT_REFRESH=1` 的行为改成真实断言或明确降级说明，不再只是打印「跳过」 per SC-008、US1/AC7 (partial)
+- [x] T041 对齐契约判据：`contracts/e2e-examples-cli.md` 的 A9 改为「以 `[refresh] ok rotated=1` 日志为可观测量」、A11 改为「用同一 `sid` 查 `{API}/api/v1/me` 仍 200 且示例未写 `Set-Cookie: sid=`」、`E2E_STRICT_REFRESH` 行写清示例侧无法重放的原因，使契约与实现一致 per contracts/e2e-examples-cli.md A9、A11 (partial)
+
+### Phase 8 完成证据（2026-10-25）
+
+| 项 | 证据 |
+|---|---|
+| T039 | `stage_a8_sso` 改为 3 组 × 2 目标共 6 条：`[PASS] A8 6/6 组合免登录（3 组 × 2 目标，均 200 且 sub 相同）`，`report.txt` 逐条留 `A8-COMBO A→B PASS` |
+| T040 | 新增 `stage_a17_refresh_rejected`：`accessTokenTtl=60` 取短命令牌 → 三客户端 `status=0` → 等 40s → 三示例 `/api/me` 连续两次均 `401`（不重试）→ `status=1` → 重新登录 `200` 且 `sub` 与 A7 一致；`[PASS] A17`。`E2E_STRICT_REFRESH=1` 时额外断言每个示例只有一条 `[refresh] fail`（第二轮实测通过）。全程只用管理 API，TTL 与 status 均回读后按原值恢复 |
+| T041 | 契约 A8（3 组 × 2 目标）、A9（日志判据）、A11（`{API}` 观测点）、`E2E_STRICT_REFRESH`（改为不重试断言）、新增 A17 行、`report.txt` 口径改为 A0–A17 全部落地；`docs/integration-guide.md` 与 `AGENTS.md` 的「A0–A16」同步为「A0–A17」 |
+| 两轮实跑 | 2026-10-25 连续两轮 `PASS=18 FAIL=0`：154s（默认档）/ 163s（`E2E_STRICT_REFRESH=1`），仍满足 SC-002 的「后续 ≤3 分钟」 |
+| 门禁 | `make verify-fast` 与 `check-artifact-refs` / `check-docs-commands` 通过（见本轮收尾） |
+
+## Phase 9: Convergence
+
+**Purpose**: 第三次 `/speckit.converge`（2026-10-25，Phase 8 落地之后）复核出 3 项差距，全部集中在「脚本改动客户端配置的还原与前置说明」：中断不还原、`status` 恢复写死、前置工具清单不全。以下任务只做补齐，不改动 Phase 1–8 的既有条目。
+
+- [x] T042 让「被脚本改过的客户端配置」在任意退出路径都还原：把 A17 置 `status=0` 与 A9/A17 改 `accessTokenTtl` 时的原值登记到全局变量，在 `cleanup`（`trap EXIT INT TERM`）里按原值回写并清空登记，保证 Ctrl-C / 超时打断后下一次运行不会因为客户端仍处于 disabled 而在 A4–A6 失败 per FR-011、FR-012 (partial)
+- [x] T043 让 A17 恢复 `status` 时使用回读原值而不是写死 `1`：进入 A17 时用 `GET /api/v1/admin/clients/{id}` 记录三个客户端的原始 `status`，结束时按原值写回并打印，避免把原本停用的客户端悄悄打开 per FR-012 (partial)
+- [x] T044 补齐 e2e 前置工具说明：`examples/README.md` 的前置行与 `contracts/e2e-examples-cli.md` 的前置条件列出 `preflight` 实际校验的 `curl`/`jq`（及端口检查用的 `lsof`），使干净机器上缺少依赖时用户能预判 `exit 2` 的原因 per FR-011、contracts/e2e-examples-cli.md 前置 (partial)
+
+### Phase 9 完成证据（2026-10-25）
+
+| 项 | 证据 |
+|---|---|
+| T042 | `cleanup` 首行改为 `restore_mutations`；trap 拆成 `EXIT`（清理）+ `INT`/`TERM`（清理后 `exit 130/143`，不再「清理完继续跑」）；A9/A17 的长等待改 `interruptible_sleep`（后台 `sleep` + `wait`），信号可立即生效。实测：A17 停用窗口内发 `SIGTERM` → **2s 内退出、exit=143**、端口全部释放，事后 `GET /clients/{id}` 三客户端仍为 `status=1 ttl=900`（即已按登记还原）。注：后台非交互 shell 里 `SIGINT` 按 POSIX 对异步子进程为 ignore、无法验证，故用 `SIGTERM` 覆盖同一条 trap 路径 |
+| T043 | A17 进入时用 `client_field` 回读 `accessTokenTtl` 与 `status` 并 `register_mutation`，结束按原值写回；日志 `已按原值恢复三个客户端：accessTokenTtl=go:900/java:900/python:900，status=go:1/java:1/python:1`（值来自回读，非硬编码） |
+| T044 | 契约「前置条件」第 4 条与 `examples/README.md` 前置行补齐 `curl`/`jq`/`lsof`，并说明缺项即 `exit 2` 且列出缺失项 |
+| 回归 | 2026-10-25 全量一轮 `PASS=18 FAIL=0`（161s），`A8 6/6`、`A17` 均 PASS，两份恢复日志均为回读值 |
+

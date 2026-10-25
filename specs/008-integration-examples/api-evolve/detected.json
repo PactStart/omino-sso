@@ -1,0 +1,10 @@
+{
+  "detected_at": "2026-10-24T12:40:21Z",
+  "contract_files": [
+    {
+      "path": "internal/api/docs/openapi.json",
+      "format": "openapi-3",
+      "note": "本特性按 FR-015 不改 IdP 契约；基线仅作为『零漂移』对照锚点"
+    }
+  ]
+}
