@@ -1200,6 +1200,9 @@ go run ./cmd/sso              # 同时启动 :8080(IdP) 与 :8081(API)
 
 等价于 `make dev`。单端口调试可分别设置 `HTTP_IDP_ADDR` / `HTTP_API_ADDR`。
 
+联调（改完 `.env` / `PORTAL_LOGIN_URL` 等变量后需要重启）用后台三件套：`make start`（编译到 `bin/sso` 后后台运行，pid 与日志在 `.tmp/sso.pid` / `.tmp/sso.log`）、`make stop`、`make restart`。
+环境变量随命令传入（如 `PORTAL_LOGIN_URL=http://localhost:5173/login make start`）；`make restart` 会先回收占用 `:8080/:8081` 的旧进程（含 `make dev` 的前台进程），避免端口占用导致新进程起不来。
+
 ### 8.3 前端
 
 ```bash

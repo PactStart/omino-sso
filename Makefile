@@ -24,13 +24,16 @@ BACKEND_IMAGE := $(REGISTRY)/omino-sso:$(IMAGE_TAG)
 PORTAL_IMAGE := $(REGISTRY)/omino-portal:$(IMAGE_TAG)
 ADMIN_IMAGE := $(REGISTRY)/omino-admin:$(IMAGE_TAG)
 
-.PHONY: help deps keys assets dev build test test-go test-web test-integration lint lint-go lint-web check check-registry check-docs-commands check-artifact-refs check-build-env verify-fast verify-full hooks-install ci-local build-web images image-backend image-portal image-admin image-push image-check nginx-check e2e docs docs-check docs-serve migrate-up migrate-down clean
+.PHONY: help deps keys assets dev start stop restart build test test-go test-web test-integration lint lint-go lint-web check check-registry check-docs-commands check-artifact-refs check-build-env verify-fast verify-full hooks-install ci-local build-web images image-backend image-portal image-admin image-push image-check nginx-check e2e docs docs-check docs-serve migrate-up migrate-down clean
 
 help:
 	@echo "deps        下载依赖 + 安装 git 钩子（pre-push）"
 	@echo "assets      校验运行时资源（邮件验证码模板）存在"
 	@echo "keys        生成开发用 RSA 签名密钥"
 	@echo "dev         启动服务（:8080 协议层 / :8081 管理 API）"
+	@echo "start       编译后后台启动服务（pid/日志在 .tmp/，环境变量随命令传入）"
+	@echo "stop        停止 start 拉起的服务（FORCE=1 可一并结束占用 :8080/:8081 的进程）"
+	@echo "restart     重新启动服务（先回收 :8080/:8081 旧进程，再后台启动）"
 	@echo "build       漂移检查 + 编译到 $(BIN)"
 	@echo "docs        从 handler 注解重新生成 $(OPENAPI_JSON)"
 	@echo "docs-check  校验已提交文档与注解是否一致（不一致则非零退出）"
@@ -74,6 +77,61 @@ assets:
 
 dev: assets
 	$(GO) run ./cmd/sso
+
+# ---------- 后台运行与重启（联调用） ----------
+# 与 `dev` 的差别：dev 用 `go run` 前台跑，Ctrl-C 结束；start 编译到 $(BIN) 后放后台，
+# pid / 日志落在 .tmp/（已 gitignore）。改了 .env 或 PORTAL_LOGIN_URL 这类变量后
+# `make restart` 即可让新配置生效，不必回终端翻旧进程。
+# 环境变量随命令传入，例：
+#   PORTAL_LOGIN_URL=http://localhost:5173/login make start
+RUN_PID := .tmp/sso.pid
+RUN_LOG := .tmp/sso.log
+# FORCE=1 时 stop 会一并结束占用 :8080/:8081 的进程（多为 make dev 的前台进程）
+FORCE ?= 0
+
+start: assets
+	@mkdir -p bin .tmp
+	$(GO) build -ldflags "-X $(DOCS_VERSION_PKG).Version=$(VERSION)" -o $(BIN) ./cmd/sso
+	@if [ -f $(RUN_PID) ] && kill -0 "$$(cat $(RUN_PID))" 2>/dev/null; then \
+		echo "已在运行（pid=$$(cat $(RUN_PID))）；如需重启：make restart"; exit 0; fi
+	@nohup ./$(BIN) >>$(RUN_LOG) 2>&1 & echo $$! >$(RUN_PID)
+	@for i in 1 2 3 4 5 6 7 8 9 10; do \
+		curl -fsS -o /dev/null http://127.0.0.1:8081/healthz 2>/dev/null && break; sleep 0.5; \
+	done
+	@if curl -fsS -o /dev/null http://127.0.0.1:8081/healthz 2>/dev/null; then \
+		echo "已启动 pid=$$(cat $(RUN_PID))（:8080 协议层 / :8081 管理 API），日志 $(RUN_LOG)"; \
+	else \
+		echo "pid=$$(cat $(RUN_PID)) 已拉起，但 :8081/healthz 5s 内未就绪；查日志：tail -50 $(RUN_LOG)"; \
+	fi
+
+# 只按 pid 文件停，不按端口乱杀；端口仍被占（典型是 `make dev` 的前台进程）时给出提示。
+# FORCE=1 只结束**监听** :8080/:8081 的进程（-sTCP:LISTEN）：不加这个过滤会连「连到该端口的
+# 浏览器标签页」一起 kill 掉（lsof -ti:8080 会把客户端 socket 也算进来）。
+stop:
+	@pid=""; [ -f $(RUN_PID) ] && pid="$$(cat $(RUN_PID))"; \
+	if [ -n "$$pid" ] && kill -0 "$$pid" 2>/dev/null; then \
+		kill "$$pid"; \
+		for i in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$$pid" 2>/dev/null || break; sleep 0.3; done; \
+		kill -0 "$$pid" 2>/dev/null && { echo "3s 未退出，强制结束 pid=$$pid"; kill -9 "$$pid"; }; \
+		echo "已停止 pid=$$pid"; \
+	else \
+		echo "未在运行（无 $(RUN_PID) 或该进程已退出）"; \
+	fi; \
+	rm -f $(RUN_PID); \
+	busy="$$(lsof -ti:8080 -ti:8081 -sTCP:LISTEN 2>/dev/null | tr '\n' ' ')"; \
+	if [ -n "$$busy" ]; then \
+		if [ "$(FORCE)" = "1" ]; then \
+			echo "FORCE=1：结束监听 :8080/:8081 的进程 $$busy"; \
+			kill $$busy 2>/dev/null || true; \
+		else \
+			echo "提示：:8080/:8081 仍被占用（pid $$busy，通常是 make dev 的前台进程）；强制结束用 make stop FORCE=1"; \
+		fi; \
+	fi
+
+# 重启：先回收 :8080/:8081 上的旧进程（否则新进程会因端口占用起不来），再后台启动。
+restart:
+	@$(MAKE) --no-print-directory stop FORCE=1
+	@$(MAKE) --no-print-directory start
 
 build: docs-check assets
 	@mkdir -p bin
