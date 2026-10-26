@@ -5,7 +5,7 @@ import { getCaptcha, login, resetPassword, sendCode, verifyMfa } from '@/api'
 import { errorCode, errorMessage } from '@/api/client'
 import { ADMIN_HOME } from '@/config'
 import { useSessionStore } from '@/stores/session'
-import { nextLabel, resolveNext } from '@/utils/redirect'
+import { appLabel, isSsoTarget, nextLabel, resolveNext } from '@/utils/redirect'
 import type { LoginType, VerifyChannel } from '@/api/types'
 
 type Step = 'credentials' | 'mfa' | 'forgot'
@@ -79,7 +79,14 @@ const activeMode = computed(() => modes.find((m) => m.value === loginType.value)
 
 // 四域下 admin 传来的 next 是绝对地址（跨域），站内相对路径同样支持；白名单外的目标丢弃（防开放重定向）。
 const nextTarget = computed(() => resolveNext(route.query.next))
-const nextText = computed(() => nextLabel(nextTarget.value))
+const nextText = computed(() => {
+  // 未登录 SSO 的回跳目标指向 IdP 登录入口，其 pathname 是 `/login`，展示给用户毫无意义；
+  // 改为展示统一身份下发的来源应用名（009，SC-008）。
+  if (isSsoTarget(nextTarget.value)) {
+    return appLabel(route.query.app) || '所访问的应用'
+  }
+  return nextLabel(nextTarget.value)
+})
 
 const subtitle = computed(() =>
   nextText.value ? `登录后返回 ${nextText.value}` : '登录后返回统一门户',

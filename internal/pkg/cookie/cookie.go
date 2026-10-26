@@ -38,14 +38,12 @@ func newSessionCookie(cfg *config.Config, value string, maxAge int) *http.Cookie
 		Domain:   cfg.CookieDomain,
 		HttpOnly: true,
 		Secure:   cfg.CookieSecure,
-		SameSite: sameSiteMode(cfg),
+		// SameSite 恒为 Lax，不再按配置分支（2026-10-25，009-portal-login-redirect）。
+		// 未登录 SSO 的跳转链是「接入方 → IdP → 门户 → IdP → 接入方」的跨站整页导航：
+		// Strict 不会在从第三方站点跳回时携带会话，表现为"刚登录又被要求登录"；
+		// None 需要彻底跨站 + Secure，本部署形态（同主域子域）用不上。
+		// 配置侧只接受 Lax（Strict/未知值启动失败），见 internal/config 的校验。
+		SameSite: http.SameSiteLaxMode,
 		MaxAge:   maxAge,
 	}
-}
-
-func sameSiteMode(cfg *config.Config) http.SameSite {
-	if cfg.CookieSameSite == "Strict" {
-		return http.SameSiteStrictMode
-	}
-	return http.SameSiteLaxMode
 }

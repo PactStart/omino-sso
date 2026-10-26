@@ -86,6 +86,8 @@ check_image() { # check_image <镜像> <角色> <本环境必含项...>
 		expect_present "$image" "$role" "$p"
 	done
 	expect_absent "$image" "$role" "admin.$FOREIGN_DOMAIN"
+	# 009：统一身份登录域也进产物（VITE_SSO_BASE_URL），串环境会让未登录 SSO 跳到另一套 IdP
+	expect_absent "$image" "$role" "sso.$FOREIGN_DOMAIN"
 	expect_absent "$image" "$role" "portal.$FOREIGN_DOMAIN"
 
 	if [[ -n "${EXPECT_SITE_NAME}" ]]; then
@@ -99,7 +101,7 @@ check_image() { # check_image <镜像> <角色> <本环境必含项...>
 # 各镜像真正会落进产物的入口（2026-10-24 实测）：
 #   portal 只用 VITE_ADMIN_HOME（「去后台」），故以 admin.<主域> 为锚点；
 #   admin 只用 VITE_PORTAL_HOME / VITE_PORTAL_LOGIN_URL（返回门户、会话失效回跳），故以 portal.<主域> 为锚点。
-[[ -n "${PORTAL_IMAGE}" ]] && check_image "$PORTAL_IMAGE" portal "admin.$EXPECT_DOMAIN"
+[[ -n "${PORTAL_IMAGE}" ]] && check_image "$PORTAL_IMAGE" portal "admin.$EXPECT_DOMAIN" "sso.$EXPECT_DOMAIN"
 [[ -n "${ADMIN_IMAGE}" ]] && check_image "$ADMIN_IMAGE" admin "portal.$EXPECT_DOMAIN"
 
 if [[ "$fails" -eq 0 ]]; then

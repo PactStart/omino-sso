@@ -24,3 +24,18 @@ export const ADMIN_HOME: string =
   env.VITE_ADMIN_HOME || (IS_DEV ? 'http://localhost:5174/' : '/')
 
 export const SITE_NAME: string = env.VITE_SITE_NAME || '统一身份认证'
+
+/**
+ * 统一身份（IdP）登录域，形如 `https://sso.example.com`（009-portal-login-redirect）。
+ *
+ * 两个用途：
+ *   1. 回跳白名单：未登录 SSO 时 IdP 把浏览器送到本页（`?next=<sso>/login?id=…&portal=1`），
+ *      登录成功后必须能整页跳回该地址；不在白名单会被 `resolveNext` 丢弃，
+ *      表现为"登录成功却停在门户首页"。
+ *   2. 文案判定：`next` 指向 IdP 时显示「登录后返回 <应用名>」，而不是 `/login` 这类技术路径。
+ *
+ * dev 缺省 `http://localhost:8080`；test/prod 由构建参数 `VITE_SSO_BASE_URL` 注入，
+ * 且 `web/Dockerfile` 的 portal target 对其做构建期强制（缺失即构建失败）。
+ */
+export const SSO_BASE_URL: string =
+  env.VITE_SSO_BASE_URL || (IS_DEV ? 'http://localhost:8080' : '')

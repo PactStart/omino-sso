@@ -220,3 +220,52 @@ admin::verify_login() {
   fi
   return 0
 }
+
+# ---- 审计查询（009 T018：断言「凭既有会话完成授权」写进了审计，且能在管理端查到）----
+
+# admin::audit_count <eventType> [clientId] —— 该条件的审计条数（分页 total）；失败输出空。
+admin::audit_count() {
+  local et=$1 cid=${2:-} url
+  url="$ad_base/api/v1/admin/audit-logs?page=1&pageSize=1&eventType=$et"
+  [[ -n "$cid" ]] && url="$url&clientId=$cid"
+  curl -s --max-time "$ad_timeout" -b "$ad_cookie" "$url" 2>/dev/null \
+    | jq -r '.data.total // empty' 2>/dev/null
+}
+
+# admin::audit_latest <eventType> [clientId] —— 最新一条输出 "<clientId>\t<detail 原样 JSON 字符串>"。
+admin::audit_latest() {
+  local et=$1 cid=${2:-} url
+  url="$ad_base/api/v1/admin/audit-logs?page=1&pageSize=1&eventType=$et"
+  [[ -n "$cid" ]] && url="$url&clientId=$cid"
+  curl -s --max-time "$ad_timeout" -b "$ad_cookie" "$url" 2>/dev/null \
+    | jq -r '.data.list[0] | "\(.clientId // "")\t\(.detail // "")"' 2>/dev/null
+}
+
+# admin::audit_wait_increment <eventType> <clientId> <before> [秒]
+# 审计是异步落库的（Auditor 走 channel），所以这里轮询到条数变成 before+1，
+# 输出最终条数；超时也输出实测值（调用方据此判 FAIL 并打实际值）。
+admin::audit_wait_increment() {
+  local et=$1 cid=$2 before=$3 limit=${4:-5} i=0 now=""
+  while (( i < limit )); do
+    now=$(admin::audit_count "$et" "$cid")
+    [[ -n "$now" && "$now" != "$before" ]] && { printf '%s' "$now"; return 0; }
+    sleep 1
+    i=$((i + 1))
+  done
+  printf '%s' "$now"
+  return 1
+}
+
+# admin::audit_wait_total <eventType> <clientId> <期望总数> [秒]
+# 轮询到条数等于期望值；超时输出实测值并返回 1（审计消费者是异步的，批量写会滞后）。
+admin::audit_wait_total() {
+  local et=$1 cid=$2 want=$3 limit=${4:-10} i=0 now=""
+  while (( i < limit )); do
+    now=$(admin::audit_count "$et" "$cid")
+    [[ "$now" == "$want" ]] && { printf '%s' "$now"; return 0; }
+    sleep 1
+    i=$((i + 1))
+  done
+  printf '%s' "$now"
+  return 1
+}

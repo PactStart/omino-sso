@@ -19,6 +19,7 @@ SITE_NAME ?= 统一身份认证
 ADMIN_HOME ?= $(if $(DOMAIN),https://admin.$(DOMAIN)/)
 PORTAL_HOME ?= $(if $(DOMAIN),https://portal.$(DOMAIN)/account/profile)
 PORTAL_LOGIN_URL ?= $(if $(DOMAIN),https://portal.$(DOMAIN)/login)
+SSO_BASE_URL ?= $(if $(DOMAIN),https://sso.$(DOMAIN))
 BACKEND_IMAGE := $(REGISTRY)/omino-sso:$(IMAGE_TAG)
 PORTAL_IMAGE := $(REGISTRY)/omino-portal:$(IMAGE_TAG)
 ADMIN_IMAGE := $(REGISTRY)/omino-admin:$(IMAGE_TAG)
@@ -248,6 +249,7 @@ image-portal:
 		--build-arg VITE_ADMIN_HOME=$(ADMIN_HOME) \
 		--build-arg VITE_PORTAL_HOME=$(PORTAL_HOME) \
 		--build-arg VITE_PORTAL_LOGIN_URL=$(PORTAL_LOGIN_URL) \
+		--build-arg VITE_SSO_BASE_URL=$(SSO_BASE_URL) \
 		--build-arg VITE_SITE_NAME="$(SITE_NAME)" \
 		-t $(PORTAL_IMAGE) ./web
 

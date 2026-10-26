@@ -65,3 +65,50 @@ describe('回跳目标解析（四域 next 白名单）', () => {
     expect(nextLabel(null)).toBe('')
   })
 })
+
+describe('统一身份登录域（009）', () => {
+  it('信任 VITE_SSO_BASE_URL 的 origin：IdP 登录入口的回跳才放行', async () => {
+    vi.stubEnv('VITE_SSO_BASE_URL', 'https://sso.example.com')
+    vi.resetModules()
+    const mod = await import('./redirect')
+
+    const target = mod.resolveNext('https://sso.example.com/login?id=01ABC&portal=1')
+    expect(target).toEqual({
+      kind: 'absolute',
+      url: 'https://sso.example.com/login?id=01ABC&portal=1',
+    })
+    // 白名单外仍然拒绝
+    expect(mod.resolveNext('https://evil.example.com/login?id=01ABC')).toBeNull()
+
+    vi.unstubAllEnvs()
+    vi.resetModules()
+  })
+
+  it('isSsoTarget 只对 IdP origin 为真（用于切换副标题文案）', async () => {
+    vi.stubEnv('VITE_SSO_BASE_URL', 'https://sso.example.com')
+    vi.resetModules()
+    const mod = await import('./redirect')
+
+    expect(
+      mod.isSsoTarget({ kind: 'absolute', url: 'https://sso.example.com/login?id=01ABC&portal=1' }),
+    ).toBe(true)
+    expect(mod.isSsoTarget({ kind: 'relative', path: '/account/profile' })).toBe(false)
+    expect(mod.isSsoTarget({ kind: 'absolute', url: 'https://admin.example.com/users' })).toBe(false)
+    expect(mod.isSsoTarget(null)).toBe(false)
+
+    vi.unstubAllEnvs()
+    vi.resetModules()
+  })
+
+  it('appLabel 清洗来源应用名：去控制字符、超长截断、非法回空', () => {
+    vi.resetModules()
+    return import('./redirect').then(({ appLabel }) => {
+      expect(appLabel('合规平台')).toBe('合规平台')
+      expect(appLabel('  ') ).toBe('')
+      expect(appLabel(undefined)).toBe('')
+      expect(appLabel(['x'])).toBe('')
+      expect(appLabel('CRM\u0000\u001F')).toBe('CRM')
+      expect(appLabel('a'.repeat(80))).toHaveLength(65) // 64 + 省略号
+    })
+  })
+})

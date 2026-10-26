@@ -1,4 +1,4 @@
-import { ADMIN_HOME } from '@/config'
+import { ADMIN_HOME, SSO_BASE_URL } from '@/config'
 
 /**
  * 登录后的回跳目标。
@@ -10,7 +10,17 @@ export type NextTarget =
   | { kind: 'relative'; path: string }
   | { kind: 'absolute'; url: string }
 
-/** 允许回跳的 origin：门户自身 + 管理后台（`VITE_ADMIN_HOME` 的 origin）。 */
+/** 统一身份登录域的 origin；未配置或非法时返回 null（不加入白名单）。 */
+function ssoOrigin(): string | null {
+  if (!SSO_BASE_URL) return null
+  try {
+    return new URL(SSO_BASE_URL).origin
+  } catch {
+    return null
+  }
+}
+
+/** 允许回跳的 origin：门户自身 + 管理后台（`VITE_ADMIN_HOME`）+ 统一身份登录域（`VITE_SSO_BASE_URL`）。 */
 function allowedOrigins(): string[] {
   const origins = [window.location.origin]
   try {
@@ -18,7 +28,38 @@ function allowedOrigins(): string[] {
   } catch {
     // 配置非法时只信任自身 origin
   }
+  const sso = ssoOrigin()
+  if (sso && !origins.includes(sso)) origins.push(sso)
   return origins
+}
+
+/**
+ * 目标是否指向统一身份登录入口（未登录 SSO 的回跳）。
+ *
+ * 只用于文案：指向 IdP 时不展示 `/login` 这类技术路径，改为展示来源应用名。
+ */
+export function isSsoTarget(target: NextTarget | null): boolean {
+  if (!target || target.kind !== 'absolute') return false
+  const sso = ssoOrigin()
+  if (!sso) return false
+  try {
+    return new URL(target.url).origin === sso
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 来源应用名（IdP 下发的 `?app=`）。
+ *
+ * 仅作文本展示：去控制字符、超长截断；空/非法一律返回空串（调用方回落固定文案）。
+ * 绝不参与跳转决策，也不拼进任何 URL 或 HTML 属性。
+ */
+export function appLabel(raw: unknown): string {
+  if (typeof raw !== 'string') return ''
+  const cleaned = raw.replace(/[\u0000-\u001F\u007F]/g, '').trim()
+  if (cleaned === '') return ''
+  return cleaned.length > 64 ? `${cleaned.slice(0, 64)}…` : cleaned
 }
 
 /**

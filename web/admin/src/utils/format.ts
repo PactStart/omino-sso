@@ -45,6 +45,7 @@ export const EVENT_LABEL: Record<string, string> = {
   mfa_success: 'MFA 成功',
   mfa_failure: 'MFA 失败',
   logout: '登出',
+  sso_login_success: 'SSO 快捷登录',
   password_changed: '修改密码',
   token_issued: '令牌签发',
   token_revoked: '令牌撤销',

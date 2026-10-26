@@ -34,6 +34,8 @@ flowchart LR
 | `api.example.com` | **仅**前端 nginx（公网不可达） | `/api/v1/*` 管理 API | `sso:8081` |
 | `sso.example.com` | 接入方（SP）+ 浏览器授权跳转 | `/oauth2/*`、`/.well-known/*`、`/login`、`/logout`、`/logged-out` | `sso:8080` |
 
+> **未登录 SSO 的两段落点（2026-10-25，009）**：浏览器在 `sso` 域发起授权，IdP 认不出会话时把浏览器 302 到 **`portal` 域**的 `PORTAL_LOGIN_URL`；用户在门户登录成功后回到 `sso` 域 `/login?id=…&portal=1` 完成授权，再由 IdP 302 回接入方。也就是说**员工正常看到的登录页属于 `portal` 域**，`sso` 域的 `/login` 只在"未配置门户地址"或"循环防护降级"时出现（内置 HTML 页，长期保留）。
+
 **关键约定**
 
 - 浏览器只访问 `portal`/`admin`/`sso` 三个 HTTPS 域名；`api` 域与容器端口 `8080/8081` 都不对公网开放。
@@ -112,7 +114,8 @@ flowchart LR
 | `OIDC_CRYPTO_KEY` | 32 字节密钥（原始字符或 base64） | 由密钥管理注入 |
 | `COOKIE_DOMAIN` | **必须是主域（`.example.com`）**，且必须是显式的 Domain 属性：cookie 由前端域写入、需被 `portal`/`admin`/`sso` 三域共同读取，host-only 会让 SSO 失效 | `.example.com` |
 | `COOKIE_SECURE` | 生产必须 `true` | `true` |
-| `COOKIE_SAME_SITE` | 同站子域用 `Lax`（不需要 `None`；本项目无跨源 XHR） | `Lax` |
+| `COOKIE_SAME_SITE` | **只接受 `Lax`**（大小写不敏感，空视为 `Lax`）。`Strict` 或其它取值会**启动失败**：跨站整页跳转链（接入方 → IdP → 门户 → IdP）上 `Strict` 不携带会话，表现为"刚登录又被要求登录" | `Lax` |
+| `PORTAL_LOGIN_URL` | 未登录 OIDC 授权的门户登录页地址（绝对 URL）。**`prod` 必填**，缺失即启动失败；`test` 可空但非空必须 `https`；`dev` 允许 `http`。留空 = 回落 IdP 内置登录页（仅 dev/test 的回滚手段） | `https://portal.example.com/login` |
 | `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` | 云 MySQL（VPC 内网） | `rm-xxx.mysql.rds.aliyuncs.com:3306` |
 | `DB_MAX_OPEN_CONNS` / `DB_MAX_IDLE_CONNS` / `DB_CONN_MAX_LIFETIME` | 连接池（按云实例规格调整） | `25 / 10 / 30m` |
 | `REDIS_ADDR` / `REDIS_PASSWORD` / `REDIS_DB` | 云 Redis（内网、无 TLS） | `r-xxx.redis.rds.aliyuncs.com:6379` |
@@ -131,9 +134,12 @@ flowchart LR
 | `VITE_ADMIN_HOME` | 门户登录后跳转的后台地址（admin 根路径） | `https://admin.test.example.com/` | `https://admin.example.com/` |
 | `VITE_PORTAL_HOME` | 后台会话失效时「返回门户」地址 | `https://portal.test.example.com/account/profile` | `https://portal.example.com/account/profile` |
 | `VITE_PORTAL_LOGIN_URL` | 后台未登录时跳转的登录页 | `https://portal.test.example.com/login` | `https://portal.example.com/login` |
+| `VITE_SSO_BASE_URL` | **门户登录页信任的回跳源（IdP 登录域）**，形如 `https://sso.example.com`。未登录 SSO 被 IdP 送到门户登录页后，登录成功需整页跳回 `sso` 域的 `/login?id=…&portal=1`；不在白名单内会被丢弃（用户登录成功却停在门户首页）。`web/Dockerfile` 的 portal target 对其**构建期强制**，缺则构建失败 | `https://sso.test.example.com` | `https://sso.example.com` |
 | `VITE_SITE_NAME` | 站点名 | `统一身份认证（测试）` | `统一身份认证` |
 
-> 归属关系：`VITE_ADMIN_HOME` 只被 **portal** 使用；`VITE_PORTAL_HOME` / `VITE_PORTAL_LOGIN_URL` 被 **admin**（回跳门户）与 portal 自身使用。缺省值只适用于本地开发，跨域名部署必须显式设置后三项。
+> 归属关系：`VITE_ADMIN_HOME` 只被 **portal** 使用；`VITE_PORTAL_HOME` / `VITE_PORTAL_LOGIN_URL` / `VITE_SSO_BASE_URL` 被 **admin**（回跳门户）与 portal 自身使用。缺省值只适用于本地开发，跨域名部署必须显式设置后四项。
+
+> **成对配置（009）**：后端 `PORTAL_LOGIN_URL` 与门户 `VITE_SSO_BASE_URL` 是同一件事的两端（"IdP 往门户送 / 门户往 IdP 回"），**必须成对设置**。只设后端 → 门户丢弃回跳；只设前端 → 无影响（后端不跳）。
 
 > 只有 `api` 域的反代目标随环境变（`API_UPSTREAM`），这个不是前端构建参数，见 §1.1 与 §5。
 
@@ -345,17 +351,27 @@ cd web/admin  && npm run dev  # 后台 5174，同上
 3. `docker compose ... up -d` 替换容器（单副本，短暂停机）。
 4. 跑第 9 节验收清单。
 
+**首次启用门户登录跳转（009）——必须按序，反序会让全员"登录成功却进不去任何系统"**
+
+1. 先发 **portal** 镜像（含 `VITE_SSO_BASE_URL`；缺该参数会构建失败，不会产出坏镜像）；
+2. 在 `/etc/omino-sso/{test,prod}.env` 填入 `PORTAL_LOGIN_URL`（prod 缺失会让新容器启动即退出）；
+3. 再滚动**后端**镜像。
+
+旧门户（白名单无 sso 域）× 已开跳转的后端 = **禁止上线**的组合：用户在门户登录成功，回跳被门户丢弃，停在门户首页。
+
 **回滚**
 
 1. 代码回滚用**旧 tag** 重新 `up -d`（镜像留旧 tag 是硬要求）；目标：**三容器 5 分钟内恢复 healthy 且 admin 可登录**（SC-008）。
 2. 数据回滚仅在必须时进行：停服 → 恢复备份 → 起旧镜像；数据库结构回退优先用 `*.down.sql`，并确认无数据依赖。
+3. **门户跳转的回滚**：`test`/`dev` 清空 `PORTAL_LOGIN_URL` 重启即回到内置登录页；`prod` 因该变量必填，只能**回退版本**，且回退时**保留**变量（清空会启动失败）。
 
 **触发回滚的判定条件**（发布后 15 分钟内出现任一即回滚，不临时讨论）：
 
 - `https://sso.<主域>/healthz` 连续 2 分钟非 200，或三容器中任一处于 `unhealthy`；
 - 登录接口 5xx 比例 > 1%（以入口 nginx access log 计）；
 - 门户/后台出现"登录成功但立即 401"（多为 cookie/SameSite 回归）；
-- 审计日志出现 `audit_events.ip` 全为容器网段（多为 `TRUSTED_PROXIES` 漏配）。
+- 审计日志出现 `audit_events.ip` 全为容器网段（多为 `TRUSTED_PROXIES` 漏配）；
+- 未登录用户点开接入应用后**停在门户首页**或回不到应用（多为 `VITE_SSO_BASE_URL` 漏配、或旧 portal × 已开跳转，见第 8 节发布顺序）。
 
 ---
 
@@ -407,6 +423,7 @@ cd web/admin  && npm run dev  # 后台 5174，同上
 - [ ] 数据库账号最小权限；Redis 密码 + 白名单
 - [ ] `APP_ENV=prod` 且短信/邮件非 mock；`/docs` 在 prod 自动 404（已具备）
 - [ ] nginx 限制请求体大小与超时，隐藏版本号
+- [ ] **未登录 SSO 落到门户登录页（009）**：清空 cookie 访问任一接入方 → 落在 `PORTAL_LOGIN_URL`、副标题显示来源应用名 → 登录后自动回到接入方；再清空 cookie 手工访问 `https://sso.<主域>/login?id=<id>&portal=1` → 展示内置登录页（不再次跳门户）
 - [ ] 密钥轮换有记录；`OIDC_CRYPTO_KEY` 不随意更换
 
 ---
@@ -426,6 +443,11 @@ cd web/admin  && npm run dev  # 后台 5174，同上
 | 审计里 IP 都是 127.0.0.1/内网 | 同上；确认反代与 `TRUSTED_PROXIES` |
 | 上传 Logo/头像失败 | ① OSS 配置四项是否齐全 ② STS AssumeRole 角色与权限 ③ bucket CORS/跨域设置 |
 | 启动即退出并提示缺失变量 | 按日志补齐 `OIDC_ISSUER`/`COOKIE_*`/`DB_*`/`REDIS_*`；生产检查是否误用 mock 通道 |
+| 启动失败提示 `PORTAL_LOGIN_URL is required in prod` / `must use https in test` / `must be an absolute URL` | 按提示修 `PORTAL_LOGIN_URL`：prod 必填、test/prod 必须 https 绝对地址（含 scheme 与 host，不带 fragment） |
+| 启动失败提示 `COOKIE_SAME_SITE=Strict is not allowed` | 改回 `Lax`（或删除该变量）。`Strict` 会让跨站跳转链丢会话，属于禁止配置 |
+| 未登录点应用 → 门户登录成功 → **停在门户首页 / 回不到应用** | ① portal 镜像是否带 `VITE_SSO_BASE_URL`（`docker exec <portal> grep -ro 'sso\.[a-z0-9.]*' /usr/share/nginx/html \| head`，或跑 `scripts/check-build-env.sh`）② 门户 `allowedOrigins()` 是否含 sso 域 ③ `PORTAL_LOGIN_URL` 与 `VITE_SSO_BASE_URL` 是否指向同一环境 ④ 是否旧 portal × 已开跳转（见第 8 节） |
+| 回跳 sso 域后提示"登录请求已过期，请重新发起授权" | ① `COOKIE_DOMAIN` 是否为主域、`COOKIE_SECURE` 与实际协议是否匹配、`COOKIE_SAME_SITE` 是否 `Lax`（回跳丢了会话）② 用户是否在门户停留超过授权请求有效期（10 分钟，含找回密码/MFA）③ 是否多副本且 LB 无粘性（本特性要求单副本或会话粘性） |
+| 门户登录页副标题显示"登录后返回 /login" | portal 镜像过旧（未包含 009 的应用名展示）；重建 portal 并确认 `VITE_SSO_BASE_URL` 已注入 |
 | `/readyz` 不通过 | 依次 `mysqladmin ping`、`redis-cli -a ... ping`、检查安全组/白名单 |
 | 后台刷新 404 | nginx 缺少 SPA fallback（`try_files $uri /index.html`） |
 | 前端容器反复重启、日志提示 `host not found in upstream` | nginx 在**启动时**解析 `proxy_pass` 主机名：确认 `api` 域在本机能解析（容器内 `getent hosts api.example.com`）、后端已 healthy，并检查 `depends_on`/`restart` 策略 |

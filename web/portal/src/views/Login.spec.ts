@@ -372,3 +372,33 @@ describe('Login 登录后回跳（FR-009 / plan D4）', () => {
     expect(replaceMock).toHaveBeenCalledWith('/account/profile')
   })
 })
+
+describe('SSO 落点副标题（009）', () => {
+  it('next 指向统一身份登录域时显示来源应用名，且不暴露技术路径', async () => {
+    vi.resetModules()
+    const { default: LoginFresh } = await import('./Login.vue')
+    routeQuery.next = 'http://localhost:8080/login?id=01ABC&portal=1'
+    routeQuery.app = '合规平台'
+
+    const wrapper = mount(LoginFresh)
+    const text = wrapper.text()
+    expect(text).toContain('登录后返回 合规平台')
+    expect(text).not.toContain('/login')
+
+    delete routeQuery.next
+    delete routeQuery.app
+  })
+
+  it('app 缺失时回落固定文案，同样不展示 /login', async () => {
+    vi.resetModules()
+    const { default: LoginFresh } = await import('./Login.vue')
+    routeQuery.next = 'http://localhost:8080/login?id=01ABC&portal=1'
+
+    const wrapper = mount(LoginFresh)
+    const text = wrapper.text()
+    expect(text).toContain('登录后返回 所访问的应用')
+    expect(text).not.toContain('/login')
+
+    delete routeQuery.next
+  })
+})

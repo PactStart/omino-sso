@@ -185,17 +185,20 @@ func TestValidateNotification_ResendIntervalMustBeLessThanTTL(t *testing.T) {
 		t.Fatalf("重发间隔不小于有效期应校验失败，实际 %v", err)
 	}
 }
+
 // ---------------------------------------------------------------------------
 // 007-deployment：可信代理与 prod cookie 域校验（tasks.md T006）
 // ---------------------------------------------------------------------------
 
-// validProdConfig 在通用基线上补齐 prod 的三条硬要求（https issuer / Secure cookie / 主域 cookie）。
+// validProdConfig 在通用基线上补齐 prod 的硬要求（https issuer / Secure cookie / 主域 cookie / 门户落点）。
 func validProdConfig() *Config {
 	c := validBaseConfig()
 	c.AppEnv = "prod"
 	c.Issuer = "https://sso.example.com"
 	c.CookieSecure = true
 	c.CookieDomain = ".example.com"
+	// 009：prod 必填，缺失会在更早的 PORTAL_LOGIN_URL 校验里失败，干扰本组用例的意图。
+	c.PortalLoginURL = "https://portal.example.com/login"
 	return c
 }
 
@@ -302,6 +305,67 @@ func TestTrustedProxyCIDRs(t *testing.T) {
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("got[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// COOKIE_SAME_SITE 白名单（009）：只允许 Lax（大小写不敏感、空视为 Lax）。
+func TestValidateCookieSameSite(t *testing.T) {
+	ok := []string{"", "Lax", "lax", "LAX", "  lax  "}
+	for _, v := range ok {
+		if err := validateCookieSameSite(v); err != nil {
+			t.Fatalf("%q should be accepted, got %v", v, err)
+		}
+	}
+	bad := []string{"Strict", "strict", "None", "laxx"}
+	for _, v := range bad {
+		err := validateCookieSameSite(v)
+		if err == nil {
+			t.Fatalf("%q should be rejected", v)
+		}
+		if !strings.Contains(err.Error(), "COOKIE_SAME_SITE") {
+			t.Fatalf("%q error must name the variable, got %v", v, err)
+		}
+	}
+}
+
+// PORTAL_LOGIN_URL 校验矩阵（009，contracts/config-and-env.md §3）。
+func TestValidatePortalLoginURL(t *testing.T) {
+	cases := []struct {
+		env     string
+		raw     string
+		wantErr bool
+	}{
+		// 必填性
+		{"dev", "", false},
+		{"test", "", false},
+		{"prod", "", true},
+		{"dev", "   ", false},
+		{"prod", "   ", true},
+		// 协议
+		{"dev", "http://localhost:5173/login", false},
+		{"test", "http://portal.test.example.com/login", true},
+		{"prod", "http://portal.example.com/login", true},
+		{"dev", "https://portal.example.com/login", false},
+		{"test", "https://portal.test.example.com/login", false},
+		{"prod", "https://portal.example.com/login", false},
+		// 格式
+		{"dev", "portal.example.com/login", true},
+		{"dev", "https:///login", true},
+		{"dev", "https://portal.example.com/login#frag", true},
+		{"dev", "ftp://portal.example.com/login", true},
+		{"prod", "portal.example.com/login", true},
+	}
+	for _, c := range cases {
+		err := validatePortalLoginURL(c.env, c.raw)
+		if c.wantErr && err == nil {
+			t.Fatalf("env=%s url=%q should be rejected", c.env, c.raw)
+		}
+		if !c.wantErr && err != nil {
+			t.Fatalf("env=%s url=%q should be accepted, got %v", c.env, c.raw, err)
+		}
+		if err != nil && !strings.Contains(err.Error(), "PORTAL_LOGIN_URL") {
+			t.Fatalf("env=%s url=%q error must name the variable, got %v", c.env, c.raw, err)
 		}
 	}
 }
