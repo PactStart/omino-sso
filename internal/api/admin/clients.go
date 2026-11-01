@@ -66,6 +66,8 @@ type CreateClientRequest struct {
 	ClientName   string   `json:"clientName" binding:"required,min=1,max=128" example:"统一门户"`
 	Description  string   `json:"description" binding:"omitempty,max=255" example:"员工自助门户"`
 	LogoURL      string   `json:"logoUrl" binding:"omitempty,url,max=512" example:"https://cdn.example.com/logo/portal.png"`
+	// HomeURL 应用首页地址，必填：门户「我的应用」入口按钮用它跳转（011）。
+	HomeURL      string   `json:"homeUrl" binding:"required,url,max=512" example:"https://portal.example.com"`
 	RedirectURIs []string `json:"redirectUris" binding:"required,min=1,dive,url" example:"https://portal.example.com/callback"`
 	GrantTypes   []string `json:"grantTypes" example:"authorization_code,refresh_token"`
 	Scopes       []string `json:"scopes" example:"openid,profile,email"`
@@ -78,7 +80,7 @@ type CreateClientRequest struct {
 // clientSecret 仅此一次返回，不落日志。
 //
 // @Summary      注册应用
-// @Description  注册 OAuth 客户端并返回生成的 clientId。**clientSecret 仅此一次返回**（不落日志、不可再查，丢失只能轮换）；公开客户端（isPublic=true）的 clientSecret 恒为 null。写入 client_created 审计事件。
+// @Description  注册 OAuth 客户端并返回生成的 clientId。**homeUrl（首页地址）必填**，作为门户「我的应用」的入口。**clientSecret 仅此一次返回**（不落日志、不可再查，丢失只能轮换）；公开客户端（isPublic=true）的 clientSecret 恒为 null。写入 client_created 审计事件。
 // @Tags         应用管理
 // @Accept       json
 // @Produce      json
@@ -103,6 +105,7 @@ func (h *Handler) CreateClient(c *gin.Context) {
 		ClientName:   req.ClientName,
 		Description:  req.Description,
 		LogoURL:      req.LogoURL,
+		HomeURL:      req.HomeURL,
 		RedirectURIs: req.RedirectURIs,
 		GrantTypes:   req.GrantTypes,
 		Scopes:       req.Scopes,

@@ -20,6 +20,7 @@ const detail: AppDetail = {
   clientName: '验收应用',
   description: '内部验收用',
   logoUrl: 'https://cdn.example.com/logo/demo.png',
+  homeUrl: 'https://demo.example.com',
   redirectUris: ['https://demo.example.com/cb'],
   postLogoutUris: ['https://demo.example.com/signed-out'],
   grantTypes: ['authorization_code', 'refresh_token'],
@@ -76,7 +77,7 @@ describe('门户 · 应用信息页（006 口径调整）', () => {
     expect(wrapper.find('.el-input-number').exists()).toBe(false)
   })
 
-  it('保存只提交白名单四字段 + 版本号', async () => {
+  it('保存只提交白名单五字段 + 版本号', async () => {
     const wrapper = await mountOverview()
 
     await findButton(wrapper, '保存').trigger('click')
@@ -89,6 +90,7 @@ describe('门户 · 应用信息页（006 口径调整）', () => {
       clientName: '验收应用',
       description: '内部验收用',
       logoUrl: 'https://cdn.example.com/logo/demo.png',
+      homeUrl: 'https://demo.example.com',
       redirectUris: ['https://demo.example.com/cb'],
       updatedAt: detail.updatedAt,
     })
@@ -138,6 +140,22 @@ describe('门户 · 应用信息页（006 口径调整）', () => {
     expect(wrapper.text()).toContain('已被他人修改，请刷新后重试')
     expect(mocks.getAppDetail).toHaveBeenCalledTimes(2)
     expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('内部验收用')
+  })
+
+  it('首页地址为必填：清空后拦截保存并提示', async () => {
+    const wrapper = await mountOverview()
+
+    // 首页地址输入框是第 3 个 text input（名称 / Logo / 首页地址 / 回调地址）
+    const inputs = wrapper.findAll('input[type="text"]')
+    const homeInput = inputs.find((i) => (i.element as HTMLInputElement).value === detail.homeUrl)
+    if (!homeInput) throw new Error('未找到首页地址输入框')
+    await homeInput.setValue('')
+
+    await findButton(wrapper, '保存').trigger('click')
+    await flushPromises()
+
+    expect(mocks.updateAppBasicInfo).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('请填写首页地址')
   })
 
   it('回调地址为空时拦截保存并提示', async () => {

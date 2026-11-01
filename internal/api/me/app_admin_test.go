@@ -52,7 +52,7 @@ func TestAppAdminWrappersPresent(t *testing.T) {
 	}
 }
 
-// TestAppUpdateClientRequestIsWhitelisted 固化「门户只改名称/描述/Logo/回调地址」：
+// TestAppUpdateClientRequestIsWhitelisted 固化「门户只改名称/描述/Logo/首页地址/回调地址」：
 // 请求结构体一旦出现 status / postLogoutUris / accessTokenTtl / refreshTokenTtl 等字段，
 // 本测试立即失败，避免日后顺手把 admin 的 8 字段口径复制回来。
 func TestAppUpdateClientRequestIsWhitelisted(t *testing.T) {
@@ -60,6 +60,7 @@ func TestAppUpdateClientRequestIsWhitelisted(t *testing.T) {
 		"clientName":   true,
 		"description":  true,
 		"logoUrl":      true,
+		"homeUrl":      true,
 		"redirectUris": true,
 		"updatedAt":    true,
 	}

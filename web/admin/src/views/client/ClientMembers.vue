@@ -1,21 +1,23 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, inject, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { ElTable } from 'element-plus'
 import {
   addAppMembers,
-  addAppMembersByDept,
+  addOrgGrants,
   getOrgTree,
   listAppMemberIds,
   listAppMembers,
   listCandidateIds,
   listMemberCandidates,
+  listOrgGrants,
   removeAppMembers,
+  removeOrgGrants,
   setAppMemberAdmin,
 } from '@/api'
 import { errorMessage } from '@/api/client'
-import type { AppCandidate, AppMember, OrgNode } from '@/api/types'
+import type { AppCandidate, AppMember, OrgGrant, OrgGrantHint, OrgGrantRef, OrgNode } from '@/api/types'
 import { formatTime, orDash } from '@/utils/format'
 import { reloadClientSummaryKey } from './detail-context'
 
@@ -25,16 +27,23 @@ const CHUNK = 500
 const route = useRoute()
 const clientId = computed(() => String(route.params.clientId ?? ''))
 
-/* ---------------- 组织树（筛选与按部门加入共用） ---------------- */
+/* ---------------- 组织树（筛选与组织授权共用） ---------------- */
 
 const orgTree = ref<OrgNode[]>([])
+const orgTreeError = ref('')
 const orgProps = { label: 'name', children: 'children' } as const
 
+/**
+ * 组织树读取失败必须显式提示（010 FR-022）：静默降级成空树会让管理员
+ * 误以为「部门不存在」，从而反复重试或改错配置。
+ */
 async function loadOrgTree() {
+  orgTreeError.value = ''
   try {
     orgTree.value = await getOrgTree()
-  } catch {
+  } catch (e) {
     orgTree.value = []
+    orgTreeError.value = errorMessage(e)
   }
 }
 
@@ -46,6 +55,13 @@ const page = ref(1)
 const pageSize = ref(20)
 const loading = ref(true)
 const listError = ref('')
+/** 实际可见人数（手动成员 ∪ 组织授权覆盖，去重）；仅首屏返回，取不到时为 null 显示「—」 */
+const visibleTotal = ref<number | null>(null)
+/** 存量迁移提示（FR-031）：只读，不下发任何写操作 */
+const grantHints = ref<OrgGrantHint[]>([])
+const hintsDismissed = ref<string[]>([])
+
+const activeHints = computed(() => grantHints.value.filter((h) => !hintsDismissed.value.includes(h.orgId)))
 
 const filters = reactive({ keyword: '', deptId: '' })
 
@@ -70,6 +86,11 @@ async function loadMembers() {
     })
     members.value = data.list
     total.value = data.total
+    // 可见总人数与迁移提示只在首屏计算（全表聚合，critique E9）；翻页沿用首屏值。
+    if (page.value <= 1) {
+      visibleTotal.value = data.visibleTotal ?? null
+      grantHints.value = data.orgGrantHints ?? []
+    }
     await syncSelectionToTable()
   } catch (e) {
     listError.value = errorMessage(e)
@@ -192,9 +213,19 @@ async function removeSelected() {
     ? `并解除其在本应用的 ${knownRoleBindings} 项角色绑定`
     : '并解除其在本应用的全部角色绑定'
 
+  // FR-017：移除只解除手动成员关系。仍被组织授权覆盖的人不会失去访问权，
+  // 必须在确认框里说清楚，否则管理员会误以为「移除了这个人」。
+  const covered = members.value.filter(
+    (m) => selectedIds.value.includes(m.userId) && (m.orgGrants?.length ?? 0) > 0,
+  )
+  const coveredGrantCount = new Set(covered.flatMap((m) => m.orgGrants.map((g) => g.orgId))).size
+  const grantText = covered.length
+    ? `；其中 ${covered.length} 人仍可通过 ${coveredGrantCount} 个组织授权继续访问该应用`
+    : ''
+
   try {
     await ElMessageBox.confirm(
-      `将移除 ${count} 名成员，${bindingText}。该操作不可撤销，确定继续？`,
+      `将移除 ${count} 名成员，${bindingText}${grantText}。该操作不可撤销，确定继续？`,
       '移除成员',
       { type: 'warning', confirmButtonText: '确定移除', cancelButtonText: '取消' },
     )
@@ -332,54 +363,199 @@ async function submitAdd() {
   }
 }
 
-/* ---------------- 按部门加入（FR-033） ---------------- */
+/* ---------------- 组织授权（010，取代「按部门加入」） ---------------- */
 
-const deptOpen = ref(false)
-const deptForm = reactive({ deptId: '', includeSubDepts: true })
-const deptSubmitting = ref(false)
-const deptResult = ref<{ added: number; existing: number; disabled: number } | null>(null)
+const orgGrants = ref<OrgGrant[]>([])
+const grantLoading = ref(true)
+const grantError = ref('')
 
-function openDeptAdd() {
-  deptForm.deptId = ''
-  deptForm.includeSubDepts = true
-  deptResult.value = null
-  deptOpen.value = true
+async function loadOrgGrants() {
+  grantLoading.value = true
+  grantError.value = ''
+  try {
+    const data = await listOrgGrants(clientId.value)
+    orgGrants.value = data.list
+  } catch (e) {
+    // 降级（FR-030）：授权卡片单独报错，不影响成员列表展示。
+    grantError.value = errorMessage(e)
+  } finally {
+    grantLoading.value = false
+  }
 }
 
-async function submitDeptAdd() {
-  if (!deptForm.deptId) {
+const grantOpen = ref(false)
+const grantSubmitting = ref(false)
+const grantPicker = ref<string[]>([])
+/** 待提交列表：每个部门一行，「含子部门」可逐行切换（FR-002） */
+const grantDraft = ref<{ deptId: string; deptName: string; includeSubDepts: boolean }[]>([])
+
+const rootIds = computed(() => new Set(orgTree.value.map((n) => n.id)))
+
+function findNode(id: string, nodes: OrgNode[] = orgTree.value): OrgNode | undefined {
+  for (const n of nodes) {
+    if (n.id === id) return n
+    const hit = n.children?.length ? findNode(id, n.children) : undefined
+    if (hit) return hit
+  }
+  return undefined
+}
+
+function subtreeUsers(node: OrgNode): number {
+  return (node.userCount || 0) + (node.children || []).reduce((s, c) => s + subtreeUsers(c), 0)
+}
+
+watch(grantPicker, (ids) => {
+  const existing = new Map(grantDraft.value.map((g) => [g.deptId, g]))
+  grantDraft.value = ids.map(
+    (id) => existing.get(id) ?? { deptId: id, deptName: findNode(id)?.name ?? id, includeSubDepts: true },
+  )
+})
+
+function openGrantAdd() {
+  grantPicker.value = []
+  grantDraft.value = []
+  grantOpen.value = true
+}
+
+/**
+ * 授予根组织 = 对全员放开，必须二次确认并给出覆盖人数（FR-006）。
+ * 这是「显式选择组织节点」的自然结果，不是「公开应用」开关。
+ */
+async function confirmRootGrants(): Promise<boolean> {
+  const roots = grantDraft.value.filter((g) => rootIds.value.has(g.deptId))
+  if (roots.length === 0) return true
+  const node = findNode(roots[0].deptId)
+  const total = node ? subtreeUsers(node) : 0
+  try {
+    await ElMessageBox.confirm(
+      `「${roots.map((r) => r.deptName).join('、')}」是组织树顶层节点，授权后将覆盖其整棵子树，` +
+        `涉及约 ${total} 名在职员工（以保存后的实际覆盖人数为准）。确定继续？`,
+      '将向全员放开该应用',
+      { type: 'warning', confirmButtonText: '确定授权', cancelButtonText: '返回' },
+    )
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function submitGrantAdd() {
+  if (grantSubmitting.value) return
+  if (grantDraft.value.length === 0) {
     ElMessage.warning('请选择部门')
     return
   }
-  if (deptSubmitting.value) return
-  deptSubmitting.value = true
+  if (!(await confirmRootGrants())) return
+  grantSubmitting.value = true
   try {
-    const res = await addAppMembersByDept(clientId.value, {
-      deptId: deptForm.deptId,
-      includeSubDepts: deptForm.includeSubDepts,
+    const res = await addOrgGrants(clientId.value, {
+      grants: grantDraft.value.map((g) => ({ deptId: g.deptId, includeSubDepts: g.includeSubDepts })),
     })
-    deptResult.value = {
-      added: res.added ?? 0,
-      existing: res.existing ?? 0,
-      disabled: res.disabled ?? 0,
-    }
-    clearSelection()
-    await loadMembers()
-    await reloadSummary()
+    ElMessage.success(
+      `已新增 ${res.added} 条、调整 ${res.updated} 条授权，涉及部门合计覆盖 ${res.coveredUsers} 人`,
+    )
+    grantOpen.value = false
+    await Promise.all([loadOrgGrants(), loadMembers(), reloadSummary()])
   } catch (e) {
     ElMessage.error(errorMessage(e))
   } finally {
-    deptSubmitting.value = false
+    grantSubmitting.value = false
   }
 }
 
+async function removeGrant(row: OrgGrant) {
+  const others = row.coveredUsers - row.uniqueUsers
+  const parts = [
+    `撤销后 ${row.uniqueUsers} 人将不再看到该应用`,
+    others > 0 ? `另有 ${others} 人仍可通过手动成员或其它组织授权访问` : '',
+    row.coveredDisabledUsers > 0 ? `该授权还覆盖 ${row.coveredDisabledUsers} 个停用账号（不影响可见性）` : '',
+  ].filter(Boolean)
+  try {
+    await ElMessageBox.confirm(
+      `${parts.join('；')}。撤销不会让已登录用户掉线，也不影响手动成员与角色绑定。`,
+      `撤销「${row.deptName}」的组织授权`,
+      { type: 'warning', confirmButtonText: '确定撤销', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  try {
+    const res = await removeOrgGrants(clientId.value, [row.orgId])
+    ElMessage.success(`已撤销 ${res.removed} 条组织授权，${res.impactUsers} 人不再可见`)
+    await Promise.all([loadOrgGrants(), loadMembers(), reloadSummary()])
+  } catch (e) {
+    ElMessage.error(errorMessage(e))
+  }
+}
+
+/** 成员「来源」列：手动 + 命中的组织授权（>2 个折叠）。 */
+function sourceLabel(row: AppMember): string {
+  const grants = row.orgGrants || []
+  if (grants.length === 0) return '手动'
+  if (grants.length > 2) return `手动 + ${grants.length} 个组织`
+  return `手动 + ${grants.map((g) => g.deptName).join('、')}`
+}
+
+function dismissHint(orgId: string) {
+  hintsDismissed.value = [...hintsDismissed.value, orgId]
+}
+
 onMounted(async () => {
-  await Promise.all([loadOrgTree(), loadMembers()])
+  await Promise.all([loadOrgTree(), loadOrgGrants(), loadMembers()])
 })
 </script>
 
 <template>
   <div class="members">
+    <!-- 组织授权（010）：把门户可见性授予部门（可含子部门），取代「按部门加入」 -->
+    <section class="panel">
+      <div class="toolbar">
+        <h3 class="panel-title">组织授权</h3>
+        <span class="panel-sub">被授权部门（含子部门）内的在职员工会自动在门户看到该应用</span>
+        <div class="toolbar-right">
+          <el-button type="primary" @click="openGrantAdd">添加组织授权</el-button>
+        </div>
+      </div>
+
+      <el-alert v-if="grantError" type="error" :closable="false" show-icon class="hint">
+        组织授权加载失败：{{ grantError }}
+        <el-button link type="primary" size="small" @click="loadOrgGrants">重试</el-button>
+      </el-alert>
+
+      <el-table v-loading="grantLoading" :data="orgGrants" row-key="orgId" stripe>
+        <el-table-column label="部门" min-width="180">
+          <template #default="{ row }">
+            <span>{{ row.deptName }}</span>
+            <span class="path">{{ row.deptPath }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="包含子部门" width="110">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.includeSubDepts ? 'success' : 'info'">
+              {{ row.includeSubDepts ? '含子部门' : '仅本级' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="在职启用账号数" width="140">
+          <template #default="{ row }">{{ row.coveredUsers }}</template>
+        </el-table-column>
+        <el-table-column label="撤销影响人数" width="130">
+          <template #default="{ row }">{{ row.uniqueUsers }}</template>
+        </el-table-column>
+        <el-table-column label="授权时间" width="160">
+          <template #default="{ row }">{{ formatTime(row.grantedAt) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="100">
+          <template #default="{ row }">
+            <el-button link type="danger" size="small" @click="removeGrant(row)">撤销</el-button>
+          </template>
+        </el-table-column>
+        <template #empty>
+          <el-empty description="尚未按组织授权，该应用对所有人都不可见" />
+        </template>
+      </el-table>
+    </section>
+
     <section class="panel">
       <div class="toolbar">
         <el-input
@@ -403,10 +579,34 @@ onMounted(async () => {
         <el-button type="primary" @click="onSearch">查询</el-button>
         <el-button @click="resetFilters">重置</el-button>
         <div class="toolbar-right">
-          <el-button @click="openDeptAdd">按部门加入</el-button>
           <el-button type="primary" @click="openAdd">添加成员</el-button>
         </div>
       </div>
+
+      <div class="stat-line">
+        手动成员 <strong>{{ total }}</strong> 人
+        <span class="stat-sep">/</span>
+        实际可见 <strong>{{ visibleTotal === null ? '—' : visibleTotal }}</strong> 人
+        <span class="stat-hint">（手动成员 ∪ 组织授权覆盖，去重，仅计在职启用账号）</span>
+      </div>
+
+      <el-alert
+        v-for="h in activeHints"
+        :key="h.orgId"
+        class="hint"
+        type="info"
+        :closable="true"
+        show-icon
+        @close="dismissHint(h.orgId)"
+      >
+        「{{ h.deptName }}」在本应用中有 {{ h.memberCount }} 名成员来自历史「按部门加入」，建议改用组织授权，
+        之后该部门的新增员工将自动可见。
+      </el-alert>
+
+      <el-alert v-if="orgTreeError" class="hint" type="error" :closable="false" show-icon>
+        组织架构加载失败：{{ orgTreeError }}
+        <el-button link type="primary" size="small" @click="loadOrgTree">重试</el-button>
+      </el-alert>
 
       <div v-if="selectedCount > 0" class="selection-bar">
         <span>已选择 {{ selectedCount }} 名成员</span>
@@ -438,6 +638,18 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column label="部门" min-width="140">
           <template #default="{ row }">{{ orDash(row.deptName) }}</template>
+        </el-table-column>
+        <el-table-column label="来源" min-width="170">
+          <template #default="{ row }">
+            <el-tooltip
+              v-if="(row.orgGrants || []).length > 0"
+              :content="row.orgGrants.map((g: OrgGrantRef) => g.deptName).join('、')"
+              placement="top"
+            >
+              <span class="source">{{ sourceLabel(row) }}</span>
+            </el-tooltip>
+            <span v-else class="source muted">手动</span>
+          </template>
         </el-table-column>
         <el-table-column label="角色数" width="90">
           <template #default="{ row }">{{ row.roleCount }}</template>
@@ -544,6 +756,12 @@ onMounted(async () => {
         <el-table-column label="部门" min-width="140">
           <template #default="{ row }">{{ orDash(row.deptName) }}</template>
         </el-table-column>
+        <el-table-column label="访问" width="150">
+          <template #default="{ row }">
+            <el-tag v-if="row.orgCovered" size="small" type="info">已可经组织授权访问</el-tag>
+            <span v-else class="muted">—</span>
+          </template>
+        </el-table-column>
         <template #empty>
           <el-empty description="没有可添加的用户（已是成员的用户不会出现在这里）" />
         </template>
@@ -569,37 +787,39 @@ onMounted(async () => {
       </template>
     </el-dialog>
 
-    <!-- 按部门加入 -->
-    <el-dialog v-model="deptOpen" title="按部门加入" width="520px" :close-on-click-modal="false">
-      <el-form label-width="100px">
+    <!-- 添加组织授权 -->
+    <el-dialog v-model="grantOpen" title="添加组织授权" width="640px" :close-on-click-modal="false">
+      <el-form label-width="90px">
         <el-form-item label="部门">
           <el-tree-select
-            v-model="deptForm.deptId"
+            v-model="grantPicker"
             :data="orgTree"
             :props="orgProps"
             node-key="id"
+            multiple
+            show-checkbox
             check-strictly
-            placeholder="选择部门"
+            placeholder="可多选部门"
             style="width: 100%"
           />
-        </el-form-item>
-        <el-form-item label="包含子部门">
-          <el-switch v-model="deptForm.includeSubDepts" />
-          <span class="field-hint inline">默认包含全部下级部门</span>
+          <div class="field-hint">每个部门可单独设置是否包含下级部门，默认包含</div>
         </el-form-item>
       </el-form>
 
-      <el-alert
-        v-if="deptResult"
-        type="success"
-        show-icon
-        :closable="false"
-        :title="`新增 ${deptResult.added} 人，已存在 ${deptResult.existing} 人，已停用跳过 ${deptResult.disabled} 人`"
-      />
+      <el-table v-if="grantDraft.length > 0" :data="grantDraft" size="small">
+        <el-table-column label="部门" prop="deptName" min-width="200" />
+        <el-table-column label="包含子部门" width="130">
+          <template #default="{ row }">
+            <el-switch v-model="row.includeSubDepts" />
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-else description="请选择要授权的部门" :image-size="60" />
 
       <template #footer>
-        <el-button @click="deptOpen = false">关闭</el-button>
-        <el-button type="primary" :loading="deptSubmitting" @click="submitDeptAdd">加入</el-button>
+        <span class="dialog-tip">已选 {{ grantDraft.length }} 个部门</span>
+        <el-button @click="grantOpen = false">取消</el-button>
+        <el-button type="primary" :loading="grantSubmitting" @click="submitGrantAdd">授权</el-button>
       </template>
     </el-dialog>
   </div>
@@ -690,5 +910,61 @@ onMounted(async () => {
 
 .mono {
   font-family: var(--el-font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+
+/* 010：组织授权卡片与成员卡片纵向排列 */
+.members {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.panel-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.panel-sub {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+.stat-line {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--app-text-secondary);
+}
+
+.stat-line strong {
+  color: var(--app-text-primary, #1f2329);
+}
+
+.stat-sep {
+  margin: 0 8px;
+}
+
+.stat-hint {
+  margin-left: 6px;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.hint {
+  margin-top: 12px;
+}
+
+.path {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+.source {
+  font-size: 12px;
+}
+
+.muted {
+  color: var(--app-text-secondary);
 }
 </style>

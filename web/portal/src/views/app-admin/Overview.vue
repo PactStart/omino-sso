@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * 应用信息（006 口径调整）：参考 admin 端应用详情，但可编辑字段缩减为
- * 名称 / 描述 / Logo / 回调地址；其余字段（应用标识、类型、授权方式、范围、
+ * 应用信息（006 口径调整；011 加入首页地址）：参考 admin 端应用详情，可编辑字段为
+ * 名称 / 描述 / Logo / 首页地址 / 回调地址；其余字段（应用标识、类型、授权方式、范围、
  * 登出地址、TTL、启用状态、创建时间、成员数）一律只读展示。
  */
 import { computed, inject, onMounted, reactive, ref } from 'vue'
@@ -43,6 +43,7 @@ const form = reactive({
   clientName: '',
   description: '',
   logoUrl: '',
+  homeUrl: '',
   redirectUris: [''] as string[],
 })
 
@@ -50,18 +51,6 @@ const formRef = ref<FormInstance>()
 const saving = ref(false)
 const formError = ref('')
 const logoBroken = ref(false)
-
-/** 首页地址：由首个回调地址的 origin 推导（只读展示） */
-const homeUrl = computed(() => {
-  const first = form.redirectUris.map((u) => u.trim()).find(Boolean)
-  if (!first) return ''
-  try {
-    const u = new URL(first)
-    return `${u.protocol}//${u.host}`
-  } catch {
-    return ''
-  }
-})
 
 /** 秒 → 人类可读时长（只读展示用） */
 function formatTtl(seconds: number): string {
@@ -87,6 +76,7 @@ function fill(d: AppDetail) {
   form.clientName = d.clientName
   form.description = d.description ?? ''
   form.logoUrl = d.logoUrl ?? ''
+  form.homeUrl = d.homeUrl ?? ''
   form.redirectUris = d.redirectUris.length ? [...d.redirectUris] : ['']
   logoBroken.value = false
 }
@@ -156,6 +146,19 @@ const rules: FormRules = {
       trigger: 'blur',
     },
   ],
+  homeUrl: [
+    { required: true, message: '请填写首页地址', trigger: 'blur' },
+    {
+      validator: (_r: unknown, v: string, cb: (e?: Error) => void) => {
+        const text = (v ?? '').trim()
+        if (!text) return cb(new Error('请填写首页地址'))
+        if (text.length > 512) return cb(new Error('首页地址最长 512 个字符'))
+        if (!/^https?:\/\/[^\s]+$/i.test(text)) return cb(new Error('请输入 http(s) 绝对地址'))
+        cb()
+      },
+      trigger: 'blur',
+    },
+  ],
   redirectUris: [{ validator: validateUriList(), trigger: 'blur' }],
 }
 
@@ -182,9 +185,14 @@ async function save() {
   // el-form 对数组型自定义校验的失败可能不带 fields（被聚合为「通过」），
   // 这两条是提交前的硬性兜底，保证不会把空名称/空回调地址发出去。
   const clientName = form.clientName.trim()
+  const homeUrl = form.homeUrl.trim()
   const redirectUris = form.redirectUris.map((u) => u.trim()).filter(Boolean)
   if (!clientName) {
     formError.value = '请输入应用名称'
+    return
+  }
+  if (!homeUrl) {
+    formError.value = '请填写首页地址'
     return
   }
   if (!redirectUris.length) {
@@ -198,6 +206,7 @@ async function save() {
       clientName,
       description: form.description.trim(),
       logoUrl: form.logoUrl.trim(),
+      homeUrl,
       redirectUris,
       updatedAt: detail.value?.updatedAt,
     })
@@ -289,7 +298,7 @@ onMounted(load)
       <section class="rounded-[var(--radius-card)] border border-ink-100 bg-white p-5">
         <h2 class="mb-3 text-base font-semibold text-ink-900">可编辑信息</h2>
         <p class="mb-3 text-xs text-ink-500">
-          应用管理员可修改名称、描述、Logo 与回调地址；其余信息见下方「只读信息」。
+          应用管理员可修改名称、描述、Logo、首页地址与回调地址；其余信息见下方「只读信息」。
         </p>
         <el-alert
           v-if="formError"
@@ -347,6 +356,15 @@ onMounted(load)
             </div>
           </el-form-item>
 
+          <el-form-item label="首页地址" prop="homeUrl">
+            <div class="w-full">
+              <el-input v-model="form.homeUrl" maxlength="512" placeholder="https://app.example.com" />
+              <p class="m-0 text-xs text-ink-500">
+                必填。员工在门户「我的应用」里点该应用按钮时打开这个地址
+              </p>
+            </div>
+          </el-form-item>
+
           <el-form-item label="回调地址" prop="redirectUris">
             <div class="w-full">
               <div v-for="(_, index) in form.redirectUris" :key="index" class="mb-2 flex items-center gap-2">
@@ -383,18 +401,6 @@ onMounted(load)
             <el-tag size="small" :type="detail.isPublic ? 'primary' : 'warning'">
               {{ detail.isPublic ? '公共客户端(PKCE)' : '机密客户端' }}
             </el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item label="首页地址">
-            <a
-              v-if="homeUrl"
-              :href="homeUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="break-all text-brand-700"
-            >
-              {{ homeUrl }}
-            </a>
-            <span v-else>-</span>
           </el-descriptions-item>
           <el-descriptions-item label="启用状态">
             <el-tag size="small" :type="detail.status === 1 ? 'success' : 'info'">

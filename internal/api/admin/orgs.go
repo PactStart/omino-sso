@@ -298,6 +298,8 @@ func mapOrgError(err error) (*response.Error, bool) {
 		return response.ErrOrgHasChildren, true
 	case errors.Is(err, service.ErrOrgHasUsers):
 		return response.ErrOrgHasUsers, true
+	case errors.Is(err, service.ErrOrgHasGrants):
+		return response.ErrOrgHasGrants, true
 	case errors.Is(err, service.ErrOrgDepthExceeded):
 		return response.ErrValidation.WithMessage(service.OrgDepthExceededMessage), true
 	case errors.Is(err, service.ErrOrgInvalidName), errors.Is(err, service.ErrOrgInvalidSort):

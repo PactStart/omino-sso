@@ -40,6 +40,11 @@ var (
 	// ErrAppMemberNotFound 用于「把非成员设为应用管理员」等成员维度操作（006）。
 	ErrAppMemberNotFound = &Error{http.StatusNotFound, "APP_MEMBER_NOT_FOUND", "该用户不是本应用成员，请先添加成员"}
 
+	// 组织授权（010-app-access-org-grant，规范 §5.3）。
+	// ORG_HAS_GRANTS 用于部门删除保护；APP_ORG_GRANT_LIMIT 为单应用授权条数上限。
+	ErrOrgHasGrants     = &Error{http.StatusConflict, "ORG_HAS_GRANTS", "部门仍被应用的组织授权引用，请先撤销授权"}
+	ErrAppOrgGrantLimit = &Error{http.StatusBadRequest, "APP_ORG_GRANT_LIMIT", "单个应用的组织授权数量已达上限（500）"}
+
 	// 多通道验证与账号安全（005-verification-code-auth，规范 §5.3）。
 	ErrAuthCodeInvalid  = &Error{http.StatusBadRequest, "AUTH_CODE_INVALID", "验证码错误或已过期"}
 	ErrVerifyTargetUsed = &Error{http.StatusConflict, "VERIFY_TARGET_IN_USE", "该手机号或邮箱已被其他账号使用"}

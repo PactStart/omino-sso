@@ -86,6 +86,7 @@ const formRef = ref<FormInstance>()
 const form = reactive({
   clientName: '',
   description: '',
+  homeUrl: '',
   isPublic: true,
   redirectUris: [''],
   grantTypes: ['authorization_code', 'refresh_token'] as string[],
@@ -114,12 +115,32 @@ const rules: FormRules = {
     { max: 128, message: '应用名称最长 128 个字符', trigger: 'blur' },
   ],
   description: [{ max: 255, message: '描述最长 255 个字符', trigger: 'blur' }],
+  homeUrl: [
+    { required: true, message: '请输入首页地址', trigger: 'blur' },
+    { max: 512, message: '首页地址最长 512 个字符', trigger: 'blur' },
+    {
+      validator: (_rule: unknown, value: string, callback: (e?: Error) => void) => {
+        const text = (value ?? '').trim()
+        if (!text) {
+          callback(new Error('请输入首页地址'))
+          return
+        }
+        if (!/^https?:\/\/[^\s]+$/i.test(text)) {
+          callback(new Error('首页地址必须是 http(s) 绝对地址'))
+          return
+        }
+        callback()
+      },
+      trigger: 'blur',
+    },
+  ],
   redirectUris: [{ validator: validateRedirectUris, trigger: 'blur' }],
 }
 
 function resetForm() {
   form.clientName = ''
   form.description = ''
+  form.homeUrl = ''
   form.isPublic = true
   form.redirectUris = ['']
   form.grantTypes = ['authorization_code', 'refresh_token']
@@ -214,6 +235,7 @@ async function submitRegister() {
     const res = await createClient({
       clientName: form.clientName.trim(),
       description: form.description.trim() || undefined,
+      homeUrl: form.homeUrl.trim(),
       redirectUris: form.redirectUris.map((item) => item.trim()).filter(Boolean),
       grantTypes: form.grantTypes,
       scopes: form.scopes,
@@ -457,6 +479,13 @@ onMounted(loadClients)
             <el-radio :value="false">机密客户端</el-radio>
           </el-radio-group>
           <p class="field-hint">公共客户端无密钥，适用于 SPA / 移动端；机密客户端创建后返回一次性密钥</p>
+        </el-form-item>
+
+        <el-form-item label="首页地址" prop="homeUrl">
+          <el-input v-model="form.homeUrl" maxlength="512" placeholder="https://app.example.com" />
+          <p class="field-hint">
+            必填。门户「我的应用」里点该应用按钮时打开这个地址；与登录回调地址无关，可以不同域
+          </p>
         </el-form-item>
 
         <el-form-item label="回调地址" prop="redirectUris">

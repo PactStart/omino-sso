@@ -61,6 +61,9 @@ type CandidateRow struct {
 	DisplayName string
 	DeptID      string
 	DeptName    string
+	// OrgCovered 标记该候选是否已可通过组织授权访问（010，spec FR-018）。
+	// 候选集合本身不变（仍排除已是成员者），仅多一个提示位。
+	OrgCovered bool
 }
 
 // RoleRow 角色列表行（含聚合计数）。
@@ -177,9 +180,13 @@ WHERE u.status = 1 AND NOT EXISTS (SELECT 1 FROM client_members m2 WHERE m2.clie
 	if err := db.Raw(`SELECT COUNT(*)`+base+where, args...).Scan(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	listArgs := append(args, pageSize, (page-1)*pageSize)
+	// 组织授权覆盖标记（010）：候选仍只含"非成员"，此处仅告知管理员其已可通过授权访问。
+	cover := `, EXISTS (SELECT 1 FROM client_org_grants g JOIN organizations go ON go.id = g.org_id
+		WHERE g.client_id = ? AND ` + model.OrgGrantMatchSQL("g", "go", "o") + `) AS org_covered`
+	listArgs := append([]any{clientID}, args...)
+	listArgs = append(listArgs, pageSize, (page-1)*pageSize)
 	rows := []CandidateRow{}
-	err := db.Raw(`SELECT u.id AS user_id, u.username, u.display_name, u.dept_id, COALESCE(o.name, '') AS dept_name`+
+	err := db.Raw(`SELECT u.id AS user_id, u.username, u.display_name, u.dept_id, COALESCE(o.name, '') AS dept_name`+cover+
 		base+where+` ORDER BY u.username ASC LIMIT ? OFFSET ?`, listArgs...).Scan(&rows).Error
 	if err != nil {
 		return nil, 0, err
@@ -288,13 +295,21 @@ func (s *Store) IsClientMember(ctx context.Context, clientID, userID string) (bo
 	return n > 0, err
 }
 
-// ListClientsForMember 返回用户以成员身份可访问的启用应用（FR-012），
-// 并带出该用户在每个应用的管理员标记（006，供门户渲染「管理」按钮）。
+// ListClientsForMember 返回用户在门户可见的启用应用（010 起为「手动成员 ∪ 组织授权覆盖」）：
+// ① 应用启用、账号在职启用；② 是成员，或被至少一条组织授权覆盖（按当前 dept_id 实时判定）。
+// 账号停用或不存在时返回空集，因此本查询同时承担 FR-011 的账号状态前置条件。
+// is_admin 仍只来自成员标记（非成员恒为 false）。
 func (s *Store) ListClientsForMember(ctx context.Context, userID string) ([]MemberClientRow, error) {
 	var list []MemberClientRow
-	err := s.DB(ctx).Raw(`SELECT c.*, m.is_admin FROM clients c
-JOIN client_members m ON m.client_id = c.client_id
-WHERE m.user_id = ? AND c.status = 1
+	match := model.OrgGrantMatchSQL("g", "go", "d")
+	err := s.DB(ctx).Raw(`SELECT c.*, COALESCE(m.is_admin, 0) AS is_admin FROM clients c
+JOIN users u ON u.id = ? AND u.status = 1
+JOIN organizations d ON d.id = u.dept_id
+LEFT JOIN client_members m ON m.client_id = c.client_id AND m.user_id = u.id
+WHERE c.status = 1
+  AND (m.user_id IS NOT NULL
+    OR EXISTS (SELECT 1 FROM client_org_grants g JOIN organizations go ON go.id = g.org_id
+               WHERE g.client_id = c.client_id AND `+match+`))
 ORDER BY c.created_at ASC`, userID).Scan(&list).Error
 	return list, err
 }

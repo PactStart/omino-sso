@@ -128,6 +128,10 @@ func NewRouter(
 		appAdminGroup.GET("/members/candidates", meH.AppListCandidates)
 		appAdminGroup.POST("/members", meH.AppAddMembers)
 		appAdminGroup.POST("/members/remove", meH.AppRemoveMembers)
+		// 组织授权（010）：与 admin 端同一实现，仅鉴权不同（应用管理员）。
+		appAdminGroup.GET("/org-grants", meH.AppListOrgGrants)
+		appAdminGroup.POST("/org-grants", meH.AppAddOrgGrants)
+		appAdminGroup.POST("/org-grants/remove", meH.AppRemoveOrgGrants)
 		appAdminGroup.GET("/roles", meH.AppListRoles)
 		appAdminGroup.POST("/roles", meH.AppCreateRole)
 		appAdminGroup.GET("/roles/:rid", meH.AppGetRole)
@@ -165,6 +169,10 @@ func NewRouter(
 		// 授予/取消应用管理员（006）：入口只在 admin 端，门户不注册该路径。
 		adminGroup.PUT("/clients/:id/members/:uid/admin", adminH.SetMemberAdmin)
 		adminGroup.GET("/clients/:id/members/candidates", adminH.ListCandidates)
+		// 组织授权（010）：把门户可见性授予部门（可含子部门）。
+		adminGroup.GET("/clients/:id/org-grants", adminH.ListOrgGrants)
+		adminGroup.POST("/clients/:id/org-grants", adminH.AddOrgGrants)
+		adminGroup.POST("/clients/:id/org-grants/remove", adminH.RemoveOrgGrants)
 		adminGroup.GET("/clients/:id/roles", adminH.ListRoles)
 		adminGroup.POST("/clients/:id/roles", adminH.CreateRole)
 		adminGroup.GET("/clients/:id/roles/:rid", adminH.GetRole)

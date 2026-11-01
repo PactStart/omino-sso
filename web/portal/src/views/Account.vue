@@ -464,16 +464,17 @@ onMounted(() => load())
           </span>
         </div>
 
-        <div class="mt-6 space-y-2">
+        <!-- 固定宽度：窄屏时身份卡片会占满整行，block 按钮会被拉长，故用固定 w-44 + 居中 -->
+        <div class="mt-6 flex flex-col items-center gap-2">
           <RouterLink
             to="/account/password"
-            class="block rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-700"
+            class="w-44 rounded-lg bg-brand-600 px-4 py-2 text-center text-sm font-medium text-white transition hover:bg-brand-700"
           >
             修改密码
           </RouterLink>
           <RouterLink
             to="/account/sessions"
-            class="block rounded-lg border border-ink-200 px-4 py-2 text-sm text-ink-600 transition hover:border-brand-300 hover:text-brand-700"
+            class="w-44 rounded-lg border border-ink-200 px-4 py-2 text-center text-sm text-ink-600 transition hover:border-brand-300 hover:text-brand-700"
           >
             登录设备
           </RouterLink>

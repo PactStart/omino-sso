@@ -154,6 +154,7 @@ curl -b admin.cookie -X POST https://sso.example.com/api/v1/admin/clients \
   -d '{
     "clientName": "员工门户",
     "description": "员工自助门户",
+    "homeUrl": "https://portal.example.com",
     "redirectUris": ["https://portal.example.com/callback"],
     "grantTypes": ["authorization_code", "refresh_token"],
     "scopes": ["openid", "profile", "email", "offline_access"],
@@ -164,6 +165,7 @@ curl -b admin.cookie -X POST https://sso.example.com/api/v1/admin/clients \
 | 字段 | 必填 | 说明 |
 |---|---|---|
 | `clientName` | 是 | 1–128 字符，登录页会显示 |
+| `homeUrl` | 是 | 应用首页地址（http(s) 绝对 URL，≤512）。门户「我的应用」点该应用时打开它；与回调地址无关，可不同域 |
 | `redirectUris` | 是 | 至少一个；**逐字符精确匹配**，建议不带查询串 |
 | `grantTypes` | 否 | 省略时为 `authorization_code,refresh_token` |
 | `scopes` | 否 | 省略时为 `openid,profile,email,offline_access` |

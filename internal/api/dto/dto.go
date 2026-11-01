@@ -291,6 +291,8 @@ type ClientDetail struct {
 	ClientName      string   `json:"clientName" example:"验收应用"`
 	Description     string   `json:"description" example:"内部验收用"`
 	LogoURL         string   `json:"logoUrl" example:"https://cdn.example.com/logo/demo.png"`
+	// HomeURL 应用首页地址（011）：门户「我的应用」入口，注册与编辑必填。
+	HomeURL         string   `json:"homeUrl" example:"https://demo.example.com"`
 	RedirectURIs    []string `json:"redirectUris" example:"https://demo.example.com/cb"`
 	PostLogoutURIs  []string `json:"postLogoutUris" example:"https://demo.example.com/signed-out"`
 	GrantTypes      []string `json:"grantTypes" example:"authorization_code,refresh_token"`
@@ -311,6 +313,7 @@ func FromClientDetail(c *model.Client, memberCount int64) ClientDetail {
 		ClientName:      c.ClientName,
 		Description:     deref(c.Description),
 		LogoURL:         deref(c.LogoURL),
+		HomeURL:         deref(c.HomeURL),
 		RedirectURIs:    emptyIfNil(c.RedirectURIs),
 		PostLogoutURIs:  emptyIfNil(c.PostLogoutURIs),
 		GrantTypes:      emptyIfNil(c.GrantTypes),
@@ -337,6 +340,81 @@ type AppMemberItem struct {
 	RoleCount   int64  `json:"roleCount" example:"2"`
 	// IsAdmin 标记该成员是否为该应用的应用管理员（006）。
 	IsAdmin bool `json:"isAdmin" example:"false"`
+	// OrgGrants 该成员命中的组织授权（010）；空数组表示「仅手动成员」。
+	OrgGrants []OrgGrantRef `json:"orgGrants"`
+}
+
+// OrgGrantRef 成员命中的某条组织授权（成员「来源」列，spec FR-016）。
+type OrgGrantRef struct {
+	OrgID           string `json:"orgId" example:"01J9Z0K3M4N5P6Q7R8S9T0V1W2"`
+	DeptName        string `json:"deptName" example:"研发部"`
+	IncludeSubDepts bool   `json:"includeSubDepts" example:"true"`
+}
+
+// OrgGrantItem 组织授权列表项（010，contracts GT-1）。
+type OrgGrantItem struct {
+	OrgID           string `json:"orgId" example:"01J9Z0K3M4N5P6Q7R8S9T0V1W2"`
+	DeptName        string `json:"deptName" example:"研发部"`
+	DeptPath        string `json:"deptPath" example:"/01J9Y.../01J9Z0K3.../"`
+	IncludeSubDepts bool   `json:"includeSubDepts" example:"true"`
+	// CoveredUsers 命中该授权的**在职启用账号数**（spec FR-005）。
+	CoveredUsers int64 `json:"coveredUsers" example:"42"`
+	// CoveredDisabledUsers 命中该授权但账号已停用的数量（仅用于撤销确认说明）。
+	CoveredDisabledUsers int64 `json:"coveredDisabledUsers" example:"3"`
+	// UniqueUsers 仅因该授权可见的在职启用账号数（撤销确认的「X 人将不再可见」）。
+	UniqueUsers int64  `json:"uniqueUsers" example:"37"`
+	GrantedBy   string `json:"grantedBy" example:"01J8X..."`
+	GrantedAt   string `json:"grantedAt" example:"2026-11-01T10:00:00Z"`
+	UpdatedAt   string `json:"updatedAt" example:"2026-11-01T10:00:00Z"`
+}
+
+// OrgGrantSpec 单条授权输入。
+type OrgGrantSpec struct {
+	DeptID          string `json:"deptId" example:"01J9Z0K3M4N5P6Q7R8S9T0V1W2"`
+	IncludeSubDepts *bool  `json:"includeSubDepts" example:"true"`
+}
+
+// AddOrgGrantsReq 新增/调整组织授权（POST .../org-grants）。
+type AddOrgGrantsReq struct {
+	Grants []OrgGrantSpec `json:"grants"`
+}
+
+// AddOrgGrantsResult 三态计数 + 本次涉及部门的合计覆盖人数。
+type AddOrgGrantsResult struct {
+	Added        int   `json:"added" example:"2"`
+	Updated      int   `json:"updated" example:"0"`
+	Unchanged    int   `json:"unchanged" example:"0"`
+	CoveredUsers int64 `json:"coveredUsers" example:"61"`
+}
+
+// RemoveOrgGrantsReq 撤销组织授权。
+type RemoveOrgGrantsReq struct {
+	OrgIDs []string `json:"orgIds"`
+}
+
+// RemoveOrgGrantsResult 撤销结果：impactUsers 为「撤销将导致多少人不再可见」。
+type RemoveOrgGrantsResult struct {
+	Removed               int `json:"removed" example:"1"`
+	ImpactUsers           int `json:"impactUsers" example:"37"`
+	RemainingVisibleUsers int `json:"remainingVisibleUsers" example:"3"`
+}
+
+// OrgGrantHint 存量迁移提示（spec FR-031）。
+type OrgGrantHint struct {
+	OrgID       string `json:"orgId" example:"01J9Z0K3M4N5P6Q7R8S9T0V1W2"`
+	DeptName    string `json:"deptName" example:"研发部"`
+	MemberCount int64  `json:"memberCount" example:"118"`
+}
+
+// MemberPage 成员列表响应（在 response.Page 之上新增可见总人数与迁移提示）。
+// VisibleTotal / OrgGrantHints 仅在 page=1 时返回，其余页为 null / 省略（critique E9）。
+type MemberPage struct {
+	List          []AppMemberItem `json:"list"`
+	Total         int64           `json:"total" example:"3"`
+	Page          int             `json:"page" example:"1"`
+	PageSize      int             `json:"pageSize" example:"20"`
+	VisibleTotal  *int64          `json:"visibleTotal" example:"40"`
+	OrgGrantHints []OrgGrantHint  `json:"orgGrantHints,omitempty"`
 }
 
 // MemberAdminResult 设置/取消应用管理员的结果（006）。
@@ -352,6 +430,8 @@ type CandidateItem struct {
 	DisplayName string `json:"displayName" example:"李四"`
 	DeptID      string `json:"deptId" example:"01J9ZJ7A1B2C3D4E5F6G7H8J9K"`
 	DeptName    string `json:"deptName" example:"技术中心"`
+	// OrgCovered 该候选已可通过组织授权访问（010，spec FR-018）。
+	OrgCovered bool `json:"orgCovered" example:"false"`
 }
 
 // AppRoleItem 角色列表项（含聚合计数）。

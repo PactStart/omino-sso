@@ -86,12 +86,13 @@ func (h *Handler) AppClientDetail(c *gin.Context) {
 	response.Success(c, dto.FromClientDetail(cl, count))
 }
 
-// AppUpdateClientRequest 门户可编辑字段白名单：名称 / 描述 / Logo / 回调地址。
+// AppUpdateClientRequest 门户可编辑字段白名单：名称 / 描述 / Logo / 首页地址 / 回调地址。
 // 其余字段（登出地址、TTL、状态）不在结构体内，即使请求体携带也会被忽略。
 type AppUpdateClientRequest struct {
 	ClientName   *string   `json:"clientName"`
 	Description  *string   `json:"description"`
 	LogoURL      *string   `json:"logoUrl"`
+	HomeURL      *string   `json:"homeUrl"`
 	RedirectURIs *[]string `json:"redirectUris"`
 	// UpdatedAt 为读取时的版本（毫秒），非空时做乐观版本校验。
 	UpdatedAt *int64 `json:"updatedAt"`
@@ -100,7 +101,7 @@ type AppUpdateClientRequest struct {
 // AppUpdateClient PATCH /api/v1/me/apps/:id
 //
 // @Summary      更新应用基础信息（门户）
-// @Description  应用管理员只能修改名称、描述、Logo 与回调地址；登出地址、两类令牌有效期与启用状态为只读（即使请求体携带也不会生效）。携带 updatedAt 时做乐观版本校验，冲突返回 409。写入 client_updated 审计（回调地址记前后数组）。
+// @Description  应用管理员只能修改名称、描述、Logo、首页地址（homeUrl）与回调地址；登出地址、两类令牌有效期与启用状态为只读（即使请求体携带也不会生效）。首页地址为必填字段，传空串返回 VALIDATION_FAILED。携带 updatedAt 时做乐观版本校验，冲突返回 409。写入 client_updated 审计（首页地址记前后值、回调地址记前后数组）。
 // @Tags         门户应用管理
 // @Accept       json
 // @Produce      json
@@ -133,6 +134,7 @@ func (h *Handler) AppUpdateClient(c *gin.Context) {
 		ClientName:   req.ClientName,
 		Description:  req.Description,
 		LogoURL:      req.LogoURL,
+		HomeURL:      req.HomeURL,
 		RedirectURIs: req.RedirectURIs,
 		UpdatedAt:    req.UpdatedAt,
 	})
@@ -151,6 +153,12 @@ func (h *Handler) AppUpdateClient(c *gin.Context) {
 		return
 	}
 	fields := map[string]any{"clientId": clientID, "changed": changedBasicFields(before, updated)}
+	if derefString(before.HomeURL) != derefString(updated.HomeURL) {
+		fields["homeUrl"] = map[string]any{
+			"before": derefString(before.HomeURL),
+			"after":  derefString(updated.HomeURL),
+		}
+	}
 	if !equalStringList(before.RedirectURIs, updated.RedirectURIs) {
 		fields["redirectUris"] = map[string]any{
 			"before": []string(before.RedirectURIs),
@@ -268,6 +276,9 @@ func changedBasicFields(before, after *model.Client) []string {
 	if derefString(before.LogoURL) != derefString(after.LogoURL) {
 		changed = append(changed, "logoUrl")
 	}
+	if derefString(before.HomeURL) != derefString(after.HomeURL) {
+		changed = append(changed, "homeUrl")
+	}
 	if !equalStringList(before.RedirectURIs, after.RedirectURIs) {
 		changed = append(changed, "redirectUris")
 	}
@@ -308,7 +319,7 @@ func equalStringList(a, b model.StringList) bool {
 // @Param        page      query  int     false  "页码，默认 1"
 // @Param        pageSize  query  int     false  "每页条数，默认 20，上限 100"
 // @Param        all       query  bool    false  "true 时只返回 userId 集合"
-// @Success      200  {object}  response.Body{data=response.Page{list=[]dto.AppMemberItem,total=int64,page=int,pageSize=int}}  "success"
+// @Success      200  {object}  response.Body{data=dto.MemberPage}  "success"
 // @Failure      401  {object}  response.Body  "UNAUTHENTICATED"
 // @Failure      403  {object}  response.Body  "FORBIDDEN"
 // @Failure      500  {object}  response.Body  "INTERNAL_ERROR"
@@ -345,7 +356,7 @@ func (h *Handler) AppListCandidates(c *gin.Context) { h.appMgmt.ListCandidates(c
 // @Produce      json
 // @Security     cookieAuth
 // @Param        id    path  string  true  "应用标识 clientId"
-// @Param        body  body  object  true  "{userIds:[...]} 或 {deptId,includeSubDepts}"
+// @Param        body  body  object  true  "{userIds:[...]}；{deptId,includeSubDepts} 已由组织授权取代（010），仅兼容保留"
 // @Success      200  {object}  response.Body  "success"
 // @Failure      400  {object}  response.Body  "VALIDATION_FAILED"
 // @Failure      401  {object}  response.Body  "UNAUTHENTICATED"
@@ -373,6 +384,62 @@ func (h *Handler) AppAddMembers(c *gin.Context) { h.appMgmt.AddMembers(c) }
 // @x-auth-level  "appAdmin"
 // @Router       /me/apps/{id}/members/remove [post]
 func (h *Handler) AppRemoveMembers(c *gin.Context) { h.appMgmt.RemoveMembers(c) }
+
+// ---------- 组织授权（010） ----------
+
+// AppListOrgGrants GET /api/v1/me/apps/:id/org-grants
+//
+// @Summary      组织授权列表（门户）
+// @Description  与 admin 端同一实现：返回该应用的组织授权及在职启用账号数、停用覆盖数、撤销影响人数。门户可见性由「手动成员 ∪ 组织授权覆盖」决定，不参与 OIDC 授权判定（010 FR-029）。
+// @Tags         门户应用管理
+// @Produce      json
+// @Security     cookieAuth
+// @Param        id   path  string  true  "应用标识 clientId"
+// @Success      200  {object}  response.Body{data=object{list=[]dto.OrgGrantItem,total=int}}  "success"
+// @Failure      401  {object}  response.Body  "UNAUTHENTICATED"
+// @Failure      403  {object}  response.Body  "FORBIDDEN"
+// @Failure      500  {object}  response.Body  "INTERNAL_ERROR"
+// @x-auth-level  "appAdmin"
+// @Router       /me/apps/{id}/org-grants [get]
+func (h *Handler) AppListOrgGrants(c *gin.Context) { h.appMgmt.ListOrgGrants(c) }
+
+// AppAddOrgGrants POST /api/v1/me/apps/:id/org-grants
+//
+// @Summary      新增/调整组织授权（门户）
+// @Description  与 admin 端同一实现：按部门授予门户可见性（默认含子部门），同部门重复提交幂等，仅 includeSubDepts 变化时更新并留审计。
+// @Tags         门户应用管理
+// @Accept        json
+// @Produce      json
+// @Security     cookieAuth
+// @Param        id    path  string               true  "应用标识 clientId"
+// @Param        body  body  dto.AddOrgGrantsReq  true  "授权列表，1–500 条"
+// @Success      200   {object}  response.Body{data=dto.AddOrgGrantsResult}  "success"
+// @Failure      400   {object}  response.Body  "VALIDATION_FAILED / APP_ORG_GRANT_LIMIT"
+// @Failure      401   {object}  response.Body  "UNAUTHENTICATED"
+// @Failure      403   {object}  response.Body  "FORBIDDEN"
+// @Failure      500   {object}  response.Body  "INTERNAL_ERROR"
+// @x-auth-level  "appAdmin"
+// @Router       /me/apps/{id}/org-grants [post]
+func (h *Handler) AppAddOrgGrants(c *gin.Context) { h.appMgmt.AddOrgGrants(c) }
+
+// AppRemoveOrgGrants POST /api/v1/me/apps/:id/org-grants/remove
+//
+// @Summary      撤销组织授权（门户）
+// @Description  与 admin 端同一实现：撤销后不再贡献门户可见性，手动成员与角色绑定不变，既有会话与令牌不回收；impactUsers 为撤销前计算的影响人数。
+// @Tags         门户应用管理
+// @Accept        json
+// @Produce      json
+// @Security     cookieAuth
+// @Param        id    path  string                   true  "应用标识 clientId"
+// @Param        body  body  dto.RemoveOrgGrantsReq   true  "待撤销部门，1–500 条"
+// @Success      200   {object}  response.Body{data=dto.RemoveOrgGrantsResult}  "success"
+// @Failure      400   {object}  response.Body  "VALIDATION_FAILED"
+// @Failure      401   {object}  response.Body  "UNAUTHENTICATED"
+// @Failure      403   {object}  response.Body  "FORBIDDEN"
+// @Failure      500   {object}  response.Body  "INTERNAL_ERROR"
+// @x-auth-level  "appAdmin"
+// @Router       /me/apps/{id}/org-grants/remove [post]
+func (h *Handler) AppRemoveOrgGrants(c *gin.Context) { h.appMgmt.RemoveOrgGrants(c) }
 
 // ---------- 角色 ----------
 

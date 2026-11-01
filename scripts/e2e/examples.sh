@@ -1242,6 +1242,62 @@ stage_a19_loop_guard() {
   fi
 }
 
+# ------------------------------------------- A20/A21 组织授权两端一致（010 FR-020）
+
+# 同一应用的组织授权，平台管理员走 /admin/clients/:id/org-grants、应用管理员走
+# /me/apps/:id/org-grants，必须返回**同一份**数据（critique E16：两端各写一套极易漂移）。
+stage_a20_org_grant_two_ends() {
+  section "A20/A21 组织授权两端一致"
+
+  local uid dept admin_list portal_list a_norm p_norm a_nums p_nums
+  uid=$(curl -sG --max-time "$E2E_CURL_TIMEOUT" -b "$ad_cookie" --data-urlencode "keyword=admin" \
+    "$E2E_API/api/v1/admin/users?page=1&pageSize=20" 2>/dev/null \
+    | jq -r '[.data.list[]? | select(.username == "admin") | .id] | first // empty')
+  dept=$(admin::dept_id)
+  if [[ -z "$uid" || -z "$dept" ]]; then
+    bad A20 "uid=${uid:-空} dept=${dept:-空}" "取到平台管理员 id 与一个部门"
+    return 0
+  fi
+
+  # 让平台管理员同时成为该应用的应用管理员，才能读门户侧端点。
+  curl -s --max-time "$E2E_CURL_TIMEOUT" -b "$ad_cookie" -X POST \
+    -H 'Content-Type: application/json' -d '{"isAdmin":true}' \
+    "$E2E_API/api/v1/admin/clients/$GO_ID/members/$uid/admin" >/dev/null 2>&1
+  curl -s --max-time "$E2E_CURL_TIMEOUT" -b "$ad_cookie" -X POST \
+    -H 'Content-Type: application/json' -d "{\"grants\":[{\"deptId\":\"$dept\",\"includeSubDepts\":true}]}" \
+    "$E2E_API/api/v1/admin/clients/$GO_ID/org-grants" >/dev/null 2>&1
+
+  admin_list=$(curl -s --max-time "$E2E_CURL_TIMEOUT" -b "$ad_cookie" \
+    "$E2E_API/api/v1/admin/clients/$GO_ID/org-grants" 2>/dev/null)
+  portal_list=$(curl -s --max-time "$E2E_CURL_TIMEOUT" -b "$ad_cookie" \
+    "$E2E_API/api/v1/me/apps/$GO_ID/org-grants" 2>/dev/null)
+
+  # 逐条的 orgId/deptName/deptPath/includeSubDepts/coveredUsers/uniqueUsers 全部比对
+  a_norm=$(printf '%s' "$admin_list" | jq -Sc '[.data.list[]? | {orgId, deptName, deptPath, includeSubDepts, coveredUsers, coveredDisabledUsers, uniqueUsers}] | sort_by(.orgId)' 2>/dev/null)
+  p_norm=$(printf '%s' "$portal_list" | jq -Sc '[.data.list[]? | {orgId, deptName, deptPath, includeSubDepts, coveredUsers, coveredDisabledUsers, uniqueUsers}] | sort_by(.orgId)' 2>/dev/null)
+  if [[ -n "$a_norm" && "$a_norm" == "$p_norm" ]]; then
+    ok A20 "两端组织授权逐条一致（$(printf '%s' "$a_norm" | jq -r 'length') 条）"
+  else
+    bad A20 "admin=$a_norm portal=$p_norm" "两端 list 逐条一致"
+  fi
+
+  a_nums=$(printf '%s' "$admin_list" | jq -Sc '[.data.list[]? | .coveredUsers] | add // 0' 2>/dev/null)
+  p_nums=$(printf '%s' "$portal_list" | jq -Sc '[.data.list[]? | .coveredUsers] | add // 0' 2>/dev/null)
+  if [[ -n "$a_nums" && "$a_nums" == "$p_nums" ]]; then
+    ok A21 "两端覆盖人数合计一致（coveredUsers=$a_nums）"
+  else
+    bad A21 "admin=$a_nums portal=$p_nums" "两端 coveredUsers 合计一致"
+  fi
+
+  # 收尾：撤销本段授权并解除应用管理员，避免污染后续手工验证。
+  curl -s --max-time "$E2E_CURL_TIMEOUT" -b "$ad_cookie" -X POST \
+    -H 'Content-Type: application/json' -d "{\"orgIds\":[\"$dept\"]}" \
+    "$E2E_API/api/v1/admin/clients/$GO_ID/org-grants/remove" >/dev/null 2>&1
+  curl -s --max-time "$E2E_CURL_TIMEOUT" -b "$ad_cookie" -X POST \
+    -H 'Content-Type: application/json' -d '{"isAdmin":false}' \
+    "$E2E_API/api/v1/admin/clients/$GO_ID/members/$uid/admin" >/dev/null 2>&1
+}
+
 # --------------------------------------------------------------------- 主流程
 
 self_test() {
@@ -1253,7 +1309,7 @@ self_test() {
     admin::audit_count admin::audit_wait_increment admin::audit_wait_total admin::audit_latest \
     drive_login example_base interruptible_sleep stage_a4_a6_login stage_a8_sso stage_a9_a10_refresh stage_a11_idp_session \
     stage_a14_no_secret stage_a12_logout stage_a13_after_logout stage_a15_degraded stage_a16_cookie_prefix \
-    stage_a17_refresh_rejected stage_a18_portal_redirect stage_a19_loop_guard; do
+    stage_a17_refresh_rejected stage_a18_portal_redirect stage_a19_loop_guard stage_a20_org_grant_two_ends; do
     declare -F "$fn" >/dev/null || { printf '[FAIL] 缺少函数 %s\n' "$fn"; bad_count=1; }
   done
   for bin in curl jq; do
@@ -1305,6 +1361,7 @@ main() {
   stage_a17_refresh_rejected
   stage_a18_portal_redirect
   stage_a19_loop_guard
+  stage_a20_org_grant_two_ends
 
   section "汇总"
   log "PASS=$PASSED FAIL=$FAILED 报告=$REPORT"

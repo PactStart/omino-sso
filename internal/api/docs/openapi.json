@@ -4,6 +4,7 @@
       "admin.AddMembersRequest": {
         "properties": {
           "deptId": {
+            "description": "DeptID / IncludeSubDepts 已由组织授权取代（010），仅为兼容保留：\n它把手动成员一次性物化，后续组织调整不会自动跟进，新接入请用 org-grants。",
             "type": "string"
           },
           "includeSubDepts": {
@@ -46,6 +47,12 @@
             },
             "type": "array"
           },
+          "homeUrl": {
+            "description": "HomeURL 应用首页地址，必填：门户「我的应用」入口按钮用它跳转（011）。",
+            "example": "https://portal.example.com",
+            "maxLength": 512,
+            "type": "string"
+          },
           "isPublic": {
             "example": false,
             "type": "boolean"
@@ -79,6 +86,7 @@
         },
         "required": [
           "clientName",
+          "homeUrl",
           "redirectUris"
         ],
         "type": "object"
@@ -428,6 +436,9 @@
           "description": {
             "type": "string"
           },
+          "homeUrl": {
+            "type": "string"
+          },
           "logoUrl": {
             "type": "string"
           },
@@ -694,6 +705,38 @@
         },
         "type": "object"
       },
+      "dto.AddOrgGrantsReq": {
+        "properties": {
+          "grants": {
+            "items": {
+              "$ref": "#/components/schemas/dto.OrgGrantSpec"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "dto.AddOrgGrantsResult": {
+        "properties": {
+          "added": {
+            "example": 2,
+            "type": "integer"
+          },
+          "coveredUsers": {
+            "example": 61,
+            "type": "integer"
+          },
+          "unchanged": {
+            "example": 0,
+            "type": "integer"
+          },
+          "updated": {
+            "example": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "dto.AppItem": {
         "properties": {
           "clientId": {
@@ -778,6 +821,13 @@
           "joinedAt": {
             "example": "2026-10-20T10:00:00Z",
             "type": "string"
+          },
+          "orgGrants": {
+            "description": "OrgGrants 该成员命中的组织授权（010）；空数组表示「仅手动成员」。",
+            "items": {
+              "$ref": "#/components/schemas/dto.OrgGrantRef"
+            },
+            "type": "array"
           },
           "roleCount": {
             "example": 2,
@@ -937,6 +987,11 @@
             "example": "李四",
             "type": "string"
           },
+          "orgCovered": {
+            "description": "OrgCovered 该候选已可通过组织授权访问（010，spec FR-018）。",
+            "example": false,
+            "type": "boolean"
+          },
           "userId": {
             "example": "01J9ZJ8Q2M4N6P8R0T2V4X6Z8A",
             "type": "string"
@@ -1051,6 +1106,11 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "homeUrl": {
+            "description": "HomeURL 应用首页地址（011）：门户「我的应用」入口，注册与编辑必填。",
+            "example": "https://demo.example.com",
+            "type": "string"
           },
           "isPublic": {
             "example": false,
@@ -1240,6 +1300,39 @@
         },
         "type": "object"
       },
+      "dto.MemberPage": {
+        "properties": {
+          "list": {
+            "items": {
+              "$ref": "#/components/schemas/dto.AppMemberItem"
+            },
+            "type": "array"
+          },
+          "orgGrantHints": {
+            "items": {
+              "$ref": "#/components/schemas/dto.OrgGrantHint"
+            },
+            "type": "array"
+          },
+          "page": {
+            "example": 1,
+            "type": "integer"
+          },
+          "pageSize": {
+            "example": 20,
+            "type": "integer"
+          },
+          "total": {
+            "example": 3,
+            "type": "integer"
+          },
+          "visibleTotal": {
+            "example": 40,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "dto.MfaResult": {
         "properties": {
           "redirectTo": {
@@ -1289,6 +1382,101 @@
         },
         "type": "object"
       },
+      "dto.OrgGrantHint": {
+        "properties": {
+          "deptName": {
+            "example": "研发部",
+            "type": "string"
+          },
+          "memberCount": {
+            "example": 118,
+            "type": "integer"
+          },
+          "orgId": {
+            "example": "01J9Z0K3M4N5P6Q7R8S9T0V1W2",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "dto.OrgGrantItem": {
+        "properties": {
+          "coveredDisabledUsers": {
+            "description": "CoveredDisabledUsers 命中该授权但账号已停用的数量（仅用于撤销确认说明）。",
+            "example": 3,
+            "type": "integer"
+          },
+          "coveredUsers": {
+            "description": "CoveredUsers 命中该授权的**在职启用账号数**（spec FR-005）。",
+            "example": 42,
+            "type": "integer"
+          },
+          "deptName": {
+            "example": "研发部",
+            "type": "string"
+          },
+          "deptPath": {
+            "example": "/01J9Y.../01J9Z0K3.../",
+            "type": "string"
+          },
+          "grantedAt": {
+            "example": "2026-11-01T10:00:00Z",
+            "type": "string"
+          },
+          "grantedBy": {
+            "example": "01J8X...",
+            "type": "string"
+          },
+          "includeSubDepts": {
+            "example": true,
+            "type": "boolean"
+          },
+          "orgId": {
+            "example": "01J9Z0K3M4N5P6Q7R8S9T0V1W2",
+            "type": "string"
+          },
+          "uniqueUsers": {
+            "description": "UniqueUsers 仅因该授权可见的在职启用账号数（撤销确认的「X 人将不再可见」）。",
+            "example": 37,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "example": "2026-11-01T10:00:00Z",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "dto.OrgGrantRef": {
+        "properties": {
+          "deptName": {
+            "example": "研发部",
+            "type": "string"
+          },
+          "includeSubDepts": {
+            "example": true,
+            "type": "boolean"
+          },
+          "orgId": {
+            "example": "01J9Z0K3M4N5P6Q7R8S9T0V1W2",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "dto.OrgGrantSpec": {
+        "properties": {
+          "deptId": {
+            "example": "01J9Z0K3M4N5P6Q7R8S9T0V1W2",
+            "type": "string"
+          },
+          "includeSubDepts": {
+            "example": true,
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "dto.PermissionGrantResult": {
         "properties": {
           "added": {
@@ -1300,6 +1488,34 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "removed": {
+            "example": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "dto.RemoveOrgGrantsReq": {
+        "properties": {
+          "orgIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "dto.RemoveOrgGrantsResult": {
+        "properties": {
+          "impactUsers": {
+            "example": 37,
+            "type": "integer"
+          },
+          "remainingVisibleUsers": {
+            "example": 3,
+            "type": "integer"
           },
           "removed": {
             "example": 1,
@@ -1664,6 +1880,9 @@
             "type": "string"
           },
           "description": {
+            "type": "string"
+          },
+          "homeUrl": {
             "type": "string"
           },
           "logoUrl": {
@@ -2256,7 +2475,7 @@
         "x-auth-level": "admin"
       },
       "post": {
-        "description": "注册 OAuth 客户端并返回生成的 clientId。**clientSecret 仅此一次返回**（不落日志、不可再查，丢失只能轮换）；公开客户端（isPublic=true）的 clientSecret 恒为 null。写入 client_created 审计事件。",
+        "description": "注册 OAuth 客户端并返回生成的 clientId。**homeUrl（首页地址）必填**，作为门户「我的应用」的入口。**clientSecret 仅此一次返回**（不落日志、不可再查，丢失只能轮换）；公开客户端（isPublic=true）的 clientSecret 恒为 null。写入 client_created 审计事件。",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2455,7 +2674,7 @@
         "x-auth-level": "admin"
       },
       "patch": {
-        "description": "就地修改名称、描述、图标、地址、两类 TTL 与启用状态；携带 updatedAt 时做乐观版本校验。写入 client_updated 审计（地址类字段记前后数组）。",
+        "description": "就地修改名称、描述、图标、首页地址、回调地址、登出地址、两类 TTL 与启用状态；首页地址为必填字段，传空串会返回 VALIDATION_FAILED。携带 updatedAt 时做乐观版本校验。写入 client_updated 审计（地址类字段记前后值/数组）。",
         "parameters": [
           {
             "description": "应用标识 clientId",
@@ -2839,32 +3058,7 @@
                     {
                       "properties": {
                         "data": {
-                          "allOf": [
-                            {
-                              "$ref": "#/components/schemas/response.Page"
-                            },
-                            {
-                              "properties": {
-                                "list": {
-                                  "items": {
-                                    "$ref": "#/components/schemas/dto.AppMemberItem"
-                                  },
-                                  "type": "array"
-                                },
-                                "page": {
-                                  "type": "integer"
-                                },
-                                "pageSize": {
-                                  "type": "integer"
-                                },
-                                "total": {
-                                  "format": "int64",
-                                  "type": "integer"
-                                }
-                              },
-                              "type": "object"
-                            }
-                          ]
+                          "$ref": "#/components/schemas/dto.MemberPage"
                         }
                       },
                       "type": "object"
@@ -2938,7 +3132,7 @@
         "x-auth-level": "admin"
       },
       "post": {
-        "description": "幂等添加；userIds 单次 1–500（超出需分片），deptId 形态按部门整批加入并返回新增/已存在/已停用计数。停用账号跳过。写入 app_member_added 审计。",
+        "description": "幂等添加；userIds 单次 1–500（超出需分片），停用账号跳过，写入 app_member_added 审计。**`deptId`/`includeSubDepts` 形态已由组织授权取代（010，见 `/admin/clients/{id}/org-grants`），仅为兼容保留**：它会把手动成员一次性物化到成员表，不再随组织架构调整自动跟进，新接入请勿使用。",
         "parameters": [
           {
             "description": "应用标识 clientId",
@@ -3416,6 +3610,329 @@
           }
         ],
         "summary": "设置/取消应用管理员",
+        "tags": [
+          "应用成员"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
+    "/api/v1/admin/clients/{id}/org-grants": {
+      "get": {
+        "description": "返回该应用的全部组织授权（部门名、层级路径、是否含子部门、在职启用账号数、停用覆盖数、撤销影响人数）；不分页，上限 500 条。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "properties": {
+                            "list": {
+                              "items": {
+                                "$ref": "#/components/schemas/dto.OrgGrantItem"
+                              },
+                              "type": "array"
+                            },
+                            "total": {
+                              "type": "integer"
+                            }
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "组织授权列表",
+        "tags": [
+          "应用成员"
+        ],
+        "x-auth-level": "admin"
+      },
+      "post": {
+        "description": "按部门授予门户可见性（默认含子部门）；同一部门重复提交幂等，仅 includeSubDepts 变化时更新并留审计。整批同一事务，任一条失败全部回滚。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/dto.AddOrgGrantsReq"
+              }
+            }
+          },
+          "description": "授权列表，1–500 条",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.AddOrgGrantsResult"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED / APP_ORG_GRANT_LIMIT"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "新增/调整组织授权",
+        "tags": [
+          "应用成员"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
+    "/api/v1/admin/clients/{id}/org-grants/remove": {
+      "post": {
+        "description": "撤销后该授权不再贡献门户可见性；手动成员关系与角色绑定不受影响，既有会话与令牌也不回收。impactUsers 为「撤销将导致多少人不再可见」（删除前计算）。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/dto.RemoveOrgGrantsReq"
+              }
+            }
+          },
+          "description": "待撤销部门，1–500 条",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.RemoveOrgGrantsResult"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "撤销组织授权",
         "tags": [
           "应用成员"
         ],
@@ -7248,7 +7765,7 @@
         "x-auth-level": "appAdmin"
       },
       "patch": {
-        "description": "应用管理员只能修改名称、描述、Logo 与回调地址；登出地址、两类令牌有效期与启用状态为只读（即使请求体携带也不会生效）。携带 updatedAt 时做乐观版本校验，冲突返回 409。写入 client_updated 审计（回调地址记前后数组）。",
+        "description": "应用管理员只能修改名称、描述、Logo、首页地址（homeUrl）与回调地址；登出地址、两类令牌有效期与启用状态为只读（即使请求体携带也不会生效）。首页地址为必填字段，传空串返回 VALIDATION_FAILED。携带 updatedAt 时做乐观版本校验，冲突返回 409。写入 client_updated 审计（首页地址记前后值、回调地址记前后数组）。",
         "parameters": [
           {
             "description": "应用标识 clientId",
@@ -7692,32 +8209,7 @@
                     {
                       "properties": {
                         "data": {
-                          "allOf": [
-                            {
-                              "$ref": "#/components/schemas/response.Page"
-                            },
-                            {
-                              "properties": {
-                                "list": {
-                                  "items": {
-                                    "$ref": "#/components/schemas/dto.AppMemberItem"
-                                  },
-                                  "type": "array"
-                                },
-                                "page": {
-                                  "type": "integer"
-                                },
-                                "pageSize": {
-                                  "type": "integer"
-                                },
-                                "total": {
-                                  "format": "int64",
-                                  "type": "integer"
-                                }
-                              },
-                              "type": "object"
-                            }
-                          ]
+                          "$ref": "#/components/schemas/dto.MemberPage"
                         }
                       },
                       "type": "object"
@@ -7791,7 +8283,7 @@
               }
             }
           },
-          "description": "{userIds:[...]} 或 {deptId,includeSubDepts}",
+          "description": "{userIds:[...]}；{deptId,includeSubDepts} 已由组织授权取代（010），仅兼容保留",
           "required": true,
           "x-originalParamName": "body"
         },
@@ -8080,6 +8572,299 @@
           }
         ],
         "summary": "批量移除成员（门户）",
+        "tags": [
+          "门户应用管理"
+        ],
+        "x-auth-level": "appAdmin"
+      }
+    },
+    "/api/v1/me/apps/{id}/org-grants": {
+      "get": {
+        "description": "与 admin 端同一实现：返回该应用的组织授权及在职启用账号数、停用覆盖数、撤销影响人数。门户可见性由「手动成员 ∪ 组织授权覆盖」决定，不参与 OIDC 授权判定（010 FR-029）。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "properties": {
+                            "list": {
+                              "items": {
+                                "$ref": "#/components/schemas/dto.OrgGrantItem"
+                              },
+                              "type": "array"
+                            },
+                            "total": {
+                              "type": "integer"
+                            }
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "组织授权列表（门户）",
+        "tags": [
+          "门户应用管理"
+        ],
+        "x-auth-level": "appAdmin"
+      },
+      "post": {
+        "description": "与 admin 端同一实现：按部门授予门户可见性（默认含子部门），同部门重复提交幂等，仅 includeSubDepts 变化时更新并留审计。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/dto.AddOrgGrantsReq"
+              }
+            }
+          },
+          "description": "授权列表，1–500 条",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.AddOrgGrantsResult"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED / APP_ORG_GRANT_LIMIT"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "新增/调整组织授权（门户）",
+        "tags": [
+          "门户应用管理"
+        ],
+        "x-auth-level": "appAdmin"
+      }
+    },
+    "/api/v1/me/apps/{id}/org-grants/remove": {
+      "post": {
+        "description": "与 admin 端同一实现：撤销后不再贡献门户可见性，手动成员与角色绑定不变，既有会话与令牌不回收；impactUsers 为撤销前计算的影响人数。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/dto.RemoveOrgGrantsReq"
+              }
+            }
+          },
+          "description": "待撤销部门，1–500 条",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.RemoveOrgGrantsResult"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "撤销组织授权（门户）",
         "tags": [
           "门户应用管理"
         ],

@@ -31,6 +31,7 @@ const detail: ClientDetailData = {
   clientName: '验收应用',
   description: '内部验收用',
   logoUrl: '',
+  homeUrl: 'https://demo.example.com',
   redirectUris: ['https://demo.example.com/callback'],
   postLogoutUris: [],
   grantTypes: ['authorization_code'],
