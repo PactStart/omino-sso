@@ -54,6 +54,13 @@ const (
 	EventAppMemberAdminGranted = "app_member_admin_granted"
 	EventAppMemberAdminRevoked = "app_member_admin_revoked"
 
+	// 组织授权变更（010-app-access-org-grant，AGENTS.md §6.7）。
+	// detail 记 {clientId, orgId, deptName, deptPath, includeSubDepts|from,to, coveredUsers|impactUsers}；
+	// 批量提交按条记录，不合并（spec FR-024）。
+	EventAppOrgGranted      = "app_org_granted"
+	EventAppOrgGrantUpdated = "app_org_grant_updated"
+	EventAppOrgGrantRevoked = "app_org_grant_revoked"
+
 	// 图片上传（004-object-storage-upload，AGENTS.md §6.7）。
 	EventFileUploaded      = "file_uploaded"
 	EventFileStatusUpdated = "file_status_updated"

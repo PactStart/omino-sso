@@ -22,6 +22,7 @@ const form = reactive({
   clientName: '',
   description: '',
   logoUrl: '',
+  homeUrl: '',
   redirectUris: [''],
   postLogoutUris: [] as string[],
   accessTokenTtl: 900,
@@ -34,17 +35,8 @@ const saving = ref(false)
 const formError = ref('')
 const logoBroken = ref(false)
 
-/** 首页地址：由首个回调地址的 origin 推导（门户"我的应用"入口使用） */
-const homeUrl = computed(() => {
-  const first = form.redirectUris.map((u) => u.trim()).find(Boolean)
-  if (!first) return ''
-  try {
-    const u = new URL(first)
-    return `${u.protocol}//${u.host}`
-  } catch {
-    return ''
-  }
-})
+/** 首页地址（011）：独立字段，注册与编辑均必填；门户「我的应用」入口用它跳转。 */
+const homeUrl = computed(() => detail.value?.homeUrl ?? '')
 
 const ttlChanged = computed(() => {
   const d = detail.value
@@ -56,6 +48,7 @@ function fill(d: ClientDetail) {
   form.clientName = d.clientName
   form.description = d.description ?? ''
   form.logoUrl = d.logoUrl ?? ''
+  form.homeUrl = d.homeUrl ?? ''
   form.redirectUris = d.redirectUris.length ? [...d.redirectUris] : ['']
   form.postLogoutUris = [...d.postLogoutUris]
   form.accessTokenTtl = d.accessTokenTtl
@@ -128,6 +121,19 @@ const rules: FormRules = {
       trigger: 'blur',
     },
   ],
+  homeUrl: [
+    { required: true, message: '请填写首页地址', trigger: 'blur' },
+    {
+      validator: (_r: unknown, v: string, cb: (e?: Error) => void) => {
+        const text = (v ?? '').trim()
+        if (!text) return cb(new Error('请填写首页地址'))
+        if (text.length > 512) return cb(new Error('首页地址最长 512 个字符'))
+        if (!/^https?:\/\/[^\s]+$/i.test(text)) return cb(new Error('请输入 http(s) 绝对地址'))
+        cb()
+      },
+      trigger: 'blur',
+    },
+  ],
   redirectUris: [{ validator: validateUriList(1, 10), trigger: 'blur' }],
   postLogoutUris: [{ validator: validateUriList(0, 10), trigger: 'blur' }],
   accessTokenTtl: [
@@ -184,6 +190,7 @@ async function save() {
       clientName: form.clientName.trim(),
       description: form.description.trim(),
       logoUrl: form.logoUrl.trim(),
+      homeUrl: form.homeUrl.trim(),
       redirectUris: form.redirectUris.map((u) => u.trim()).filter(Boolean),
       accessTokenTtl: form.accessTokenTtl,
       refreshTokenTtl: form.refreshTokenTtl,
@@ -355,6 +362,13 @@ onMounted(load)
               </div>
               <el-input v-model="form.logoUrl" maxlength="512" placeholder="或填写外部 https://… 地址" />
               <p class="field-hint">上传后立即生效并回填地址；也可保留外部 URL</p>
+            </div>
+          </el-form-item>
+
+          <el-form-item label="首页地址" prop="homeUrl">
+            <div class="uri-list">
+              <el-input v-model="form.homeUrl" maxlength="512" placeholder="https://app.example.com" />
+              <p class="field-hint">必填。门户「我的应用」里点该应用按钮时打开这个地址</p>
             </div>
           </el-form-item>
 

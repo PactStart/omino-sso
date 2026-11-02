@@ -2,7 +2,6 @@ import { request, type RequestOptions } from './client'
 import type {
   AddMembersResult,
   AppCandidate,
-  AppMember,
   AppPermission,
   AppRole,
   AuditQuery,
@@ -27,6 +26,11 @@ import type {
   OrgNode,
   Paged,
   PermissionGrantResult,
+  AddOrgGrantsPayload,
+  AddOrgGrantsResult,
+  MemberPage,
+  OrgGrantList,
+  RemoveOrgGrantsResult,
   RemoveMembersResult,
   RoleDetail,
   RotatedSecret,
@@ -141,7 +145,7 @@ export function updateClient(clientId: string, payload: UpdateClientPayload) {
 /* 成员 */
 
 export function listAppMembers(clientId: string, query: MemberQuery = {}) {
-  return request<Paged<AppMember>>({
+  return request<MemberPage>({
     url: `${clientBase(clientId)}/members`,
     method: 'GET',
     params: query,
@@ -182,14 +186,31 @@ export function addAppMembers(clientId: string, payload: { userIds: string[] }) 
 }
 
 /** 按部门整批加入（含子部门），返回 新增/已存在/已停用 三类计数 */
-export function addAppMembersByDept(
-  clientId: string,
-  payload: { deptId: string; includeSubDepts: boolean },
-) {
-  return request<AddMembersResult>({
-    url: `${clientBase(clientId)}/members`,
+/**
+ * 组织授权（010）：把门户可见性授予部门（可含子部门）。
+ * 说明：原「按部门加入成员」（一次性快照）入口已由本能力取代（spec FR-027），
+ * 后端接口仍保留兼容期，前端不再调用。
+ */
+export function listOrgGrants(clientId: string) {
+  return request<OrgGrantList>({
+    url: `${clientBase(clientId)}/org-grants`,
+    method: 'GET',
+  })
+}
+
+export function addOrgGrants(clientId: string, payload: AddOrgGrantsPayload) {
+  return request<AddOrgGrantsResult>({
+    url: `${clientBase(clientId)}/org-grants`,
     method: 'POST',
     data: payload,
+  })
+}
+
+export function removeOrgGrants(clientId: string, orgIds: string[]) {
+  return request<RemoveOrgGrantsResult>({
+    url: `${clientBase(clientId)}/org-grants/remove`,
+    method: 'POST',
+    data: { orgIds },
   })
 }
 

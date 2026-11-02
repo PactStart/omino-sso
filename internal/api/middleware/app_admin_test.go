@@ -44,6 +44,8 @@ func newAppAdminRouter(checker AppAdminChecker) *gin.Engine {
 		v, _ := c.Get(CtxClientID)
 		c.String(http.StatusOK, v.(string))
 	})
+	// 与真实路由同形（010）：组织授权的门户端点同样挂在 appAdminGroup 上。
+	g.GET("/org-grants", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
 	return r
 }
 
@@ -101,6 +103,37 @@ func TestAppAdminDeniesWithIdenticalBody(t *testing.T) {
 	}
 	if first == "" {
 		t.Fatal("未产生任何响应")
+	}
+}
+
+// 组织授权（010）：普通登录用户（非该应用的应用管理员）读授权列表必须 403 FORBIDDEN，
+// 而不是 401 或 404 —— 后者说明端点挂错了分组（critique E7）。
+func TestAppAdminDeniesOrgGrantsForNonAdmin(t *testing.T) {
+	checker := &fakeAppAdmin{err: errors.New("app admin required")}
+	r := newAppAdminRouter(checker)
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/me/apps/demo-app/org-grants", nil))
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("非应用管理员访问组织授权 = %d, 期望 403", rec.Code)
+	}
+	var body struct {
+		Code string `json:"code"`
+		Data any    `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("响应体不是统一响应: %v", err)
+	}
+	if body.Code != "FORBIDDEN" {
+		t.Fatalf("code = %q, 期望 FORBIDDEN", body.Code)
+	}
+	if body.Data != nil {
+		t.Fatalf("失败响应 data 必须为 null，实际 %v", body.Data)
+	}
+	// 判定入参必须是路径里的 clientId 与当前会话用户
+	if checker.clientID != "demo-app" || checker.userID != "01J9ZK9M1N3P5Q7R9S1T3V5W7X" {
+		t.Fatalf("判定入参 = (%q,%q)", checker.clientID, checker.userID)
 	}
 }
 

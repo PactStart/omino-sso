@@ -228,6 +228,7 @@ omino-sso/
 │   │       ├── orgs.go
 │   │       ├── clients.go
 │   │       ├── audit.go
+│   │       ├── org_grant.go           # 010：组织授权列表 / 新增 / 撤销（两端共用实现）
 │   │       └── send_records.go        # 005：发送记录分页查询
 │   ├── service/                       # 业务规则层（不依赖 gin/gorm）
 │   │   ├── user.go                    # 含标识符识别 / 联系方式绑定 / 验证码重置密码
@@ -236,6 +237,7 @@ omino-sso/
 │   │   ├── captcha.go                 # 005：图形验证码（Redis 短时 + 一次性消费 + PNG 位图，响应不含明文码）
 │   │   ├── captcha_test.go            # 005：图形验证码单测（假 Redis 实现，无需外部依赖）
 │   │   ├── client.go
+│   │   ├── org_grant.go               # 010：组织授权校验 / 上限 / 幂等（判定口径在 store）
 │   │   ├── session.go
 │   │   ├── audit.go                   # 含 notification.AuditSink 实现
 │   │   └── notification/              # 005：验证码与发送通道抽象
@@ -256,8 +258,10 @@ omino-sso/
 │   │   │   ├── session.go
 │   │   │   ├── consent.go
 │   │   │   ├── send_record.go         # 005
+│   │   │   ├── client_org_grant.go    # 010：client_org_grants + 唯一判定片段（OrgGrantMatchSQL）
 │   │   │   └── audit_event.go
 │   │   ├── user_store.go
+│   │   ├── org_grant_store.go         # 010：组织授权读写 / 覆盖人数 / 独占人数 / 可见总数
 │   │   ├── send_record_store.go       # 005：发送记录 CRUD + 分批清理
 │   │   ├── client_store.go
 │   │   ├── code_store.go              # 原子 UPDATE 消费授权码
@@ -297,7 +301,11 @@ omino-sso/
 │   ├── 0005_verification_auth.up.sql  # 005：send_records + uk_users_phone
 │   ├── 0005_verification_auth.down.sql
 │   ├── 0006_app_admin_role.up.sql     # 006：client_members.is_admin（应用管理员标记）
-│   └── 0006_app_admin_role.down.sql
+│   ├── 0006_app_admin_role.down.sql
+│   ├── 0007_client_org_grant.up.sql   # 010：client_org_grants（应用 × 部门的门户可见性授权）
+│   ├── 0007_client_org_grant.down.sql
+│   ├── 0008_client_home_url.up.sql    # 011：clients.home_url（首页地址，注册/编辑必填；存量按首个回调地址 origin 回填）
+│   └── 0008_client_home_url.down.sql
 ├── deploy/                            # 2026-10-24 新增（007）：分环境编排
 │   ├── compose.test.yml               # sso/portal/admin 三容器，env_file=/etc/omino-sso/test.env；不含本地 DB/Redis
 │   ├── compose.prod.yml               # 同上；sso 的 8080/8081 只绑回环/内网
@@ -419,6 +427,9 @@ omino-sso/
 | GET | `/api/v1/me/apps/:id/members/candidates` | 候选成员（006） | appAdmin |
 | POST | `/api/v1/me/apps/:id/members` | 添加成员（006） | appAdmin |
 | POST | `/api/v1/me/apps/:id/members/remove` | 移除成员（006） | appAdmin |
+| GET | `/api/v1/me/apps/:id/org-grants` | 组织授权列表（010，含覆盖人数/撤销影响人数） | appAdmin |
+| POST | `/api/v1/me/apps/:id/org-grants` | 新增/调整组织授权（010，幂等） | appAdmin |
+| POST | `/api/v1/me/apps/:id/org-grants/remove` | 撤销组织授权（010） | appAdmin |
 | GET | `/api/v1/me/apps/:id/roles` | 角色列表（006） | appAdmin |
 | POST | `/api/v1/me/apps/:id/roles` | 新建角色（006） | appAdmin |
 | GET | `/api/v1/me/apps/:id/roles/:rid` | 角色详情（006） | appAdmin |
@@ -441,6 +452,9 @@ omino-sso/
 | POST | `/api/v1/admin/clients` | 注册应用 | admin |
 | POST | `/api/v1/admin/clients/:id/secret` | 轮换密钥 | admin |
 | PUT | `/api/v1/admin/clients/:id/members/:uid/admin` | 设置/取消应用管理员（006，body `{isAdmin}`，幂等） | admin |
+| GET | `/api/v1/admin/clients/:id/org-grants` | 组织授权列表（010，含覆盖人数/撤销影响人数） | admin |
+| POST | `/api/v1/admin/clients/:id/org-grants` | 新增/调整组织授权（010，body `{grants:[{deptId,includeSubDepts}]}`，幂等） | admin |
+| POST | `/api/v1/admin/clients/:id/org-grants/remove` | 撤销组织授权（010，body `{orgIds:[]}`） | admin |
 | GET | `/api/v1/admin/audit-logs` | 审计日志 | admin |
 | GET | `/api/v1/admin/send-records` | 短信/邮箱发送记录 | admin |
 | POST | `/api/v1/me/avatar` | 更新本人头像（004） | session |
@@ -724,7 +738,7 @@ omino-sso/
 | `POST /api/v1/me/password` | `oldPassword`, `newPassword` | `data: null` |
 | `GET /api/v1/me/apps` | — | `[{clientId,name,description,logoUrl,homeUrl,lastAccessAt}]` |
 | `GET /api/v1/me/apps/:id/detail` | — | 字段同 admin 详情（`clientName`/`description`/`logoUrl`/`redirectUris`/`postLogoutUris`/`grantTypes`/`scopes`/`isPublic`/`accessTokenTtl`/`refreshTokenTtl`/`status`/`memberCount`/`createdAt`/`updatedAt`）；**不含密钥** |
-| `PATCH /api/v1/me/apps/:id` | **仅** `clientName`/`description`/`logoUrl`/`redirectUris`（缺失=不变）+ `updatedAt`(可选版本)；其余字段即使提交也被忽略 | 同 `GET /api/v1/me/apps/:id/detail`；版本不符 `409 APP_RESOURCE_STALE` |
+| `PATCH /api/v1/me/apps/:id` | **仅** `clientName`/`description`/`logoUrl`/`homeUrl`/`redirectUris`（缺失=不变；`homeUrl` 必填、传空串 `400`）+ `updatedAt`(可选版本)；其余字段即使提交也被忽略 | 同 `GET /api/v1/me/apps/:id/detail`；版本不符 `409 APP_RESOURCE_STALE` |
 | `POST /api/v1/me/apps/:id/logo` | `key`,`format`,`size` | `{id,provider,scene,format,size,url,status,creator,createdAt}`；同时回写该应用 `logo_url` |
 | `DELETE /api/v1/me/apps/:id/logo` | — | `data: null`；无活跃 Logo 时幂等成功 |
 | `GET /api/v1/me/sessions` | — | `[{sid,ip,userAgent,createdAt,lastSeenAt,current}]` |
@@ -734,10 +748,10 @@ omino-sso/
 | `PATCH /api/v1/admin/orgs/:id` | `name` / `sort`（缺失=不变）、`parentId`（三态：缺失=不变 / `null`=移到根级 / 值=移到该节点下）；移动整棵子树，`sort` 不被改写 | `{id,parentId,name,path,sort,tenantId,userCount,createdAt}`，`userCount` 为子树汇总 |
 | `DELETE /api/v1/admin/orgs/:id` | — | `data: null` |
 | `GET /api/v1/admin/clients` | `keyword`,`page`,`pageSize`,`hasMembers`(`true`/`false`) | `{list:[{clientId,clientName,isPublic,redirectUris,grantTypes,scopes,createdAt,memberCount}],total,page,pageSize}` |
-| `POST /api/v1/admin/clients` | `clientName`,`redirectUris[]`,`grantTypes[]`,`scopes[]`,`isPublic` | `{clientId,clientSecret}`（secret **仅此一次返回**，不落日志） |
+| `POST /api/v1/admin/clients` | `clientName`,`homeUrl`(**必填**),`redirectUris[]`,`grantTypes[]`,`scopes[]`,`isPublic` | `{clientId,clientSecret}`（secret **仅此一次返回**，不落日志） |
 | `POST /api/v1/admin/clients/:id/secret` | `gracePeriodSeconds`(默认0) | `{clientId,clientSecret,expiresAt}` |
-| `GET /api/v1/admin/clients/:id` | — | `{clientId,clientName,description,logoUrl,redirectUris,postLogoutUris,grantTypes,scopes,isPublic,accessTokenTtl,refreshTokenTtl,status,memberCount,createdAt,updatedAt}`；**不含密钥** |
-| `PATCH /api/v1/admin/clients/:id` | 8 个可编辑字段（缺失=不变）+ `updatedAt`(可选版本) | 同 `GET /api/v1/admin/clients/:id`；版本不符 `409 APP_RESOURCE_STALE` |
+| `GET /api/v1/admin/clients/:id` | — | `{clientId,clientName,description,logoUrl,homeUrl,redirectUris,postLogoutUris,grantTypes,scopes,isPublic,accessTokenTtl,refreshTokenTtl,status,memberCount,createdAt,updatedAt}`；**不含密钥** |
+| `PATCH /api/v1/admin/clients/:id` | 9 个可编辑字段（缺失=不变；`homeUrl` 必填、传空串 `400`）+ `updatedAt`(可选版本) | 同 `GET /api/v1/admin/clients/:id`；版本不符 `409 APP_RESOURCE_STALE` |
 | `GET /api/v1/admin/clients/:id/members` | `keyword`,`deptId`,`page`,`pageSize`(默认20,最大200),`all` | `{list:[{userId,username,displayName,deptId,deptName,status,joinedAt,roleCount}],total,page,pageSize}`；`all=true` 返回 `{userIds[]}`，上限 5000 |
 | `POST /api/v1/admin/clients/:id/members` | `userIds[]`(1–500) **或** `deptId`+`includeSubDepts` | `{added,skipped}` 或 `{added,existing,disabled}` |
 | `POST /api/v1/admin/clients/:id/members/remove` | `userIds[]`(1–500) | `{removed,roleBindingsRemoved,notMember}` |
@@ -825,6 +839,8 @@ omino-sso/
 | 400 | `APP_PERMISSION_INVALID_PARENT` | 上级权限不存在 / 为自身或自身后代 / 跨应用 |
 | 409 | `APP_RESOURCE_STALE` | 写请求携带的 `updatedAt` 与服务端不一致（并发编辑） |
 | 404 | `APP_MEMBER_NOT_FOUND` | 目标用户不是该应用成员（把非成员设为应用管理员时拒绝，006） |
+| 409 | `ORG_HAS_GRANTS` | 部门仍被某个应用的组织授权引用，不允许删除（010） |
+| 400 | `APP_ORG_GRANT_LIMIT` | 单个应用的组织授权数量超过上限 500 条（010） |
 | 400 | `AUTH_CODE_INVALID` | 短信/邮箱验证码错误、过期、已使用或错误次数超限 |
 | 404 | `VERIFY_TARGET_NOT_FOUND` | `login` 场景请求验证码时，该手机号/邮箱未绑定任何账号；文案须含「请用密码登录后到账号中心绑定」（`find_password` 仍静默成功） |
 | 409 | `VERIFY_TARGET_IN_USE` | 手机号/邮箱已被其他账号占用 |
@@ -891,6 +907,7 @@ omino-sso/
 | `client_name` | VARCHAR(128) | NOT NULL | |
 | `description` | VARCHAR(255) | NULL | 应用描述，供"我的应用"展示 |
 | `logo_url` | VARCHAR(512) | NULL | 应用图标地址，供"我的应用"展示 |
+| `home_url` | VARCHAR(512) | NULL（API 层必填） | 应用首页地址（011）：门户"我的应用"入口跳转目标。注册与编辑均必填，仅存量行为 NULL 时按首个 `redirect_uris` 的 origin 兜底 |
 | `client_secret_hash` | BINARY(32) | NULL | SHA-256；`is_public=1` 时为空 |
 | `is_public` | TINYINT(1) | NOT NULL DEFAULT 0 | 1=仅 PKCE |
 | `redirect_uris` | JSON | NOT NULL | 字符串数组，**精确匹配** |
@@ -977,7 +994,9 @@ omino-sso/
 | `trace_id` | VARCHAR(32) | NULL | |
 | `created_at` | BIGINT | NOT NULL, INDEX | |
 
-`event_type` 枚举（新增需登记）：`login_success`、`login_failure`、`mfa_success`、`mfa_failure`、`logout`、`password_changed`、`token_issued`、`token_revoked`、`code_reused`、`refresh_reused`、`user_created`、`user_updated`、`client_created`、`client_secret_rotated`、`org_created`、`org_updated`、`org_deleted`、`client_updated`、`app_member_added`、`app_member_removed`、`app_role_created`、`app_role_updated`、`app_role_deleted`、`app_permission_created`、`app_permission_updated`、`app_permission_deleted`、`app_grant_updated`、`file_uploaded`、`file_status_updated`、`verification_code_sent`、`phone_bound`、`email_bound`、`mfa_bound`、`mfa_unbound`、`password_reset`、`app_member_admin_granted`、`app_member_admin_revoked`、`sso_login_success`。
+`event_type` 枚举（新增需登记）：`login_success`、`login_failure`、`mfa_success`、`mfa_failure`、`logout`、`password_changed`、`token_issued`、`token_revoked`、`code_reused`、`refresh_reused`、`user_created`、`user_updated`、`client_created`、`client_secret_rotated`、`org_created`、`org_updated`、`org_deleted`、`client_updated`、`app_member_added`、`app_member_removed`、`app_role_created`、`app_role_updated`、`app_role_deleted`、`app_permission_created`、`app_permission_updated`、`app_permission_deleted`、`app_grant_updated`、`file_uploaded`、`file_status_updated`、`verification_code_sent`、`phone_bound`、`email_bound`、`mfa_bound`、`mfa_unbound`、`password_reset`、`app_member_admin_granted`、`app_member_admin_revoked`、`app_org_granted`、`app_org_grant_updated`、`app_org_grant_revoked`、`sso_login_success`。
+
+> `app_org_granted` / `app_org_grant_updated` / `app_org_grant_revoked`（2026-11-01，010-app-access-org-grant）记组织授权的新增 / `includeSubDepts` 调整 / 撤销：`detail` 为 `{clientId, orgId, deptName, deptPath, includeSubDepts}`（调整时为 `{from,to}`，撤销时为 `impactUsers`），`deptPath` 是**授权时刻**的路径快照（部门改名或迁移后仍可追溯当时授权的是哪棵子树）。批量提交**按条记录、不合并**；`includeSubDepts` 未变化的重复提交**不产生**事件。
 
 > `verification_code_sent` 的 `detail` 记 `{channel,scene,target,provider}`（`target` 已脱敏）；验证码登录成功/失败复用 `login_success`/`login_failure`，MFA 二步复用 `mfa_success`/`mfa_failure`。
 
@@ -1053,6 +1072,25 @@ omino-sso/
 索引：`idx_send_records_created(created_at)`、`idx_send_records_channel_created(channel, created_at)`、`idx_send_records_scene_created(scene, created_at)`、`idx_send_records_result_created(result, created_at)`。
 
 > 同一迁移为 `users` 新增 `UNIQUE KEY uk_users_phone (phone)`（`uk_users_email` 已在 0001 存在）：手机号全局唯一，唯一索引允许多个 NULL，存量未绑定账号不受影响。发送记录与审计日志保留 180 天（`VERIFY_RECORD_RETENTION_DAYS`），由进程内每日定时任务分批物理删除。
+
+### 6.12 `client_org_grants`（010，`migrations/0007_client_org_grant.up.sql`）
+
+应用对部门的**门户可见性**授权。一条记录 = 「该应用对该部门（可含子部门）开放」，不展开成成员行。
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `client_id` | VARCHAR(64) `utf8mb4_0900_as_cs` | PK(复合) | 逻辑外键 → `clients.client_id` |
+| `org_id` | CHAR(26) | PK(复合) | 授权对象部门（`organizations.id`） |
+| `include_sub` | TINYINT(1) | NOT NULL DEFAULT 1 | 1=命中整棵子树；0=仅本级 |
+| `granted_by` | CHAR(26) | NULL | 操作者用户 ID |
+| `granted_at` | BIGINT | NOT NULL | 首次授权时间 |
+| `updated_at` | BIGINT | NOT NULL | 最近一次 `include_sub` 变更时间 |
+
+索引：`PRIMARY KEY (client_id, org_id)`、`idx_client_org_grants_org (org_id)`（部门删除前引用校验）。
+
+> **不存 `org_path` 快照**：部门迁父时子树 path 整体平移，快照会指向错误子树；判定时实时 JOIN `organizations` 取 path。判定谓词只有一处实现（`model.OrgGrantMatchSQL` / `OrgGrantMatchPlanSQL`）：`include_sub=1` 走物化路径前缀匹配，`include_sub=0` 走部门等值匹配。
+>
+> **语义边界**：本表只影响门户「我的应用」可见性与入口收敛，**不参与 OIDC 授权判定**，撤销也不回收既有会话与令牌（010 FR-029）；离职/越权处置仍以停用账号为准。部门被本表引用时禁止删除（`409 ORG_HAS_GRANTS`）。
 
 ---
 

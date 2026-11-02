@@ -177,9 +177,10 @@ func TestDocsServedWithoutRedis(t *testing.T) {
 		ops += len(item)
 	}
 	// 56（005 及之前）+ 18（006：admin 1 + 门户 16 + 门户只读组织树 1）
-	// + 4（门户应用信息：详情 / 更新 / Logo 设置 / Logo 清除）。
-	if ops != 78 {
-		t.Fatalf("(method,path) 组合数为 %d, 期望 78", ops)
+	// + 4（门户应用信息：详情 / 更新 / Logo 设置 / Logo 清除）
+	// + 6（010 组织授权：admin 3 + 门户 3）。
+	if ops != 84 {
+		t.Fatalf("(method,path) 组合数为 %d, 期望 84", ops)
 	}
 	if !strings.Contains(doc.Info.Description, "环境：test") {
 		t.Fatalf("info.description 未注入环境: %q", doc.Info.Description)
@@ -344,4 +345,52 @@ func normalizeBody(t *testing.T, raw []byte) string {
 		t.Fatalf("序列化响应体失败: %v", err)
 	}
 	return string(out)
+}
+
+// TestOrgGrantRoutesRequireAuth 覆盖 010 的组织授权路由挂载：
+// 未登录访问两端的新端点必须是 401（而不是 404 —— 404 说明路由没注册或挂错了分组），
+// 门户侧若挂到 authed 而非 appAdminGroup，普通登录用户即可读到应用的部门与人数（critique E7）。
+func TestOrgGrantRoutesRequireAuth(t *testing.T) {
+	r := newTestRouter(t, "test")
+
+	// 断言到错误码而不只是状态码：401 必须是统一响应里的 UNAUTHENTICATED。
+	assertUnauthenticated := func(method, path string, body string) {
+		t.Helper()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("%s %s = %d, 期望 401", method, path, rec.Code)
+		}
+		var parsed map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &parsed); err != nil {
+			t.Fatalf("%s %s 响应体不是统一响应: %v", method, path, err)
+		}
+		if parsed["code"] != "UNAUTHENTICATED" {
+			t.Fatalf("%s %s code = %v, 期望 UNAUTHENTICATED", method, path, parsed["code"])
+		}
+		if parsed["data"] != nil {
+			t.Fatalf("%s %s 失败响应 data 必须为 null，实际 %v", method, path, parsed["data"])
+		}
+	}
+
+	for _, path := range []string{
+		"/api/v1/admin/clients/c1/org-grants",
+		"/api/v1/me/apps/c1/org-grants",
+	} {
+		assertUnauthenticated(http.MethodGet, path, "")
+	}
+
+	for _, p := range []struct {
+		path string
+		body string
+	}{
+		{"/api/v1/admin/clients/c1/org-grants", `{"grants":[]}`},
+		{"/api/v1/admin/clients/c1/org-grants/remove", `{"orgIds":[]}`},
+		{"/api/v1/me/apps/c1/org-grants", `{"grants":[]}`},
+		{"/api/v1/me/apps/c1/org-grants/remove", `{"orgIds":[]}`},
+	} {
+		assertUnauthenticated(http.MethodPost, p.path, p.body)
+	}
 }

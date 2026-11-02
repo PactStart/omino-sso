@@ -20,7 +20,7 @@ func newAppAuthEnv(t *testing.T) (*orgEnv, *service.AppAuthService, *service.Cli
 	env := newOrgEnv(t)
 	env.reset(t)
 	for _, table := range []string{
-		"client_members", "client_roles", "client_permissions",
+		"client_org_grants", "client_members", "client_roles", "client_permissions",
 		"client_role_permissions", "client_role_members", "access_tokens", "clients",
 	} {
 		if err := env.db.Exec("TRUNCATE TABLE " + table).Error; err != nil {
@@ -31,6 +31,7 @@ func newAppAuthEnv(t *testing.T) (*orgEnv, *service.AppAuthService, *service.Cli
 	clients := service.NewClientService(env.st)
 	cl, _, err := clients.Create(context.Background(), service.CreateClientInput{
 		ClientName:   "验收应用",
+		HomeURL:      "https://demo.example.com",
 		RedirectURIs: []string{"https://demo.example.com/cb"},
 	})
 	if err != nil {
@@ -757,6 +758,7 @@ func TestAuthorizeAppAdminIsolatedAndImmediate(t *testing.T) {
 	// 第二个应用：operator 只是普通成员。
 	other, _, err := clients.Create(ctx, service.CreateClientInput{
 		ClientName:   "另一个应用",
+		HomeURL:      "https://other.example.com",
 		RedirectURIs: []string{"https://other.example.com/cb"},
 	})
 	if err != nil {

@@ -37,6 +37,8 @@ func (h *Handler) failAppAuth(c *gin.Context, err error) {
 		response.Fail(c, response.ErrAppResourceStale)
 	case errors.Is(err, service.ErrAppMemberNotFound):
 		response.Fail(c, response.ErrAppMemberNotFound)
+	case errors.Is(err, service.ErrOrgGrantLimit):
+		response.Fail(c, response.ErrAppOrgGrantLimit)
 	case errors.Is(err, service.ErrAppValidation), errors.Is(err, service.ErrAppDeptNotFound):
 		response.Fail(c, response.ErrValidation)
 	default:
@@ -91,6 +93,7 @@ type UpdateClientRequest struct {
 	ClientName      *string   `json:"clientName"`
 	Description     *string   `json:"description"`
 	LogoURL         *string   `json:"logoUrl"`
+	HomeURL         *string   `json:"homeUrl"`
 	RedirectURIs    *[]string `json:"redirectUris"`
 	PostLogoutURIs  *[]string `json:"postLogoutUris"`
 	AccessTokenTTL  *int      `json:"accessTokenTtl"`
@@ -102,7 +105,7 @@ type UpdateClientRequest struct {
 // UpdateClient PATCH /api/v1/admin/clients/:id
 //
 // @Summary      更新应用详情
-// @Description  就地修改名称、描述、图标、地址、两类 TTL 与启用状态；携带 updatedAt 时做乐观版本校验。写入 client_updated 审计（地址类字段记前后数组）。
+// @Description  就地修改名称、描述、图标、首页地址、回调地址、登出地址、两类 TTL 与启用状态；首页地址为必填字段，传空串会返回 VALIDATION_FAILED。携带 updatedAt 时做乐观版本校验。写入 client_updated 审计（地址类字段记前后值/数组）。
 // @Tags         应用管理
 // @Accept       json
 // @Produce      json
@@ -134,6 +137,7 @@ func (h *Handler) UpdateClient(c *gin.Context) {
 		ClientName:      req.ClientName,
 		Description:     req.Description,
 		LogoURL:         req.LogoURL,
+		HomeURL:         req.HomeURL,
 		RedirectURIs:    req.RedirectURIs,
 		PostLogoutURIs:  req.PostLogoutURIs,
 		AccessTokenTTL:  req.AccessTokenTTL,
@@ -178,7 +182,7 @@ func (h *Handler) UpdateClient(c *gin.Context) {
 // @Param        page      query  int     false  "页码，默认 1"
 // @Param        pageSize  query  int     false  "每页条数，默认 20，上限 200"
 // @Param        all       query  string  false  "为 true 时返回全部 userId"
-// @Success      200  {object}  response.Body{data=response.Page{list=[]dto.AppMemberItem,total=int64,page=int,pageSize=int}}  "success"
+// @Success      200  {object}  response.Body{data=dto.MemberPage}  "success"
 // @Failure      400  {object}  response.Body  "VALIDATION_FAILED"
 // @Failure      401  {object}  response.Body  "UNAUTHENTICATED"
 // @Failure      403  {object}  response.Body  "FORBIDDEN"
@@ -208,13 +212,37 @@ func (h *Handler) ListMembers(c *gin.Context) {
 	}
 	list := make([]dto.AppMemberItem, 0, len(items))
 	for _, it := range items {
+		grants := make([]dto.OrgGrantRef, 0, len(it.OrgGrants))
+		for _, g := range it.OrgGrants {
+			grants = append(grants, dto.OrgGrantRef{OrgID: g.OrgID, DeptName: g.DeptName, IncludeSubDepts: g.IncludeSub})
+		}
 		list = append(list, dto.AppMemberItem{
 			UserID: it.UserID, Username: it.Username, DisplayName: it.DisplayName,
 			DeptID: it.DeptID, DeptName: it.DeptName, Status: it.Status,
 			JoinedAt: dto.Time(it.JoinedAt), RoleCount: it.RoleCount, IsAdmin: it.IsAdmin,
+			OrgGrants: grants,
 		})
 	}
-	response.Success(c, response.Page{List: list, Total: total, Page: f.Page, PageSize: f.PageSize})
+	page := dto.MemberPage{List: list, Total: total, Page: f.Page, PageSize: f.PageSize}
+	// 可见总人数与迁移提示只需首屏计算（全表聚合，critique E9）；其余页返回 null/省略。
+	if f.Page <= 1 {
+		if n, e := h.appAuth.VisibleUserCount(c.Request.Context(), clientID); e == nil {
+			page.VisibleTotal = &n
+		} else {
+			// 降级：可见总人数取不到时不阻塞成员列表，由前端显示「—」（spec FR-030）。
+			h.log.Warn("count visible users failed", "err", e, "client_id", clientID)
+		}
+		if hints, e := h.appAuth.OrgGrantHints(c.Request.Context(), clientID); e == nil {
+			hs := make([]dto.OrgGrantHint, 0, len(hints))
+			for _, h2 := range hints {
+				hs = append(hs, dto.OrgGrantHint{OrgID: h2.OrgID, DeptName: h2.DeptName, MemberCount: h2.MemberCount})
+			}
+			page.OrgGrantHints = hs
+		} else {
+			h.log.Warn("list org grant hints failed", "err", e, "client_id", clientID)
+		}
+	}
+	response.Success(c, page)
 }
 
 // ListCandidates GET /api/v1/admin/clients/:id/members/candidates
@@ -262,7 +290,7 @@ func (h *Handler) ListCandidates(c *gin.Context) {
 	for _, it := range items {
 		list = append(list, dto.CandidateItem{
 			UserID: it.UserID, Username: it.Username, DisplayName: it.DisplayName,
-			DeptID: it.DeptID, DeptName: it.DeptName,
+			DeptID: it.DeptID, DeptName: it.DeptName, OrgCovered: it.OrgCovered,
 		})
 	}
 	response.Success(c, response.Page{List: list, Total: total, Page: f.Page, PageSize: f.PageSize})
@@ -270,15 +298,17 @@ func (h *Handler) ListCandidates(c *gin.Context) {
 
 // AddMembersRequest 批量添加成员：userIds 与 deptId 二选一。
 type AddMembersRequest struct {
-	UserIDs         []string `json:"userIds"`
-	DeptID          string   `json:"deptId"`
-	IncludeSubDepts *bool    `json:"includeSubDepts"`
+	UserIDs []string `json:"userIds"`
+	// DeptID / IncludeSubDepts 已由组织授权取代（010），仅为兼容保留：
+	// 它把手动成员一次性物化，后续组织调整不会自动跟进，新接入请用 org-grants。
+	DeptID          string `json:"deptId"`
+	IncludeSubDepts *bool  `json:"includeSubDepts"`
 }
 
 // AddMembers POST /api/v1/admin/clients/:id/members
 //
 // @Summary      批量添加成员
-// @Description  幂等添加；userIds 单次 1–500（超出需分片），deptId 形态按部门整批加入并返回新增/已存在/已停用计数。停用账号跳过。写入 app_member_added 审计。
+// @Description  幂等添加；userIds 单次 1–500（超出需分片），停用账号跳过，写入 app_member_added 审计。**`deptId`/`includeSubDepts` 形态已由组织授权取代（010，见 `/admin/clients/{id}/org-grants`），仅为兼容保留**：它会把手动成员一次性物化到成员表，不再随组织架构调整自动跟进，新接入请勿使用。
 // @Tags         应用成员
 // @Accept       json
 // @Produce      json
@@ -977,6 +1007,9 @@ func changedFields(before, after *model.Client) []string {
 	}
 	if deref(before.LogoURL) != deref(after.LogoURL) {
 		out = append(out, "logoUrl")
+	}
+	if deref(before.HomeURL) != deref(after.HomeURL) {
+		out = append(out, "homeUrl")
 	}
 	if before.AccessTokenTTL != after.AccessTokenTTL {
 		out = append(out, "accessTokenTtl")

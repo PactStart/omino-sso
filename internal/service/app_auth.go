@@ -76,7 +76,7 @@ type MemberFilter struct {
 	PageSize int
 }
 
-// MemberItem 成员视图。字段顺序必须与 store.MemberRow 一致（两者直接转换）。
+// MemberItem 成员视图（010 起带出命中的组织授权，供「来源」列展示）。
 type MemberItem struct {
 	UserID      string
 	Username    string
@@ -87,6 +87,8 @@ type MemberItem struct {
 	JoinedAt    int64
 	RoleCount   int64
 	IsAdmin     bool
+	// OrgGrants 该成员命中的组织授权（空表示仅手动成员，spec FR-016）。
+	OrgGrants []OrgGrantRef
 }
 
 // CandidateItem 候选视图。
@@ -96,6 +98,8 @@ type CandidateItem struct {
 	DisplayName string
 	DeptID      string
 	DeptName    string
+	// OrgCovered 该候选已可通过组织授权访问（010）；候选集合不变。
+	OrgCovered bool
 }
 
 // RoleItem 角色视图。
@@ -161,9 +165,36 @@ func (s *AppAuthService) ListMembers(ctx context.Context, clientID string, f Mem
 	if err != nil {
 		return nil, 0, err
 	}
+	if len(rows) == 0 {
+		return []MemberItem{}, total, nil
+	}
+	// 当页成员的来源：一条查询取回（≤50 个 userId，无 N+1）。
+	ids := make([]string, 0, len(rows))
+	for _, r := range rows {
+		ids = append(ids, r.UserID)
+	}
+	refs, err := s.st.ListMemberOrgGrants(ctx, clientID, ids)
+	if err != nil {
+		return nil, 0, err
+	}
+	byUser := make(map[string][]OrgGrantRef, len(ids))
+	for _, ref := range refs {
+		byUser[ref.UserID] = append(byUser[ref.UserID], OrgGrantRef{
+			OrgID: ref.OrgID, DeptName: ref.DeptName, IncludeSub: ref.IncludeSub,
+		})
+	}
 	out := make([]MemberItem, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, MemberItem(r))
+		grants := byUser[r.UserID]
+		if grants == nil {
+			grants = []OrgGrantRef{}
+		}
+		out = append(out, MemberItem{
+			UserID: r.UserID, Username: r.Username, DisplayName: r.DisplayName,
+			DeptID: r.DeptID, DeptName: r.DeptName, Status: r.Status,
+			JoinedAt: r.JoinedAt, RoleCount: r.RoleCount, IsAdmin: r.IsAdmin,
+			OrgGrants: grants,
+		})
 	}
 	return out, total, nil
 }
@@ -200,7 +231,10 @@ func (s *AppAuthService) ListCandidates(ctx context.Context, clientID string, f 
 	}
 	out := make([]CandidateItem, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, CandidateItem(r))
+		out = append(out, CandidateItem{
+			UserID: r.UserID, Username: r.Username, DisplayName: r.DisplayName,
+			DeptID: r.DeptID, DeptName: r.DeptName, OrgCovered: r.OrgCovered,
+		})
 	}
 	return out, total, nil
 }

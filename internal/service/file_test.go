@@ -107,18 +107,18 @@ func (e *fileEnv) seedClient(t *testing.T, clientID string) {
 	t.Helper()
 	now := time.Now().UnixMilli()
 	c := &model.Client{
-		ClientID:       clientID,
-		ClientName:     "client-" + clientID,
-		RedirectURIs:   model.StringList{"https://example.com/cb"},
-		PostLogoutURIs: model.StringList{},
-		GrantTypes:     model.StringList{"authorization_code"},
-		Scopes:         model.StringList{"openid"},
-		AccessTokenTTL: 900,
+		ClientID:        clientID,
+		ClientName:      "client-" + clientID,
+		RedirectURIs:    model.StringList{"https://example.com/cb"},
+		PostLogoutURIs:  model.StringList{},
+		GrantTypes:      model.StringList{"authorization_code"},
+		Scopes:          model.StringList{"openid"},
+		AccessTokenTTL:  900,
 		RefreshTokenTTL: 2592000,
-		TenantID:       "default",
-		Status:         1,
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		TenantID:        "default",
+		Status:          1,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 	if err := e.st.CreateClient(context.Background(), c); err != nil {
 		t.Fatalf("创建 client 失败: %v", err)

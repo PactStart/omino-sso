@@ -42,9 +42,11 @@ func NewClientService(st *store.Store) *ClientService {
 
 // CreateClientInput 注册应用入参。
 type CreateClientInput struct {
-	ClientName   string
-	Description  string
-	LogoURL      string
+	ClientName  string
+	Description string
+	LogoURL     string
+	// HomeURL 应用首页地址，注册必填：门户「我的应用」的入口按钮用它跳转。
+	HomeURL      string
 	RedirectURIs []string
 	GrantTypes   []string
 	Scopes       []string
@@ -55,8 +57,13 @@ type CreateClientInput struct {
 
 // Create 注册应用，返回客户端明文密钥（仅此一次）。
 func (s *ClientService) Create(ctx context.Context, in CreateClientInput) (*model.Client, string, error) {
+	homeURL, err := validateRequiredURL(in.HomeURL, 512)
+	if err != nil {
+		return nil, "", err
+	}
 	now := nowMillis()
 	c := &model.Client{
+		HomeURL:         &homeURL,
 		ClientID:        id.New()[10:], // 16 位可读标识
 		ClientName:      in.ClientName,
 		IsPublic:        in.IsPublic,
@@ -145,7 +152,9 @@ func (s *ClientService) List(ctx context.Context, keyword string, hasMembers *bo
 
 // UpdateClientInput 应用详情可编辑字段（指针=三态：缺失表示不变）。
 type UpdateClientInput struct {
-	ClientName      *string
+	ClientName *string
+	// HomeURL 首页地址：传了就必须是合法 URL，不接受空串（必填字段，不可清空）。
+	HomeURL         *string
 	Description     *string
 	LogoURL         *string
 	RedirectURIs    *[]string
@@ -185,6 +194,14 @@ func (s *ClientService) Update(ctx context.Context, clientID string, in UpdateCl
 			return nil, err
 		}
 		updates["logo_url"] = *in.LogoURL
+	}
+	if in.HomeURL != nil {
+		// 必填字段：空串不放行，只允许改成另一个合法地址。
+		v, err := validateRequiredURL(*in.HomeURL, 512)
+		if err != nil {
+			return nil, err
+		}
+		updates["home_url"] = v
 	}
 	if in.RedirectURIs != nil {
 		uris, err := validateURIs(*in.RedirectURIs, 1, 10)
@@ -233,15 +250,28 @@ func (s *ClientService) Update(ctx context.Context, clientID string, in UpdateCl
 	return s.st.GetClient(ctx, clientID)
 }
 
-// UpdateBasicInfo 门户应用管理员可改的基础信息：仅名称 / 描述 / Logo / 回调地址。
+// UpdateBasicInfo 门户应用管理员可改的基础信息：名称 / 描述 / Logo / 首页地址 / 回调地址。
 // 其余字段（登出地址、两类 TTL、启用状态）在此统一清空，即使调用方误传也不会落库，
-// 保证「可编辑字段白名单」只有 service 一处定义（006 口径）。
+// 保证「可编辑字段白名单」只有 service 一处定义（006 口径；011 加入首页地址）。
 func (s *ClientService) UpdateBasicInfo(ctx context.Context, clientID string, in UpdateClientInput) (*model.Client, error) {
 	in.PostLogoutURIs = nil
 	in.AccessTokenTTL = nil
 	in.RefreshTokenTTL = nil
 	in.Status = nil
 	return s.Update(ctx, clientID, in)
+}
+
+// validateRequiredURL 校验必填地址：去空白后必须是非空、带 host 的 http(s) 绝对地址。
+// 返回去空白后的值，供调用方直接落库。
+func validateRequiredURL(v string, maxLen int) (string, error) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return "", ErrAppValidation
+	}
+	if err := validateOptionalURL(v, maxLen); err != nil {
+		return "", err
+	}
+	return v, nil
 }
 
 func validateOptionalURL(v string, maxLen int) error {
@@ -288,7 +318,8 @@ func (s *ClientService) Get(ctx context.Context, clientID string) (*model.Client
 
 // ListForUser 返回用户以成员身份可访问的启用应用（FR-012）。
 // 门户可见性只由 client_members 与 clients.status 决定；不存在 org → 应用的授权模型。
-// homeUrl 取首个 redirect_uri 的 origin。
+// homeUrl 优先取 clients.home_url（011 起为独立字段）；仅当存量行为空时，
+// 才退回「首个 redirect_uri 的 origin」的老口径，保证历史应用入口不失效。
 func (s *ClientService) ListForUser(ctx context.Context, userID string) ([]AppItem, error) {
 	clients, err := s.st.ListClientsForMember(ctx, userID)
 	if err != nil {
@@ -311,13 +342,13 @@ func (s *ClientService) ListForUser(ctx context.Context, userID string) ([]AppIt
 		if c.LogoURL != nil {
 			item.LogoURL = *c.LogoURL
 		}
-		if len(c.RedirectURIs) > 0 {
+		if c.HomeURL != nil {
+			item.HomeURL = strings.TrimSpace(*c.HomeURL)
+		}
+		if item.HomeURL == "" && len(c.RedirectURIs) > 0 {
 			if u, err := url.Parse(c.RedirectURIs[0]); err == nil && u.Scheme != "" {
 				item.HomeURL = u.Scheme + "://" + u.Host
 			}
-		}
-		if item.HomeURL == "" {
-			item.HomeURL = strings.TrimSpace("")
 		}
 		if at, ok := last[c.ClientID]; ok {
 			v := at

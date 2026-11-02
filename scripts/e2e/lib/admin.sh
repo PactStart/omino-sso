@@ -57,9 +57,12 @@ admin::client_id_by_name() {
 
 # admin::create_client <clientName> <redirectUri> —— 输出 "<clientId> <clientSecret>"。
 admin::create_client() {
-  local name=$1 redirect=$2 body code
-  body=$(jq -nc --arg n "$name" --arg r "$redirect" '{
+  local name=$1 redirect=$2 body code home
+  # 首页地址为必填（011）：取回调地址的 origin，测试里不需要单独特判。
+  home=$(printf '%s' "$redirect" | sed -E 's#^([a-zA-Z]+://[^/]+).*#\1#')
+  body=$(jq -nc --arg n "$name" --arg r "$redirect" --arg h "$home" '{
     clientName: $n,
+    homeUrl: $h,
     redirectUris: [$r],
     grantTypes: ["authorization_code", "refresh_token"],
     scopes: ["openid", "profile", "email", "offline_access"],

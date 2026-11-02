@@ -508,6 +508,7 @@ https://sso.example.com/admin/    →  web/admin   （Element Plus）
 | 应用名称 | input | 是 | 1–128 |
 | 描述 | textarea | 否 | ≤255 |
 | 图标地址 | input | 否 | URL，≤512 |
+| 首页地址 | input | **是** | http(s) 绝对 URL，≤512；门户「我的应用」点该应用时跳转此地址（011） |
 | 类型 | radio | 是 | 公共客户端（PKCE）/ 机密客户端；默认公共 |
 | 回调地址 | 动态列表 textarea | 是 | ≥1 条，每条合法 URL，**必须精确填写**（不做通配） |
 | 授权类型 | 多选 | 否 | 默认勾选 `authorization_code`、`refresh_token` |

@@ -315,6 +315,15 @@ func (s *OrgService) Delete(ctx context.Context, orgID string) error {
 		if n > 0 {
 			return ErrOrgHasUsers
 		}
+		// 组织授权引用（010）：悬空的 org_id 会让授权静默失效、覆盖人数变 0，
+		// 因此必须在同一临界区内拦住（spec FR-028）。
+		hasGrants, err := s.st.HasOrgGrants(ctx, orgID)
+		if err != nil {
+			return err
+		}
+		if hasGrants {
+			return ErrOrgHasGrants
+		}
 		return s.st.DeleteOrganization(ctx, orgID)
 	})
 }

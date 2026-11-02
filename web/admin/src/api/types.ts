@@ -124,6 +124,8 @@ export interface ClientDetail {
   clientName: string
   description: string
   logoUrl: string
+  /** 首页地址（011）：注册与编辑必填，门户「我的应用」入口 */
+  homeUrl: string
   redirectUris: string[]
   postLogoutUris: string[]
   grantTypes: string[]
@@ -139,11 +141,12 @@ export interface ClientDetail {
   memberCount: number
 }
 
-/** 缺失即不变；description / logoUrl 传空串表示清空 */
+/** 缺失即不变；description / logoUrl 传空串表示清空；homeUrl 为必填字段，不接受空串 */
 export interface UpdateClientPayload {
   clientName?: string
   description?: string
   logoUrl?: string
+  homeUrl?: string
   redirectUris?: string[]
   postLogoutUris?: string[]
   accessTokenTtl?: number
@@ -164,6 +167,67 @@ export interface AppMember {
   roleCount: number
   /** 是否为该应用的应用管理员（006）：门户「管理」入口的唯一判据 */
   isAdmin: boolean
+  /** 该成员命中的组织授权（010）：空数组表示「仅手动成员」 */
+  orgGrants: OrgGrantRef[]
+}
+
+/** 成员命中的某条组织授权（010，来源列） */
+export interface OrgGrantRef {
+  orgId: string
+  deptName: string
+  includeSubDepts: boolean
+}
+
+/** 组织授权（010）：门户可见性按部门授予，可含子部门 */
+export interface OrgGrant {
+  orgId: string
+  deptName: string
+  deptPath: string
+  includeSubDepts: boolean
+  /** 命中该授权的**在职启用账号数**（列头须标注口径） */
+  coveredUsers: number
+  /** 命中该授权但账号已停用的数量（仅用于撤销确认说明） */
+  coveredDisabledUsers: number
+  /** 仅因该授权可见的在职启用账号数（撤销确认的「X 人将不再可见」） */
+  uniqueUsers: number
+  grantedBy: string
+  grantedAt: string
+  updatedAt: string
+}
+
+/** 存量迁移提示：某部门快照成员数达阈值且该部门未被授权（010 FR-031） */
+export interface OrgGrantHint {
+  orgId: string
+  deptName: string
+  memberCount: number
+}
+
+export interface OrgGrantList {
+  list: OrgGrant[]
+  total: number
+}
+
+export interface AddOrgGrantsPayload {
+  grants: { deptId: string; includeSubDepts: boolean }[]
+}
+
+export interface AddOrgGrantsResult {
+  added: number
+  updated: number
+  unchanged: number
+  coveredUsers: number
+}
+
+export interface RemoveOrgGrantsResult {
+  removed: number
+  impactUsers: number
+  remainingVisibleUsers: number
+}
+
+/** 成员列表响应：在 Paged 之上新增可见总人数与迁移提示（仅 page=1 返回） */
+export interface MemberPage extends Paged<AppMember> {
+  visibleTotal: number | null
+  orgGrantHints?: OrgGrantHint[]
 }
 
 /** 设置/取消应用管理员的结果 */
@@ -178,6 +242,8 @@ export interface AppCandidate {
   displayName: string
   deptId: string
   deptName: string
+  /** 已可通过组织授权访问（010）：候选集合不变，仅提示 */
+  orgCovered: boolean
 }
 
 export interface MemberQuery {
@@ -295,6 +361,8 @@ export interface CreateClientPayload {
   clientName: string
   description?: string
   logoUrl?: string
+  /** 首页地址（011）：必填 */
+  homeUrl: string
   redirectUris: string[]
   grantTypes: string[]
   scopes: string[]
