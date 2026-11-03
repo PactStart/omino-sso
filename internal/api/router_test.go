@@ -178,9 +178,10 @@ func TestDocsServedWithoutRedis(t *testing.T) {
 	}
 	// 56（005 及之前）+ 18（006：admin 1 + 门户 16 + 门户只读组织树 1）
 	// + 4（门户应用信息：详情 / 更新 / Logo 设置 / Logo 清除）
-	// + 6（010 组织授权：admin 3 + 门户 3）。
-	if ops != 84 {
-		t.Fatalf("(method,path) 组合数为 %d, 期望 84", ops)
+	// + 6（010 组织授权：admin 3 + 门户 3）
+	// + 6（011 权限点导入导出：admin 3 + 门户 3）。
+	if ops != 90 {
+		t.Fatalf("(method,path) 组合数为 %d, 期望 90", ops)
 	}
 	if !strings.Contains(doc.Info.Description, "环境：test") {
 		t.Fatalf("info.description 未注入环境: %q", doc.Info.Description)
@@ -392,5 +393,62 @@ func TestOrgGrantRoutesRequireAuth(t *testing.T) {
 		{"/api/v1/me/apps/c1/org-grants/remove", `{"orgIds":[]}`},
 	} {
 		assertUnauthenticated(http.MethodPost, p.path, p.body)
+	}
+}
+
+// TestPermissionImportRoutesRegistered 固化 011 的 6 条路由（admin 3 + 门户 3），
+// 并验证未登录访问在触达业务前返回 401（门户端的 403 由 AppAdmin 中间件负责，
+// 语义与 006 的既有门户端点一致，见 AuthorizeAppAdmin 集成用例）。
+func TestPermissionImportRoutesRegistered(t *testing.T) {
+	r := newTestRouter(t, "test")
+
+	registered := map[string]bool{}
+	for _, ri := range r.Routes() {
+		registered[ri.Method+" "+ri.Path] = true
+	}
+	for _, want := range []string{
+		"POST /api/v1/admin/clients/:id/permissions/import/validate",
+		"POST /api/v1/admin/clients/:id/permissions/import",
+		"GET /api/v1/admin/clients/:id/permissions/export",
+		"POST /api/v1/me/apps/:id/permissions/import/validate",
+		"POST /api/v1/me/apps/:id/permissions/import",
+		"GET /api/v1/me/apps/:id/permissions/export",
+	} {
+		if !registered[want] {
+			t.Errorf("缺少路由 %s", want)
+		}
+	}
+
+	cases := []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodPost, "/api/v1/admin/clients/c1/permissions/import/validate", `{"permissions":[]}`},
+		{http.MethodPost, "/api/v1/admin/clients/c1/permissions/import", `{"permissions":[]}`},
+		{http.MethodGet, "/api/v1/admin/clients/c1/permissions/export", ""},
+		{http.MethodPost, "/api/v1/me/apps/c1/permissions/import/validate", `{"permissions":[]}`},
+		{http.MethodPost, "/api/v1/me/apps/c1/permissions/import", `{"permissions":[]}`},
+		{http.MethodGet, "/api/v1/me/apps/c1/permissions/export", ""},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("%s %s = %d，期望 401", tc.method, tc.path, rec.Code)
+		}
+		var parsed map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &parsed); err != nil {
+			t.Fatalf("%s %s 响应体不是统一响应：%v", tc.method, tc.path, err)
+		}
+		if parsed["code"] != "UNAUTHENTICATED" {
+			t.Fatalf("%s %s code = %v，期望 UNAUTHENTICATED", tc.method, tc.path, parsed["code"])
+		}
+		if parsed["data"] != nil {
+			t.Fatalf("%s %s 失败响应 data 必须为 null，实际 %v", tc.method, tc.path, parsed["data"])
+		}
 	}
 }

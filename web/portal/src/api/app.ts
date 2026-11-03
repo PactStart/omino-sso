@@ -27,7 +27,11 @@ import type {
   OrgGrantList,
   OrgNode,
   Paged,
+  PermissionExportDocument,
   PermissionGrantResult,
+  PermissionImportDocument,
+  PermissionImportPreview,
+  PermissionImportResult,
   RemoveMembersResult,
   RemoveOrgGrantsResult,
   RoleDetail,
@@ -215,6 +219,44 @@ export function deleteAppPermission(clientId: string, permissionId: string) {
   return request<null>({
     url: `${appBase(clientId)}/permissions/${encodeURIComponent(permissionId)}`,
     method: 'DELETE',
+  })
+}
+
+/* ---------- 011：权限点批量导入 / 导出（与 admin 端同一实现） ---------- */
+
+/** source 仅用于审计统计（paste|file），服务端把非法值一律按 paste 处理。 */
+export type PermissionImportSource = 'paste' | 'file'
+
+export function validatePermissionImport(
+  clientId: string,
+  doc: PermissionImportDocument,
+  source: PermissionImportSource,
+) {
+  return request<PermissionImportPreview>({
+    url: `${appBase(clientId)}/permissions/import/validate`,
+    method: 'POST',
+    params: { source },
+    data: doc,
+  })
+}
+
+export function confirmPermissionImport(
+  clientId: string,
+  doc: PermissionImportDocument,
+  source: PermissionImportSource,
+) {
+  return request<PermissionImportResult>({
+    url: `${appBase(clientId)}/permissions/import`,
+    method: 'POST',
+    params: { source },
+    data: doc,
+  })
+}
+
+export function exportPermissions(clientId: string) {
+  return request<PermissionExportDocument>({
+    url: `${appBase(clientId)}/permissions/export`,
+    method: 'GET',
   })
 }
 

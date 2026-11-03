@@ -221,7 +221,7 @@ omino-sso/
 │   │   │   ├── contact.go             # 005：绑定/修改手机号与邮箱（POST /me/phone、/me/email）
 │   │   │   ├── mfa.go                 # 005：MFA 绑定 / 确认 / 解绑（/me/mfa/*）
 │   │   │   ├── avatar.go              # 004：头像直传
-│   │   │   ├── app_admin.go           # 006：门户应用管理摘要 + 15 个转调 admin.Handler 的薄 wrapper
+│   │   │   ├── app_admin.go           # 006：门户应用管理摘要 + 18 个转调 admin.Handler 的薄 wrapper（含 011 的 3 个）
 │   │   │   └── organizations.go       # 006：只读组织树（GET /me/orgs/tree）
 │   │   └── admin/                     # /api/v1/admin/*
 │   │       ├── users.go
@@ -229,6 +229,7 @@ omino-sso/
 │   │       ├── clients.go
 │   │       ├── audit.go
 │   │       ├── org_grant.go           # 010：组织授权列表 / 新增 / 撤销（两端共用实现）
+│   │       ├── app_permission_import.go # 011：权限点批量导入 / 导出（3 个 handler + 错误映射；门户 3 wrapper 转调这里）
 │   │       └── send_records.go        # 005：发送记录分页查询
 │   ├── service/                       # 业务规则层（不依赖 gin/gorm）
 │   │   ├── user.go                    # 含标识符识别 / 联系方式绑定 / 验证码重置密码
@@ -238,6 +239,9 @@ omino-sso/
 │   │   ├── captcha_test.go            # 005：图形验证码单测（假 Redis 实现，无需外部依赖）
 │   │   ├── client.go
 │   │   ├── org_grant.go               # 010：组织授权校验 / 上限 / 幂等（判定口径在 store）
+│   │   ├── app_permission_import.go   # 011：解析 / 预览 / 确认导入 / 导出 + 可回导判定（纯函数可单测）
+│   │   ├── app_permission_import_test.go            # 011：解析 / 建计划 / 可回导判定单测（不触库）
+│   │   ├── app_permission_import_integration_test.go # 011：端点级集成用例（TEST_MYSQL_DSN 门控）
 │   │   ├── session.go
 │   │   ├── audit.go                   # 含 notification.AuditSink 实现
 │   │   └── notification/              # 005：验证码与发送通道抽象
@@ -337,10 +341,14 @@ omino-sso/
     │   ├── src/api/app.ts             # 006：门户应用管理接口（/me/apps/:id/* 与 /me/orgs/tree）
     │   ├── src/utils/redirect.ts      # 2026-10-24：登录回跳 next 解析 + origin 白名单（四域下 admin 传绝对地址，防开放重定向）
     │   ├── src/utils/redirect.spec.ts # 2026-10-24：白名单用例（相对路径 / 本域 / admin 域 / 外部域 / //evil.com / javascript:）
+    │   ├── src/utils/file.ts          # 011：readJsonFile（512KB 上限）/ downloadJson（2 空格缩进），门户内唯一实现
+    │   ├── src/utils/permission-import-example.ts # 011：示例文档常量 + 下载（对话框与权限页头部共用）
     │   ├── src/views/Apps.vue         # 006：应用管理员可见「管理」按钮（「打开」左侧）
     │   ├── src/views/Apps.spec.ts     # 006：管理按钮可见性 / 跳转用例
     │   ├── src/views/app-admin/       # 006：独立地址的管理页（AppAdminLayout + 应用信息/成员/角色/权限/授权）
     │   ├── src/views/app-admin/Overview.vue  # 应用信息：参考 admin 详情，仅名称/描述/Logo/回调地址可改
+    │   ├── src/views/app-admin/PermissionImportDialog.vue      # 011：粘贴/选文件 → 预览 → 确认导入（EP 局部注册）
+    │   ├── src/views/app-admin/PermissionImportDialog.spec.ts  # 011：issues 渲染 / ok=false 禁用确认 / 输入保留
     │   └── src/styles/tokens.css      # 品牌变量（主色 / 圆角 / 字体）
     └── admin/                         # 管理后台（Element Plus）；路由挂根路径（/users、/clients…），dev 5174 与 test/prod 一致
         ├── eslint.config.js
@@ -353,7 +361,11 @@ omino-sso/
         ├── src/layouts/AdminLayout.vue        # 一级菜单（index 即路由地址，router 模式）
         ├── src/views/Users.vue        # 左组织树 + 右用户表
         ├── src/views/Clients.vue
+        ├── src/utils/file.ts          # 011：readJsonFile（512KB 上限）/ downloadJson（2 空格缩进），本工程内唯一实现
+        ├── src/utils/permission-import-example.ts # 011：示例文档常量 + 下载（对话框与权限页头部共用）
         ├── src/views/client/ClientDetail.vue  # 左侧五 tab 壳（overview/members/roles/permissions/grants）
+        ├── src/views/client/PermissionImportDialog.vue     # 011：粘贴/选文件 → 预览 → 确认导入 + 示例文档
+        ├── src/views/client/PermissionImportDialog.spec.ts # 011：非法 JSON 不发请求 / issues 渲染 / ok=false 禁用确认 / 失败保留输入
         ├── src/views/Audit.vue
         ├── src/views/Files.vue
         ├── src/views/SendRecords.vue  # 005 发送记录
@@ -441,6 +453,9 @@ omino-sso/
 | POST | `/api/v1/me/apps/:id/permissions` | 新建权限（006） | appAdmin |
 | PATCH | `/api/v1/me/apps/:id/permissions/:pid` | 修改权限（006） | appAdmin |
 | DELETE | `/api/v1/me/apps/:id/permissions/:pid` | 删除权限（006） | appAdmin |
+| POST | `/api/v1/me/apps/:id/permissions/import/validate` | 校验权限点导入文档（011，只读；内容非法仍 200 + `ok=false`） | appAdmin |
+| POST | `/api/v1/me/apps/:id/permissions/import` | 确认导入权限点（011，单事务按 `code` 合并） | appAdmin |
+| GET | `/api/v1/me/apps/:id/permissions/export` | 导出权限点（011，与导入同构 + `importable` 自证） | appAdmin |
 | GET | `/api/v1/admin/users` | 用户列表 | admin |
 | POST | `/api/v1/admin/users` | 创建用户 | admin |
 | PATCH | `/api/v1/admin/users/:id` | 更新用户 | admin |
@@ -455,6 +470,9 @@ omino-sso/
 | GET | `/api/v1/admin/clients/:id/org-grants` | 组织授权列表（010，含覆盖人数/撤销影响人数） | admin |
 | POST | `/api/v1/admin/clients/:id/org-grants` | 新增/调整组织授权（010，body `{grants:[{deptId,includeSubDepts}]}`，幂等） | admin |
 | POST | `/api/v1/admin/clients/:id/org-grants/remove` | 撤销组织授权（010，body `{orgIds:[]}`） | admin |
+| POST | `/api/v1/admin/clients/:id/permissions/import/validate` | 校验权限点导入文档（011，只读；内容非法仍 200 + `ok=false`） | admin |
+| POST | `/api/v1/admin/clients/:id/permissions/import` | 确认导入权限点（011，单事务按 `code` 合并） | admin |
+| GET | `/api/v1/admin/clients/:id/permissions/export` | 导出权限点（011，与导入同构 + `importable` 自证） | admin |
 | GET | `/api/v1/admin/audit-logs` | 审计日志 | admin |
 | GET | `/api/v1/admin/send-records` | 短信/邮箱发送记录 | admin |
 | POST | `/api/v1/me/avatar` | 更新本人头像（004） | session |
@@ -762,6 +780,9 @@ omino-sso/
 | `PUT /api/v1/admin/clients/:id/roles/:rid/members` | `userIds[]`(≤5000)、`updatedAt` | `{memberIds[],added,removed,autoJoinedMembers}` |
 | `GET/POST /api/v1/admin/clients/:id/permissions` | `code`(`^[A-Za-z0-9_.:-]{1,64}$`)、`name`(1–64)、`parentId`、`sort` | `{list:[{id,parentId,code,name,description,sort,childCount,roleCount,createdAt,updatedAt}],total}` / `201` |
 | `PATCH/DELETE /api/v1/admin/clients/:id/permissions/:pid` | `code`/`name`/`description`/`parentId`/`sort`/`updatedAt` | 同上；含子权限删除 `409 APP_PERMISSION_HAS_CHILDREN` |
+| `POST /api/v1/admin/clients/:id/permissions/import/validate` | query `source`(`paste`/`file`，缺省与非法值按 `paste`)；body `{version(1),mode("merge"),permissions:[{code,name,description,sort,children[]}]}`（≤1000 条、≤512KB） | **恒 200**：`{ok,added,updated,unchanged,moved,total,issues[],issueTotal,warnings[],warningTotal,movedItems[]}`；`ok=false` 时四项计数为 0；只有 Content-Type 不符/body 读不了才 400 |
+| `POST /api/v1/admin/clients/:id/permissions/import` | 同上 | `{added,updated,unchanged,moved,total,source}`；内容非法 `400 APP_PERMISSION_IMPORT_INVALID`、超限 `413 APP_PERMISSION_IMPORT_TOO_LARGE`、并发唯一键冲突 `409 APP_RESOURCE_STALE`；失败 `data` 恒为 `null` |
+| `GET /api/v1/admin/clients/:id/permissions/export` | — | `{version:1,mode:"merge",importable:{ok,reasons[]},permissions[]}`；不含 `id`/`parentId`/`sort`；`reasons` ∈ `empty`/`too_many`/`too_large`/`too_deep`（体积按 2 空格缩进的**下载文件字节**判定，导出不截断） |
 | `GET /api/v1/admin/audit-logs` | `userId`,`clientId`,`eventType`,`from`,`to`,`result`,`page`,`pageSize` | `{list:[{id,eventType,userId,username,clientId,ip,userAgent,result,detail,createdAt}],total}` |
 
 **分页参数统一**：`page` 从 1 开始，`pageSize` 最大 100，超出则 `VALIDATION_FAILED`。
@@ -837,7 +858,9 @@ omino-sso/
 | 409 | `APP_PERMISSION_CODE_EXISTS` | 同一应用内已存在同名权限编码（区分大小写） |
 | 409 | `APP_PERMISSION_HAS_CHILDREN` | 权限下仍有子权限，不允许删除 |
 | 400 | `APP_PERMISSION_INVALID_PARENT` | 上级权限不存在 / 为自身或自身后代 / 跨应用 |
-| 409 | `APP_RESOURCE_STALE` | 写请求携带的 `updatedAt` 与服务端不一致（并发编辑） |
+| 409 | `APP_RESOURCE_STALE` | 写请求携带的 `updatedAt` 与服务端不一致（并发编辑）；011 的导入唯一键冲突复用同码 |
+| 400 | `APP_PERMISSION_IMPORT_INVALID` | 权限点导入内容不合法（结构 / 字段 / 编码规则 / 跨层重复 / 层级超深 / 字段超长 / 空 / 语法错），提示"请先校验预览" |
+| 413 | `APP_PERMISSION_IMPORT_TOO_LARGE` | 权限点导入超过单次上限（1000 条或 512KB）。**条数超限**文案须含本次实际条数与上限；**体积超限**不得声称知道条数，须给上限并提示"可能是描述或名称过长所致" |
 | 404 | `APP_MEMBER_NOT_FOUND` | 目标用户不是该应用成员（把非成员设为应用管理员时拒绝，006） |
 | 409 | `ORG_HAS_GRANTS` | 部门仍被某个应用的组织授权引用，不允许删除（010） |
 | 400 | `APP_ORG_GRANT_LIMIT` | 单个应用的组织授权数量超过上限 500 条（010） |
@@ -994,13 +1017,15 @@ omino-sso/
 | `trace_id` | VARCHAR(32) | NULL | |
 | `created_at` | BIGINT | NOT NULL, INDEX | |
 
-`event_type` 枚举（新增需登记）：`login_success`、`login_failure`、`mfa_success`、`mfa_failure`、`logout`、`password_changed`、`token_issued`、`token_revoked`、`code_reused`、`refresh_reused`、`user_created`、`user_updated`、`client_created`、`client_secret_rotated`、`org_created`、`org_updated`、`org_deleted`、`client_updated`、`app_member_added`、`app_member_removed`、`app_role_created`、`app_role_updated`、`app_role_deleted`、`app_permission_created`、`app_permission_updated`、`app_permission_deleted`、`app_grant_updated`、`file_uploaded`、`file_status_updated`、`verification_code_sent`、`phone_bound`、`email_bound`、`mfa_bound`、`mfa_unbound`、`password_reset`、`app_member_admin_granted`、`app_member_admin_revoked`、`app_org_granted`、`app_org_grant_updated`、`app_org_grant_revoked`、`sso_login_success`。
+`event_type` 枚举（新增需登记）：`login_success`、`login_failure`、`mfa_success`、`mfa_failure`、`logout`、`password_changed`、`token_issued`、`token_revoked`、`code_reused`、`refresh_reused`、`user_created`、`user_updated`、`client_created`、`client_secret_rotated`、`org_created`、`org_updated`、`org_deleted`、`client_updated`、`app_member_added`、`app_member_removed`、`app_role_created`、`app_role_updated`、`app_role_deleted`、`app_permission_created`、`app_permission_updated`、`app_permission_deleted`、`app_grant_updated`、`file_uploaded`、`file_status_updated`、`verification_code_sent`、`phone_bound`、`email_bound`、`mfa_bound`、`mfa_unbound`、`password_reset`、`app_member_admin_granted`、`app_member_admin_revoked`、`app_org_granted`、`app_org_grant_updated`、`app_org_grant_revoked`、`sso_login_success`、`app_permissions_imported`。
 
 > `app_org_granted` / `app_org_grant_updated` / `app_org_grant_revoked`（2026-11-01，010-app-access-org-grant）记组织授权的新增 / `includeSubDepts` 调整 / 撤销：`detail` 为 `{clientId, orgId, deptName, deptPath, includeSubDepts}`（调整时为 `{from,to}`，撤销时为 `impactUsers`），`deptPath` 是**授权时刻**的路径快照（部门改名或迁移后仍可追溯当时授权的是哪棵子树）。批量提交**按条记录、不合并**；`includeSubDepts` 未变化的重复提交**不产生**事件。
 
 > `verification_code_sent` 的 `detail` 记 `{channel,scene,target,provider}`（`target` 已脱敏）；验证码登录成功/失败复用 `login_success`/`login_failure`，MFA 二步复用 `mfa_success`/`mfa_failure`。
 
 > `sso_login_success`（2026-10-25，009-portal-login-redirect）记「凭既有会话直接完成授权」：`result=success`，`detail` 为 `{entry, amr}`（`entry` ∈ `portal` / `template`，表示回跳来自门户还是内置页）。**表单登录仍只记 `login_success`**，两者互不替代——混用会让登录次数统计把"每次进应用"都算成一次登录。
+
+> `app_permissions_imported`（2026-11-04，011-app-permission-import）每次**确认导入**最多 1 条，成功与失败同 Type、用 `result` 区分：成功 `detail={clientId,added,updated,unchanged,moved,total,source,addedIds,addedCount,docSha256}`（`addedIds` 超过 20 项只记前 20 个、`addedCount` 为全量总数；`docSha256` 为导入文档 SHA-256 十六进制，不存原文）；失败 `detail={clientId,reason,source}`，`reason` ∈ `too_large` / `stale` / `client_not_found` / `client_disabled`。**新增与更新都为 0 的全量无变化导入不写成功事件**；**内容非法（`APP_PERMISSION_IMPORT_INVALID`）与 401/403 不写失败事件**；**校验预览（成功或失败）一律不写**。`source` 由 query 声明，**仅供统计、不得作为安全依据**。1000 条输入也只产生这 1 条聚合事件，禁止逐条记录。门户「确认导入」的鉴权在 handler 内完成（该路由不挂 `middleware.AppAdmin`），因此「应用已停用 / 不存在」同样写 failure，对外仍是通用 403（不泄露存在性）。
 
 `detail` 详略规则（003 起）：一般只记字段名列表与数量；**地址类字段（`redirectUris` / `postLogoutUris`）记变更前后的完整数组**；删除角色/权限记被解除绑定的 ID 快照（超过 20 项记数量 + 前 20 项）。
 

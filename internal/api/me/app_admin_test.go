@@ -8,9 +8,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// 契约固化（contracts/portal-app-admin-api.md §3）：门户侧应用管理共 20 条端点，
-// 构成是 1 条摘要 + 4 条应用信息（详情 / 更新 / Logo 设置 / Logo 清除）+ 15 条成员/角色/权限/授权
-// （其中 15 条转交 admin.Handler 的同名实现，应用信息为门户自有实现且只开放四个可编辑字段）。
+// 契约固化（contracts/portal-app-admin-api.md §3）：门户侧应用管理共 23 条端点，
+// 构成是 1 条摘要 + 4 条应用信息（详情 / 更新 / Logo 设置 / Logo 清除）+ 18 条成员/角色/权限/授权
+// （其中 18 条转交 admin.Handler 的同名实现，应用信息为门户自有实现且只开放四个可编辑字段）。
 //
 // 这里做编译期 + 数量断言：包装方法被删除或改名会立即失败。
 // 行为一致性由 internal/api/router_test.go（路由集 / 未注册路径 / 401）与
@@ -41,9 +41,12 @@ func TestAppAdminWrappersPresent(t *testing.T) {
 		{"AppCreatePermission", h.AppCreatePermission},
 		{"AppUpdatePermission", h.AppUpdatePermission},
 		{"AppDeletePermission", h.AppDeletePermission},
+		{"AppValidatePermissionImport", h.AppValidatePermissionImport},
+		{"AppConfirmPermissionImport", h.AppConfirmPermissionImport},
+		{"AppExportPermissions", h.AppExportPermissions},
 	}
-	if len(handlers) != 20 {
-		t.Fatalf("门户应用管理端点数为 %d, 期望 20（摘要 + 应用信息 3 + 成员/角色/权限/授权 16）", len(handlers))
+	if len(handlers) != 23 {
+		t.Fatalf("门户应用管理端点数为 %d, 期望 23（摘要 + 应用信息 4 + 成员/角色/权限/授权 18）", len(handlers))
 	}
 	for _, item := range handlers {
 		if item.fn == nil {

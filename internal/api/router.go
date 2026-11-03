@@ -119,6 +119,10 @@ func NewRouter(
 	authed.GET("/me/apps/:id/detail", middleware.AppAdmin(appAuth, logger), meH.AppClientDetail)
 	authed.PATCH("/me/apps/:id", middleware.AppAdmin(appAuth, logger), meH.AppUpdateClient)
 
+	// 011：确认导入单独注册、**不挂** AppAdmin——应用停用/不存在时也要能进 handler 写失败审计
+	// （FR-025），handler 内部完成应用管理员鉴权并统一返回通用 403（FR-021）。
+	authed.POST("/me/apps/:id/permissions/import", meH.AppConfirmPermissionImport)
+
 	appAdminGroup := authed.Group("/me/apps/:id")
 	appAdminGroup.Use(middleware.AppAdmin(appAuth, logger))
 	{
@@ -143,6 +147,10 @@ func NewRouter(
 		appAdminGroup.POST("/permissions", meH.AppCreatePermission)
 		appAdminGroup.PATCH("/permissions/:pid", meH.AppUpdatePermission)
 		appAdminGroup.DELETE("/permissions/:pid", meH.AppDeletePermission)
+		// 011：批量导入 / 导出（静态子路径，与上面的 :pid 不在同一 method 上，无冲突）。
+		// 确认导入（POST /permissions/import）在组外单独注册，原因见上。
+		appAdminGroup.POST("/permissions/import/validate", meH.AppValidatePermissionImport)
+		appAdminGroup.GET("/permissions/export", meH.AppExportPermissions)
 	}
 
 	// 管理端点
@@ -184,6 +192,10 @@ func NewRouter(
 		adminGroup.POST("/clients/:id/permissions", adminH.CreatePermission)
 		adminGroup.PATCH("/clients/:id/permissions/:pid", adminH.UpdatePermission)
 		adminGroup.DELETE("/clients/:id/permissions/:pid", adminH.DeletePermission)
+		// 011：批量导入 / 导出。
+		adminGroup.POST("/clients/:id/permissions/import/validate", adminH.ValidatePermissionImport)
+		adminGroup.POST("/clients/:id/permissions/import", adminH.ConfirmPermissionImport)
+		adminGroup.GET("/clients/:id/permissions/export", adminH.ExportPermissions)
 
 		adminGroup.GET("/audit-logs", adminH.ListAuditLogs)
 		adminGroup.GET("/send-records", adminH.ListSendRecords)

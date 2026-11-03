@@ -25,12 +25,16 @@ import {
 import {
   createAppPermission,
   deleteAppPermission,
+  exportPermissions,
   listAppPermissions,
   updateAppPermission,
 } from '@/api/app'
 import { errorCode, errorMessage } from '@/api/client'
 import type { AppPermission } from '@/api/types'
+import { downloadJson } from '@/utils/file'
+import { downloadPermissionImportExample } from '@/utils/permission-import-example'
 import { formatTime, orDash } from '@/utils/format'
+import PermissionImportDialog from './PermissionImportDialog.vue'
 
 const route = useRoute()
 const clientId = computed(() => String(route.params.clientId ?? ''))
@@ -291,6 +295,66 @@ async function remove(row: AppPermission) {
 }
 
 onMounted(loadPermissions)
+
+/* ---------------- 批量导入 / 导出（011） ---------------- */
+
+const importOpen = ref(false)
+const exporting = ref(false)
+
+/** 不可回导原因 → 管理员能看懂的处置建议（FR-019）。 */
+const EXPORT_REASON_TEXT: Record<string, string> = {
+  empty: '该应用还没有权限点，导出的文件导入时会被判为空',
+  too_many: '权限点超过 1000 条，超过单次导入上限（列表页最多展示 1000 条）',
+  too_large: '文件超过 512KB，超过单次导入上限',
+  too_deep: '层级超过 100 层，超过导入上限',
+}
+
+function describeReasons(reasons: string[]): string {
+  return reasons.map((r) => EXPORT_REASON_TEXT[r] ?? r).join('；')
+}
+
+function dateStamp(): string {
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`
+}
+
+async function exportAll() {
+  if (exporting.value) return
+  exporting.value = true
+  try {
+    const doc = await exportPermissions(clientId.value)
+    if (!doc.importable.ok) {
+      // 先提示后下载：用户可继续下载（备份用途），但要清楚这份文件导不回去
+      try {
+        await ElMessageBox.confirm(
+          `这份导出文件无法原样回导：${describeReasons(doc.importable.reasons)}。仍要下载吗？`,
+          '可回导性提示',
+          { type: 'warning', confirmButtonText: '仍要下载', cancelButtonText: '取消' },
+        )
+      } catch {
+        return
+      }
+    }
+    // 下载文件只含 {version, mode, permissions}：importable 进去会被判为未知字段
+    downloadJson(`permissions-${clientId.value}-${dateStamp()}.json`, {
+      version: doc.version,
+      mode: doc.mode,
+      permissions: doc.permissions,
+    })
+    if (doc.importable.reasons.includes('too_many')) {
+      ElMessage.warning('导出已包含全部权限点；列表页最多展示 1000 条，不是导出出错')
+    }
+  } catch (e) {
+    ElMessage.error(errorMessage(e))
+  } finally {
+    exporting.value = false
+  }
+}
+
+function onImported() {
+  void loadPermissions()
+}
 </script>
 
 <template>
@@ -308,6 +372,9 @@ onMounted(loadPermissions)
             <el-radio-button value="tree">树形</el-radio-button>
             <el-radio-button value="list">列表</el-radio-button>
           </el-radio-group>
+          <el-button @click="downloadPermissionImportExample">下载示例</el-button>
+          <el-button :loading="exporting" @click="exportAll">导出</el-button>
+          <el-button @click="importOpen = true">批量导入</el-button>
           <el-button type="primary" @click="openCreate()">新建权限</el-button>
         </div>
       </div>
@@ -450,6 +517,8 @@ onMounted(loadPermissions)
         <el-button type="primary" :loading="submitting" @click="submit">保存</el-button>
       </template>
     </el-dialog>
+
+    <PermissionImportDialog v-model="importOpen" :client-id="clientId" @imported="onImported" />
   </div>
 </template>
 

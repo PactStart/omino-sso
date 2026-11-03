@@ -278,8 +278,9 @@ func TestEmbeddedSpecStructure(t *testing.T) {
 	// 56（005 及之前）+ 18（006：admin 1 + 门户 16 + 门户只读组织树 1）
 	// + 4（门户应用信息：详情 / 更新 / Logo 设置 / Logo 清除）。
 	// 010 组织授权新增 6 个 operation（admin 3 + 门户 3），总数 78 → 84。
-	if ops != 84 {
-		t.Fatalf("operation 数为 %d，规范要求 84", ops)
+	// 011 权限点导入导出新增 6 个 operation（admin 3 + 门户 3），总数 84 → 90。
+	if ops != 90 {
+		t.Fatalf("operation 数为 %d，规范要求 90", ops)
 	}
 
 	scheme, ok := doc.Components.SecuritySchemes["cookieAuth"]
