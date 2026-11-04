@@ -19,7 +19,7 @@ import (
 //  2. 应用信息 —— AppClientDetail / AppUpdateClient / AppSetClientLogo / AppClearClientLogo，
 //     门户自有实现：详情复用 dto.ClientDetail，写入走 ClientService.UpdateBasicInfo
 //     （只允许名称 / 描述 / Logo / 回调地址），Logo 复用 FileService；
-//  3. 一组薄 wrapper（15 个）—— 每个方法只有一行，把请求原样转交给 admin.Handler 的同名方法。
+//  3. 一组薄 wrapper（18 个）—— 每个方法只有一行，把请求原样转交给 admin.Handler 的同名方法。
 //
 // 之所以加 wrapper 而不直接在 router 里挂 admin 的方法：swag 的路径来自注解，
 // 直接复用会把文档路径写成 /admin/clients/...，与实际路由不符；业务逻辑仍然只有
@@ -659,3 +659,114 @@ func (h *Handler) AppUpdatePermission(c *gin.Context) { h.appMgmt.UpdatePermissi
 // @x-auth-level  "appAdmin"
 // @Router       /me/apps/{id}/permissions/{pid} [delete]
 func (h *Handler) AppDeletePermission(c *gin.Context) { h.appMgmt.DeletePermission(c) }
+
+// ---------- 权限点批量导入 / 导出（011） ----------
+
+// AppValidatePermissionImport POST /api/v1/me/apps/:id/permissions/import/validate
+//
+// @Summary      校验权限点导入文档（门户）
+// @Description  与 admin 端同一实现：只读预览，内容非法时仍返回 200 且 ok=false，不写权限点、不写审计。
+// @Tags         门户应用管理
+// @Accept       json
+// @Produce      json
+// @Security     cookieAuth
+// @Param        id     path   string  true   "应用标识 clientId"
+// @Param        source query  string  false  "来源（paste|file），缺省与非法值按 paste"
+// @Param        body   body   dto.PermissionImportDocument  true  "导入文档（≤512KB）"
+// @Success      200  {object}  response.Body{data=dto.PermissionImportPreview}  "success"
+// @Failure      400  {object}  response.Body  "VALIDATION_FAILED"
+// @Failure      401  {object}  response.Body  "UNAUTHENTICATED"
+// @Failure      403  {object}  response.Body  "FORBIDDEN"
+// @Failure      413  {object}  response.Body  "APP_PERMISSION_IMPORT_TOO_LARGE"
+// @Failure      500  {object}  response.Body  "INTERNAL_ERROR"
+// @x-auth-level  "appAdmin"
+// @Router       /me/apps/{id}/permissions/import/validate [post]
+func (h *Handler) AppValidatePermissionImport(c *gin.Context) { h.appMgmt.ValidatePermissionImport(c) }
+
+// AppConfirmPermissionImport POST /api/v1/me/apps/:id/permissions/import
+//
+// @Summary      确认导入权限点（门户）
+// @Description  与 admin 端同一实现：单事务内按 code 幂等合并，有实际写入时写 1 条聚合审计事件。
+// @Tags         门户应用管理
+// @Accept       json
+// @Produce      json
+// @Security     cookieAuth
+// @Param        id     path   string  true   "应用标识 clientId"
+// @Param        source query  string  false  "来源（paste|file），缺省与非法值按 paste"
+// @Param        body   body   dto.PermissionImportDocument  true  "导入文档（≤512KB）"
+// @Success      200  {object}  response.Body{data=dto.PermissionImportResult}  "success"
+// @Failure      400  {object}  response.Body  "APP_PERMISSION_IMPORT_INVALID"
+// @Failure      401  {object}  response.Body  "UNAUTHENTICATED"
+// @Failure      403  {object}  response.Body  "FORBIDDEN"
+// @Failure      409  {object}  response.Body  "APP_RESOURCE_STALE"
+// @Failure      413  {object}  response.Body  "APP_PERMISSION_IMPORT_TOO_LARGE"
+// @Failure      500  {object}  response.Body  "INTERNAL_ERROR"
+// @x-auth-level  "appAdmin"
+// @Router       /me/apps/{id}/permissions/import [post]
+//
+// 注意：这条路由**不挂** middleware.AppAdmin（见 router.go），鉴权在本方法内完成。
+// 原因：中间件会在进入 handler 前拒绝「应用不存在 / 已停用」，门户侧就永远写不出
+// FR-025 要求的失败审计事件；而对外仍统一返回通用 403，不泄露应用是否存在（FR-021）。
+func (h *Handler) AppConfirmPermissionImport(c *gin.Context) {
+	clientID := c.Param("id")
+	u, ok := middleware.CurrentUser(c)
+	if !ok {
+		response.Fail(c, response.ErrUnauthenticated)
+		return
+	}
+
+	ctx := c.Request.Context()
+	if err := h.appAuth.AuthorizeImportConfirm(ctx, clientID, u.ID); err != nil {
+		if reason, audit := importRejectionReason(err); audit {
+			h.audit.Emit(ctx, service.Event{
+				Type: model.EventAppPermissionsImported, ClientID: clientID,
+				IP: c.ClientIP(), UserAgent: c.Request.UserAgent(), Result: "failure",
+				Fields: map[string]any{
+					"clientId": clientID, "reason": reason, "source": portalImportSource(c),
+				},
+			})
+		} else if !errors.Is(err, service.ErrAppNotAdmin) && !errors.Is(err, service.ErrAppMemberNotFound) {
+			h.log.Error("app permission import authorize failed", "err", err, "clientId", clientID)
+		}
+		// 门户统一通用文案：不存在 / 非管理员 / 已停用三者响应完全一致（FR-021）
+		response.Fail(c, response.ErrForbidden)
+		return
+	}
+	h.appMgmt.ConfirmPermissionImport(c)
+}
+
+// importRejectionReason 把门户导入的鉴权失败分类为审计 reason；只有业务拒绝才写事件。
+func importRejectionReason(err error) (string, bool) {
+	switch {
+	case errors.Is(err, service.ErrClientNotFound):
+		return "client_not_found", true
+	case errors.Is(err, service.ErrAppClientDisabled):
+		return "client_disabled", true
+	default:
+		return "", false
+	}
+}
+
+// portalImportSource 读取来源 query（白名单外一律 paste，仅供审计统计）。
+func portalImportSource(c *gin.Context) string {
+	if c.Query("source") == service.ImportSourceFile {
+		return service.ImportSourceFile
+	}
+	return service.ImportSourcePaste
+}
+
+// AppExportPermissions GET /api/v1/me/apps/:id/permissions/export
+//
+// @Summary      导出权限点（门户）
+// @Description  与 admin 端同一实现：产出与导入同构的 JSON，并自证 importable（是否可回导）。
+// @Tags         门户应用管理
+// @Produce      json
+// @Security     cookieAuth
+// @Param        id  path  string  true  "应用标识 clientId"
+// @Success      200  {object}  response.Body{data=dto.PermissionExportDocument}  "success"
+// @Failure      401  {object}  response.Body  "UNAUTHENTICATED"
+// @Failure      403  {object}  response.Body  "FORBIDDEN"
+// @Failure      500  {object}  response.Body  "INTERNAL_ERROR"
+// @x-auth-level  "appAdmin"
+// @Router       /me/apps/{id}/permissions/export [get]
+func (h *Handler) AppExportPermissions(c *gin.Context) { h.appMgmt.ExportPermissions(c) }

@@ -366,6 +366,71 @@ export interface UpdatePermissionPayload {
   updatedAt?: number
 }
 
+/* ---------- 011：权限点批量导入 / 导出（与 admin 端同构） ---------- */
+
+export interface PermissionImportNode {
+  code: string
+  name: string
+  description?: string
+  sort?: number
+  children?: PermissionImportNode[]
+}
+
+export interface PermissionImportDocument {
+  version?: number
+  mode?: string
+  permissions: PermissionImportNode[]
+}
+
+export interface PermissionImportIssue {
+  path: string
+  field: string
+  code: string
+  message: string
+  line: number | null
+}
+
+export interface PermissionImportMoved {
+  code: string
+  fromParent: string
+  toParent: string
+}
+
+export interface PermissionImportPreview {
+  ok: boolean
+  added: number
+  updated: number
+  unchanged: number
+  moved: number
+  total: number
+  issues: PermissionImportIssue[]
+  issueTotal: number
+  warnings: PermissionImportIssue[]
+  warningTotal: number
+  movedItems: PermissionImportMoved[]
+}
+
+export interface PermissionImportResult {
+  added: number
+  updated: number
+  unchanged: number
+  moved: number
+  total: number
+  source: string
+}
+
+export interface PermissionExportable {
+  ok: boolean
+  reasons: string[]
+}
+
+export interface PermissionExportDocument {
+  version: number
+  mode: string
+  importable: PermissionExportable
+  permissions: PermissionImportNode[]
+}
+
 export interface PermissionGrantResult {
   permissionIds: string[]
   added: number

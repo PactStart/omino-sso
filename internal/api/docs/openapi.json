@@ -1477,6 +1477,43 @@
         },
         "type": "object"
       },
+      "dto.PermissionExportDocument": {
+        "properties": {
+          "importable": {
+            "$ref": "#/components/schemas/dto.PermissionExportable"
+          },
+          "mode": {
+            "example": "merge",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "$ref": "#/components/schemas/dto.PermissionImportNode"
+            },
+            "type": "array"
+          },
+          "version": {
+            "example": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "dto.PermissionExportable": {
+        "properties": {
+          "ok": {
+            "example": true,
+            "type": "boolean"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "dto.PermissionGrantResult": {
         "properties": {
           "added": {
@@ -1491,6 +1528,177 @@
           },
           "removed": {
             "example": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "dto.PermissionImportDocument": {
+        "properties": {
+          "mode": {
+            "example": "merge",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "$ref": "#/components/schemas/dto.PermissionImportNode"
+            },
+            "type": "array"
+          },
+          "version": {
+            "example": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "dto.PermissionImportIssue": {
+        "properties": {
+          "code": {
+            "example": "invalid_code",
+            "type": "string"
+          },
+          "field": {
+            "example": "code",
+            "type": "string"
+          },
+          "line": {
+            "type": "integer"
+          },
+          "message": {
+            "example": "编码含非法字符，只允许字母、数字与 _.:-",
+            "type": "string"
+          },
+          "path": {
+            "example": "permissions[2].code",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "dto.PermissionImportMoved": {
+        "properties": {
+          "code": {
+            "example": "order.read",
+            "type": "string"
+          },
+          "fromParent": {
+            "example": "order",
+            "type": "string"
+          },
+          "toParent": {
+            "example": "pay",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "dto.PermissionImportNode": {
+        "properties": {
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/dto.PermissionImportNode"
+            },
+            "type": "array"
+          },
+          "code": {
+            "example": "order.write",
+            "type": "string"
+          },
+          "description": {
+            "example": "订单写入",
+            "type": "string"
+          },
+          "name": {
+            "example": "创建订单",
+            "type": "string"
+          },
+          "sort": {
+            "example": 10,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "dto.PermissionImportPreview": {
+        "properties": {
+          "added": {
+            "example": 132,
+            "type": "integer"
+          },
+          "issueTotal": {
+            "example": 0,
+            "type": "integer"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/dto.PermissionImportIssue"
+            },
+            "type": "array"
+          },
+          "moved": {
+            "example": 1,
+            "type": "integer"
+          },
+          "movedItems": {
+            "items": {
+              "$ref": "#/components/schemas/dto.PermissionImportMoved"
+            },
+            "type": "array"
+          },
+          "ok": {
+            "example": true,
+            "type": "boolean"
+          },
+          "total": {
+            "example": 140,
+            "type": "integer"
+          },
+          "unchanged": {
+            "example": 5,
+            "type": "integer"
+          },
+          "updated": {
+            "example": 3,
+            "type": "integer"
+          },
+          "warningTotal": {
+            "example": 0,
+            "type": "integer"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/dto.PermissionImportIssue"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "dto.PermissionImportResult": {
+        "properties": {
+          "added": {
+            "example": 28,
+            "type": "integer"
+          },
+          "moved": {
+            "example": 1,
+            "type": "integer"
+          },
+          "source": {
+            "example": "paste",
+            "type": "string"
+          },
+          "total": {
+            "example": 30,
+            "type": "integer"
+          },
+          "unchanged": {
+            "example": 0,
+            "type": "integer"
+          },
+          "updated": {
+            "example": 2,
             "type": "integer"
           }
         },
@@ -4168,6 +4376,366 @@
           }
         ],
         "summary": "新建权限",
+        "tags": [
+          "应用权限"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
+    "/api/v1/admin/clients/{id}/permissions/export": {
+      "get": {
+        "description": "产出与导入完全同构的 JSON（version/mode/嵌套 children，不含内部标识）。\nimportable 自证\"能否回导\"（empty/too_many/too_large/too_deep），仅用于提示、不写入下载文件。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.PermissionExportDocument"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "导出权限点",
+        "tags": [
+          "应用权限"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
+    "/api/v1/admin/clients/{id}/permissions/import": {
+      "post": {
+        "description": "单事务内按 code 幂等合并（新增 + 更新，不删除）；有实际写入时写 1 条聚合审计事件。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "来源（paste|file），缺省与非法值按 paste",
+            "in": "query",
+            "name": "source",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/dto.PermissionImportDocument"
+              }
+            }
+          },
+          "description": "导入文档（≤512KB）",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.PermissionImportResult"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "APP_PERMISSION_IMPORT_INVALID"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "APP_RESOURCE_STALE"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "APP_PERMISSION_IMPORT_TOO_LARGE"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "确认导入权限点",
+        "tags": [
+          "应用权限"
+        ],
+        "x-auth-level": "admin"
+      }
+    },
+    "/api/v1/admin/clients/{id}/permissions/import/validate": {
+      "post": {
+        "description": "只读预览：返回将新增/更新/无变化条数、上级变更明细与可分位置的问题清单。\n内容非法时仍返回 200 且 ok=false；只有无法解析（超 512KB）才返回 413。不写权限点、不写审计。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "来源（paste|file），缺省与非法值按 paste",
+            "in": "query",
+            "name": "source",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/dto.PermissionImportDocument"
+              }
+            }
+          },
+          "description": "导入文档（≤512KB）",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.PermissionImportPreview"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "NOT_FOUND"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "APP_PERMISSION_IMPORT_TOO_LARGE"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "校验权限点导入文档",
         "tags": [
           "应用权限"
         ],
@@ -9080,6 +9648,336 @@
           }
         ],
         "summary": "新建权限（门户）",
+        "tags": [
+          "门户应用管理"
+        ],
+        "x-auth-level": "appAdmin"
+      }
+    },
+    "/api/v1/me/apps/{id}/permissions/export": {
+      "get": {
+        "description": "与 admin 端同一实现：产出与导入同构的 JSON，并自证 importable（是否可回导）。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.PermissionExportDocument"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "导出权限点（门户）",
+        "tags": [
+          "门户应用管理"
+        ],
+        "x-auth-level": "appAdmin"
+      }
+    },
+    "/api/v1/me/apps/{id}/permissions/import": {
+      "post": {
+        "description": "与 admin 端同一实现：单事务内按 code 幂等合并，有实际写入时写 1 条聚合审计事件。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "来源（paste|file），缺省与非法值按 paste",
+            "in": "query",
+            "name": "source",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/dto.PermissionImportDocument"
+              }
+            }
+          },
+          "description": "导入文档（≤512KB）",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.PermissionImportResult"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "APP_PERMISSION_IMPORT_INVALID"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "APP_RESOURCE_STALE"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "APP_PERMISSION_IMPORT_TOO_LARGE"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "确认导入权限点（门户）",
+        "tags": [
+          "门户应用管理"
+        ],
+        "x-auth-level": "appAdmin"
+      }
+    },
+    "/api/v1/me/apps/{id}/permissions/import/validate": {
+      "post": {
+        "description": "与 admin 端同一实现：只读预览，内容非法时仍返回 200 且 ok=false，不写权限点、不写审计。",
+        "parameters": [
+          {
+            "description": "应用标识 clientId",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "来源（paste|file），缺省与非法值按 paste",
+            "in": "query",
+            "name": "source",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/dto.PermissionImportDocument"
+              }
+            }
+          },
+          "description": "导入文档（≤512KB）",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/response.Body"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/dto.PermissionImportPreview"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "VALIDATION_FAILED"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "FORBIDDEN"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "APP_PERMISSION_IMPORT_TOO_LARGE"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response.Body"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "校验权限点导入文档（门户）",
         "tags": [
           "门户应用管理"
         ],

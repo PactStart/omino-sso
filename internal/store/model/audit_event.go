@@ -48,6 +48,10 @@ const (
 	EventAppPermissionUpdated = "app_permission_updated"
 	EventAppPermissionDeleted = "app_permission_deleted"
 	EventAppGrantUpdated      = "app_grant_updated"
+	// EventAppPermissionsImported 权限点批量导入（011-app-permission-import，AGENTS.md §6.7）。
+	// detail 记 {clientId, added, updated, unchanged, moved, source, total, addedIds, addedCount, docSha256}；
+	// 全量无变化不写成功事件，内容非法/401/403 不写失败事件，校验预览永不写。
+	EventAppPermissionsImported = "app_permissions_imported"
 
 	// 应用管理员身份变更（006-app-admin-role，AGENTS.md §6.7）。
 	// detail 记 {clientId, userId, isAdmin:{before,after}}，并在事件上记录操作者。

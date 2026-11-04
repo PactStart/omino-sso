@@ -37,6 +37,11 @@ var (
 	ErrAppPermissionHasChildren   = &Error{http.StatusConflict, "APP_PERMISSION_HAS_CHILDREN", "权限下仍有子权限"}
 	ErrAppPermissionInvalidParent = &Error{http.StatusBadRequest, "APP_PERMISSION_INVALID_PARENT", "上级权限不存在或不可作为上级"}
 	ErrAppResourceStale           = &Error{http.StatusConflict, "APP_RESOURCE_STALE", "已被他人修改，请刷新后重试"}
+
+	// 权限点批量导入（011-app-permission-import，规范 §5.3）。
+	// 两个码按"修法"区分：内容不合法要改内容，超限要裁剪后重试。
+	ErrAppPermissionImportInvalid  = &Error{http.StatusBadRequest, "APP_PERMISSION_IMPORT_INVALID", "导入内容不合法，请先校验预览"}
+	ErrAppPermissionImportTooLarge = &Error{http.StatusRequestEntityTooLarge, "APP_PERMISSION_IMPORT_TOO_LARGE", "单次导入最多 1000 条且不超过 512KB，请裁剪后重试"}
 	// ErrAppMemberNotFound 用于「把非成员设为应用管理员」等成员维度操作（006）。
 	ErrAppMemberNotFound = &Error{http.StatusNotFound, "APP_MEMBER_NOT_FOUND", "该用户不是本应用成员，请先添加成员"}
 

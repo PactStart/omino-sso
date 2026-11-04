@@ -333,6 +333,79 @@ export interface CreatePermissionPayload {
   sort?: number
 }
 
+/* ---------- 011：权限点批量导入 / 导出 ---------- */
+
+/** 导入文档中的节点（层级只用 children 嵌套表达，不含任何内部标识）。 */
+export interface PermissionImportNode {
+  code: string
+  name: string
+  description?: string
+  sort?: number
+  children?: PermissionImportNode[]
+}
+
+/** 导入文档（请求体）。version 缺省视为 1，mode 缺省视为 merge。 */
+export interface PermissionImportDocument {
+  version?: number
+  mode?: string
+  permissions: PermissionImportNode[]
+}
+
+/** 校验问题（可分位置的清单项）。 */
+export interface PermissionImportIssue {
+  path: string
+  field: string
+  code: string
+  message: string
+  line: number | null
+}
+
+/** 上级将变更的明细（父级用 code 表达，根级为空串）。 */
+export interface PermissionImportMoved {
+  code: string
+  fromParent: string
+  toParent: string
+}
+
+/** 校验预览（ok=false 时四项计数一律为 0）。 */
+export interface PermissionImportPreview {
+  ok: boolean
+  added: number
+  updated: number
+  unchanged: number
+  moved: number
+  total: number
+  issues: PermissionImportIssue[]
+  issueTotal: number
+  warnings: PermissionImportIssue[]
+  warningTotal: number
+  movedItems: PermissionImportMoved[]
+}
+
+/** 确认导入的实际写入结果。 */
+export interface PermissionImportResult {
+  added: number
+  updated: number
+  unchanged: number
+  moved: number
+  total: number
+  source: string
+}
+
+/** 导出文件能否回导的自证判定，reasons ∈ empty/too_many/too_large/too_deep。 */
+export interface PermissionExportable {
+  ok: boolean
+  reasons: string[]
+}
+
+/** 导出文档；importable 仅用于前端提示，不写入下载文件。 */
+export interface PermissionExportDocument {
+  version: number
+  mode: string
+  importable: PermissionExportable
+  permissions: PermissionImportNode[]
+}
+
 export interface UpdatePermissionPayload {
   code?: string
   name?: string

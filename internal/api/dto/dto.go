@@ -488,6 +488,82 @@ type MemberGrantResult struct {
 	AutoJoinedMembers int      `json:"autoJoinedMembers" example:"2"`
 }
 
+// ---------- 权限点批量导入 / 导出（011-app-permission-import） ----------
+
+// PermissionImportDocument 导入文档（请求体）。version 缺省视为 1，mode 缺省视为 merge。
+type PermissionImportDocument struct {
+	Version     *int                   `json:"version" example:"1"`
+	Mode        string                 `json:"mode" example:"merge"`
+	Permissions []PermissionImportNode `json:"permissions"`
+}
+
+// PermissionImportNode 导入文档中的权限点节点（递归嵌套表达层级）。
+type PermissionImportNode struct {
+	Code        string                 `json:"code" example:"order.write"`
+	Name        string                 `json:"name" example:"创建订单"`
+	Description string                 `json:"description,omitempty" example:"订单写入"`
+	Sort        *int                   `json:"sort,omitempty" example:"10"`
+	Children    []PermissionImportNode `json:"children,omitempty"`
+}
+
+// PermissionImportIssue 校验问题（可分位置的清单项）。
+// code 取值：syntax_error/empty/bad_type/unknown_field/missing_field/bad_version/bad_mode/
+// invalid_code/too_long/dup_code/too_deep/too_many；warnings 另含 prefix_hint/case_hint。
+type PermissionImportIssue struct {
+	Path    string `json:"path" example:"permissions[2].code"`
+	Field   string `json:"field" example:"code"`
+	Code    string `json:"code" example:"invalid_code"`
+	Message string `json:"message" example:"编码含非法字符，只允许字母、数字与 _.:-"`
+	Line    *int   `json:"line"`
+}
+
+// PermissionImportMoved 上级将变更的明细（最多 20 条，父级用编码表达，根级为空串）。
+type PermissionImportMoved struct {
+	Code       string `json:"code" example:"order.read"`
+	FromParent string `json:"fromParent" example:"order"`
+	ToParent   string `json:"toParent" example:"pay"`
+}
+
+// PermissionImportPreview 校验预览结果。ok=false 时四项计数一律为 0。
+type PermissionImportPreview struct {
+	Ok           bool                    `json:"ok" example:"true"`
+	Added        int                     `json:"added" example:"132"`
+	Updated      int                     `json:"updated" example:"3"`
+	Unchanged    int                     `json:"unchanged" example:"5"`
+	Moved        int                     `json:"moved" example:"1"`
+	Total        int                     `json:"total" example:"140"`
+	Issues       []PermissionImportIssue `json:"issues"`
+	IssueTotal   int                     `json:"issueTotal" example:"0"`
+	Warnings     []PermissionImportIssue `json:"warnings"`
+	WarningTotal int                     `json:"warningTotal" example:"0"`
+	MovedItems   []PermissionImportMoved `json:"movedItems"`
+}
+
+// PermissionImportResult 确认导入的实际写入结果。
+type PermissionImportResult struct {
+	Added     int    `json:"added" example:"28"`
+	Updated   int    `json:"updated" example:"2"`
+	Unchanged int    `json:"unchanged" example:"0"`
+	Moved     int    `json:"moved" example:"1"`
+	Total     int    `json:"total" example:"30"`
+	Source    string `json:"source" example:"paste"`
+}
+
+// PermissionExportable 导出文件能否回导的自证判定。
+// reasons 取值：empty/too_many/too_large/too_deep。
+type PermissionExportable struct {
+	Ok      bool     `json:"ok" example:"true"`
+	Reasons []string `json:"reasons"`
+}
+
+// PermissionExportDocument 导出文档。importable 仅用于前端提示，不写入下载文件。
+type PermissionExportDocument struct {
+	Version     int                    `json:"version" example:"1"`
+	Mode        string                 `json:"mode" example:"merge"`
+	Importable  PermissionExportable   `json:"importable"`
+	Permissions []PermissionImportNode `json:"permissions"`
+}
+
 // AuditItem 审计事件（GET /api/v1/admin/audit-logs 的元素）。
 type AuditItem struct {
 	ID        string  `json:"id" example:"01J9ZK5B9C1D3E5F7G9H1J3K5M"`

@@ -575,6 +575,67 @@ func (s *Store) UpdateClientPermission(ctx context.Context, clientID, permID str
 	})
 }
 
+// ---- 权限点批量导入 / 导出（011-app-permission-import） ----
+
+// LockClientRow 锁定应用主键行，作为"同一应用导入串行化"的确定记录锁。
+// 只对 client_permissions 做范围 FOR UPDATE 时，应用尚无任何权限点会退化成间隙锁
+// （间隙锁彼此兼容），两个并发事务都能通过"全新增"判断；锁 clients 行可消除该路径
+// （同 002 记录的空表间隙锁死锁教训）。
+func (s *Store) LockClientRow(ctx context.Context, clientID string) error {
+	var c model.Client
+	return s.DB(ctx).Clauses(lockUpdate()).Where("client_id = ?", clientID).Take(&c).Error
+}
+
+// LockClientPermissions 在调用方已开启的事务内锁定并读取该应用全部权限点。
+func (s *Store) LockClientPermissions(ctx context.Context, clientID string) ([]model.ClientPermission, error) {
+	rows := []model.ClientPermission{}
+	err := s.DB(ctx).Clauses(lockUpdate()).
+		Where("client_id = ?", clientID).
+		Order("sort ASC, created_at ASC").
+		Find(&rows).Error
+	return rows, err
+}
+
+// ListClientPermissionsForExport 读取导出所需的全部权限点：不带 LIMIT、不带计数子查询。
+// 导出与导入必须同构（spec FR-019），复用 ListClientPermissions 的 LIMIT 1000 会静默截断。
+func (s *Store) ListClientPermissionsForExport(ctx context.Context, clientID string) ([]model.ClientPermission, error) {
+	rows := []model.ClientPermission{}
+	err := s.DB(ctx).
+		Where("client_id = ?", clientID).
+		Order("sort ASC, created_at ASC").
+		Find(&rows).Error
+	return rows, err
+}
+
+// CreateClientPermissions 批量插入权限点（每批 100）；编码冲突返回 ErrDuplicateKey。
+func (s *Store) CreateClientPermissions(ctx context.Context, perms []*model.ClientPermission) error {
+	if len(perms) == 0 {
+		return nil
+	}
+	if err := s.DB(ctx).CreateInBatches(perms, 100).Error; err != nil {
+		if isDuplicate(err) {
+			return ErrDuplicateKey
+		}
+		return err
+	}
+	return nil
+}
+
+// UpdateClientPermissionFields 无版本校验的字段更新。
+// 调用方必须已持有 LockClientPermissions 的行锁（导入路径），因此不再做 updatedAt 乐观校验。
+func (s *Store) UpdateClientPermissionFields(ctx context.Context, clientID, permID string, updates map[string]any, now int64) error {
+	updates["updated_at"] = now
+	if err := s.DB(ctx).Model(&model.ClientPermission{}).
+		Where("client_id = ? AND id = ?", clientID, permID).
+		Updates(updates).Error; err != nil {
+		if isDuplicate(err) {
+			return ErrDuplicateKey
+		}
+		return err
+	}
+	return nil
+}
+
 // CountPermissionChildren 子节点数量（删除保护）。
 func (s *Store) CountPermissionChildren(ctx context.Context, permID string) (int64, error) {
 	var n int64
