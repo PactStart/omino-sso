@@ -91,6 +91,12 @@ function confirmButton(): HTMLButtonElement | undefined {
   ) as HTMLButtonElement | undefined
 }
 
+function previewButton(): HTMLButtonElement | undefined {
+  return Array.from(document.body.querySelectorAll('button')).find((b) =>
+    (b.textContent ?? '').includes('校验预览'),
+  ) as HTMLButtonElement | undefined
+}
+
 const validDoc = '{"permissions":[{"code":"order","name":"订单"}]}'
 
 afterEach(() => {
@@ -219,6 +225,22 @@ describe('权限点批量导入对话框', () => {
     expect(mocks.confirmPermissionImport).toHaveBeenCalledTimes(1)
     expect(mocks.validatePermissionImport).toHaveBeenCalledTimes(2)
     expect(bodyText()).toContain('已自动重新校验')
+  })
+
+  // permission-import-preview-frozen 回归：后端若把 movedItems 写成 null，模板取 .length
+  // 会在渲染期抛错并冻结整个弹窗（loading 不复位、确认按钮一直 disabled）。
+  it('movedItems 为 null 时仍完整渲染且可确认', async () => {
+    mocks.validatePermissionImport.mockResolvedValue(
+      preview({ movedItems: null as unknown as [] }),
+    )
+    await mountDialog()
+    await typeJson(validDoc)
+
+    await clickButton('校验预览')
+
+    expect(bodyText()).toContain('将新增 50')
+    expect(confirmButton()?.disabled).toBe(false)
+    expect(previewButton()?.querySelector('[class*="is-loading"]')).toBeNull()
   })
 
   it('下载示例文档为 3 层 5 条的合法结构', async () => {
