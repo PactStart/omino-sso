@@ -360,8 +360,12 @@ func (p *importPlan) added() int { return len(p.insert) }
 func (p *importPlan) updated() int { return len(p.update) }
 
 // buildImportPlan 依据输入树与库内现状生成写入计划。纯内存计算，无 DB 交互。
+//
+// movedItems 必须初始化为空切片而非 nil：无上级变更时它不会被 append，nil 切片会被
+// encoding/json 写成 `"movedItems":null`，而前端按数组契约取 `.length` 会整块渲染失败
+// （permission-import-preview-frozen：校验通过后按钮 loading 不复位、确认按钮卡死）。
 func buildImportPlan(doc *importDoc, existing []model.ClientPermission) *importPlan {
-	plan := &importPlan{}
+	plan := &importPlan{movedItems: []dto.PermissionImportMoved{}}
 	byCode := make(map[string]model.ClientPermission, len(existing))
 	codeByID := make(map[string]string, len(existing))
 	for _, row := range existing {
@@ -613,9 +617,19 @@ func (s *AppAuthService) ValidateImport(ctx context.Context, clientID string, da
 	preview.Updated = plan.updated()
 	preview.Unchanged = plan.unchanged
 	preview.Moved = plan.moved
-	preview.MovedItems = plan.movedItems
+	// DTO 边界再归一一次：openapi 声明 movedItems 为 array，响应里出现 null 就是违约
+	// （truncateIssues 对 issues/warnings 做了同样的归一，此处保持口径一致）。
+	preview.MovedItems = normalizeMovedItems(plan.movedItems)
 	preview.Warnings = truncateIssues(warnings)
 	return preview, nil
+}
+
+// normalizeMovedItems 保证上级变更明细序列化为 []，永不为 null。
+func normalizeMovedItems(in []dto.PermissionImportMoved) []dto.PermissionImportMoved {
+	if in == nil {
+		return []dto.PermissionImportMoved{}
+	}
+	return in
 }
 
 func truncateIssues(in []dto.PermissionImportIssue) []dto.PermissionImportIssue {

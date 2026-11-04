@@ -152,6 +152,28 @@ describe('门户 · 权限点批量导入对话框', () => {
     expect(confirmBtn?.disabled).toBe(false)
   })
 
+  // permission-import-preview-frozen 回归：后端若把 movedItems 写成 null，模板取 .length
+  // 会在渲染期抛错并冻结整个弹窗（loading 不复位、确认按钮一直 disabled）。
+  it('movedItems 为 null 时仍完整渲染且可确认', async () => {
+    mocks.validatePermissionImport.mockResolvedValue(
+      preview({ added: 50, total: 50, movedItems: null as unknown as [] }),
+    )
+    await mountDialog()
+    await typeJson(validDoc)
+
+    await clickButton('校验预览')
+
+    expect(bodyText()).toContain('将新增 50')
+    const previewBtn = Array.from(document.body.querySelectorAll('button')).find((b) =>
+      (b.textContent ?? '').includes('校验预览'),
+    )
+    expect(previewBtn?.querySelector('[class*="is-loading"]')).toBeNull()
+    const confirmBtn = Array.from(document.body.querySelectorAll('button')).find((b) =>
+      (b.textContent ?? '').includes('确认导入'),
+    ) as HTMLButtonElement | undefined
+    expect(confirmBtn?.disabled).toBe(false)
+  })
+
   it('非法 JSON 不请求服务端，且保留输入', async () => {
     await mountDialog()
     await typeJson('{"permissions":')

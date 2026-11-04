@@ -309,6 +309,37 @@ func TestBuildImportPlanIdempotentAndOrder(t *testing.T) {
 	}
 }
 
+// permission-import-preview-frozen：无上级变更时 movedItems 必须序列化为 []，不能是 null。
+// 前端按数组契约取 `preview.movedItems.length`，null 会在渲染期抛错并冻结整个导入弹窗
+// （按钮 loading 不复位、确认按钮一直是 disabled，而接口其实已经 200）。
+func TestMovedItemsSerializesAsEmptyArray(t *testing.T) {
+	doc, issues, _ := parseImportDocument([]byte(`{"permissions":[{"code":"order","name":"订单"}]}`))
+	if len(issues) != 0 {
+		t.Fatalf("解析失败：%+v", issues)
+	}
+
+	plan := buildImportPlan(doc, nil)
+	if plan.moved != 0 || len(plan.movedItems) != 0 {
+		t.Fatalf("moved/movedItems = %d/%d，期望 0/0", plan.moved, len(plan.movedItems))
+	}
+	if plan.movedItems == nil {
+		t.Fatal("buildImportPlan 的 movedItems 不能为 nil")
+	}
+
+	for name, in := range map[string][]dto.PermissionImportMoved{
+		"计划产出":   plan.movedItems,
+		"nil 输入": nil,
+	} {
+		raw, err := json.Marshal(normalizeMovedItems(in))
+		if err != nil {
+			t.Fatalf("%s：序列化失败 %v", name, err)
+		}
+		if string(raw) != "[]" {
+			t.Fatalf("%s：movedItems 序列化为 %s，期望 []", name, raw)
+		}
+	}
+}
+
 // T024：可回导判定必须与下载文件的 2 空格缩进字节一致（FR-019）。
 func TestImportableMatchesDownloadBytes(t *testing.T) {
 	nodes := []dto.PermissionImportNode{

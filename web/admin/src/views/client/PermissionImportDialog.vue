@@ -44,6 +44,13 @@ const previewing = ref(false)
 const confirming = ref(false)
 const fileInput = ref<HTMLInputElement>()
 
+/**
+ * 防御后端数组字段返回 null（permission-import-preview-frozen）：模板直接对 null 取 `.length`
+ * 会在渲染期抛 TypeError，Vue 会中止本次 patch，整个弹窗冻结（loading 不复位、按钮状态不更新）。
+ * 后端已归一为 []，这里是渲染侧的兜底。
+ */
+const movedItems = computed(() => preview.value?.movedItems ?? [])
+
 watch(visible, (open) => {
   if (open) reset()
   else if (previewing.value || confirming.value) {
@@ -322,9 +329,9 @@ order.write.refund | 退款      →  {"code":"order.write.refund","name":"退�
         </p>
       </div>
 
-      <div v-if="preview.movedItems.length > 0" class="moved-block">
+      <div v-if="movedItems.length > 0" class="moved-block">
         <h4>上级将变更的权限点</h4>
-        <el-table :data="preview.movedItems" size="small" border>
+        <el-table :data="movedItems" size="small" border>
           <el-table-column label="权限编码" min-width="160">
             <template #default="{ row }">
               <span class="mono">{{ row.code }}</span>
@@ -341,8 +348,8 @@ order.write.refund | 退款      →  {"code":"order.write.refund","name":"退�
             </template>
           </el-table-column>
         </el-table>
-        <p v-if="preview.moved > preview.movedItems.length" class="hint">
-          共 {{ preview.moved }} 条，仅列出前 {{ preview.movedItems.length }} 条
+        <p v-if="preview.moved > movedItems.length" class="hint">
+          共 {{ preview.moved }} 条，仅列出前 {{ movedItems.length }} 条
         </p>
       </div>
     </section>
